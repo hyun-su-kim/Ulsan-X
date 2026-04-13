@@ -1,0 +1,10 @@
+<CycloneDDS>                                                                  
+    <Domain>                                                                    
+      <Discovery>                                                               
+        <Peers>  
+          <Peer address="192.168.0.115"/>
+          <Peer address="192.168.0.116"/>
+        </Peers>                     
+      </Discovery>
+    </Domain>                                                                   
+  </CycloneDDS>
