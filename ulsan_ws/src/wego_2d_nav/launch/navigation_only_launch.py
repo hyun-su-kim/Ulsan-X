@@ -18,7 +18,17 @@ def generate_launch_description():
         default_value=os.path.join(wego_share_dir, 'params', 'diff_navigation_params.yaml'),
         description='Full path to parameter yaml file to load')
 
-    # for remapping tf topic 
+    # [멀티로봇] container_name 인자 추가.
+    # localization_launch.py와 동일한 이유:
+    # navigation_diff_launch.py에서 /limo_001/nav2_container 형태로 전달받아
+    # namespace 안에 있는 컨테이너를 올바르게 찾기 위함.
+    declare_container_name_cmd = DeclareLaunchArgument(
+        'container_name',
+        default_value='nav2_container',
+        description='Composable node container name (fully qualified, e.g. /limo_001/nav2_container)')
+
+    # for remapping tf topic
+    # /tf, /tf_static를 상대경로로 remapping하여 각 로봇의 TF 트리를 격리.
     remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
     
     # set the lifecycle nodes
@@ -35,7 +45,9 @@ def generate_launch_description():
     load_composable_nodes = GroupAction(
         actions=[
             LoadComposableNodes(
-                target_container='nav2_container',
+                # [멀티로봇] 하드코딩된 'nav2_container' → LaunchConfiguration으로 변경.
+                # localization_launch.py와 동일한 이유.
+                target_container=LaunchConfiguration('container_name'),
                 composable_node_descriptions=[
                     ComposableNode( # loading controller server
                         package='nav2_controller',
@@ -103,5 +115,6 @@ def generate_launch_description():
     
     return LaunchDescription([
         declare_params_file_cmd,
+        declare_container_name_cmd,
         load_composable_nodes,
     ])
