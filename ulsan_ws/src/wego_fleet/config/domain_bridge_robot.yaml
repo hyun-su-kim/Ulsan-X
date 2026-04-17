@@ -1,0 +1,29 @@
+# Domain Bridge 템플릿 — 모든 로봇 공통
+#
+# 실행 위치: 각 LIMO 로봇
+# 실행 명령: ros2 launch wego_fleet robot_bridge_launch.py robot_name:=robot1
+#
+# 플레이스홀더:
+#   ROBOT_DOMAIN → robot_bridge_launch.py가 ROS_DOMAIN_ID 환경변수 값으로 치환
+#   MAP_SECTION  → robot_name==robot1 일 때만 /map 섹션 삽입, 나머지는 빈 문자열
+#
+# 역할:
+#   1. 각 로봇의 /tf, /tf_static → domain 5 (노트북 RViz TF 트리)
+#   2. /map → domain 5 (robot1만 전송 — 두 로봇이 동일한 맵 사용)
+
+name: robot_bridge
+from_domain: ROBOT_DOMAIN   # ROS_DOMAIN_ID 환경변수 값으로 자동 치환
+to_domain: 5                # 관제 노트북 domain
+
+topics:
+
+  /tf:
+    type: tf2_msgs/msg/TFMessage
+
+  /tf_static:
+    type: tf2_msgs/msg/TFMessage
+    qos:
+      reliability: reliable
+      durability: transient_local
+      depth: 1
+MAP_SECTION

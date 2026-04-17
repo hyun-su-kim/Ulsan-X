@@ -1,0 +1,64 @@
+# EKF(Extended Kalman Filter) 파라미터 템플릿 — 멀티로봇 대응
+#
+# [멀티로봇] ROBOT_NAME 플레이스홀더는 teleop_launch.py의 robot_name 런치 인자로 치환됨.
+# 예) robot_name:=robot1  →  ROBOT_NAME → robot1
+#     odom_frame: ROBOT_NAME/odom  →  odom_frame: robot1/odom
+#
+# 원본: wego_ws/src/robot_localization/params/limo_ekf.yaml
+# 변경점: odom_frame, base_link_frame, world_frame에 ROBOT_NAME/ 접두사 추가
+#
+# TF 체인 일관성 (세 노드가 동일한 프레임 이름을 써야 함):
+#   robot_state_publisher → frame_prefix: "robot1/"  →  robot1/base_link 발행
+#   EKF(이 파일)          → base_link_frame: robot1/base_link, odom_frame: robot1/odom
+#   AMCL                  → base_frame_id: robot1/base_link, odom_frame_id: robot1/odom
+#                            (diff_navigation_params.yaml에서 동일 방식으로 치환)
+
+ekf_filter_node_odom:
+  ros__parameters:
+    frequency: 30.0
+    sensor_timeout: 0.2
+    two_d_mode: true
+    transform_time_offset: 0.0
+    transform_timeout: 0.2
+    print_diagnostics: true
+    debug: false
+
+    # [멀티로봇] EKF가 발행하는 odom TF 프레임 이름.
+    # AMCL의 odom_frame_id(diff_navigation_params.yaml)와 반드시 일치해야 함.
+    # ROBOT_NAME/odom 으로 치환됨 (예: robot1/odom)
+    odom_frame: ROBOT_NAME/odom
+
+    # [멀티로봇] EKF가 추적하는 로봇 본체 프레임 이름.
+    # robot_state_publisher의 frame_prefix 로 발행되는 base_link와 일치해야 함.
+    # ROBOT_NAME/base_link 로 치환됨 (예: robot1/base_link)
+    base_link_frame: ROBOT_NAME/base_link
+
+    # [멀티로봇] world_frame은 odom_frame과 동일하게 설정.
+    # AMCL을 map 레벨 위치 추정에 사용하므로 EKF는 odom 레벨 필터로만 동작.
+    world_frame: ROBOT_NAME/odom
+
+    odom0: odom
+    odom0_config: [true, true, false,
+                  false, false, true,
+                  true,  true,  false,
+                  false, false, true,
+                  false, false, false]
+    odom0_queue_size: 10
+    odom0_differential: true
+    odom0_relative: true
+
+    imu0: imu
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  true,  true,  true,
+                  true,  true, false]
+    imu0_differential: false
+    imu0_relative: true
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: true
+
+    use_control: false
+
+    process_noise_covariance: [1e-3, 1e-3, 1e-3, 0.3, 0.3, 1e-3, 0.5, 0.5, 0.1, 0.3, 0.3, 1e-3, 0.3, 0.3, 0.3]
+    initial_estimate_covariance: [1e-9, 1e-9, 1e-9, 1.0, 1.0, 1e-9, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
