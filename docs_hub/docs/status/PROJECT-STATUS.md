@@ -2,8 +2,8 @@
 
 ## Current Phase
 **환경 구성 진행 중**
-멀티로봇 TF 프레임 분리 전 구간 구현 완료 (teleop ~ Nav2 ~ Domain Bridge ~ 노트북 RViz).
-다음 단계: cyclonedds_peers.xml IP 입력 → 실기기 통신 검증 → SLAM 지도 작성.
+Domain Bridge 실기기 통신 검증 완료 (2026-04-22). LIMO 1 ↔ 노트북 간 `/limo_1/amcl_pose` 수신 확인.
+다음 단계: SLAM 지도 작성 → FleetObstacleLayer 구현.
 
 ---
 
@@ -11,14 +11,15 @@
 
 | 트랙 | 상태 | 담당 패키지 |
 |------|------|------------|
-| 시스템 아키텍처 설계 | in progress | — |
-| 통신 환경 구성 (CycloneDDS + Domain Bridge) | **구현 완료, 검증 대기** | wego_fleet |
+| 트랙 | 상태 | 담당 패키지 |
+| 시스템 아키텍처 설계 | **완료** | — |
+| 통신 환경 구성 (CycloneDDS + Domain Bridge) | **완료** | wego_bridge |
 | SLAM 지도 작성 | planned | wego (cartographer) |
 | Nav2 경로 계획 & AMCL | planned | wego_2d_nav |
-| Fleet 충돌 회피 (가상 장애물) | planned | wego_fleet |
+| Fleet 충돌 회피 (PeerObstacleLayer) | planned | ulsan_obstacle_layer |
 | 음성 파이프라인 (VAD→Wake→STT→NLU→TTS) | planned | wego_voice (신규) |
 | 행동 트리 최상단 관리 | planned | wego_behaviour (신규) |
-| 관제 UI | not started | — |
+| 관제 UI | not started | wego_ui (신규, 노트북 전용) |
 
 ---
 
@@ -27,32 +28,31 @@
 ### P0 — 환경 기반 구축 (Immediate)
 - [x] CycloneDDS 설치 및 `cyclonedds_peers.xml` 유니캐스트 설정 — done (2026-04-16), TS-001 참고
 - [x] DOMAIN_ID 확정 — done (2026-04-16): 노트북=5, LIMO 1=6, LIMO 2=7
-- [x] 멀티로봇 TF frame 분리 — done (2026-04-17): DEC-005, DEC-006, DEC-008 참고
-  - `diff_navigation_params.yaml`: AMCL/Nav2 ROBOT_NAME 플레이스홀더 (기존)
-  - `navigation_diff_launch.py`: robot_name 인자 + Python 치환 방식 (기존)
-  - `teleop_launch.py`: robot_name 인자 추가, robot_state_publisher frame_prefix, EKF 템플릿 치환 (신규)
-  - `limo_ekf_robot.yaml`: EKF odom_frame/base_link_frame ROBOT_NAME 템플릿 (신규)
-- [x] Domain Bridge 설정 파일 작성 — done (2026-04-17): wego_fleet 패키지
-  - `domain_bridge_robot1.yaml`: /tf,/map → domain5, /amcl_pose → domain7
-  - `domain_bridge_robot2.yaml`: /tf → domain5, /amcl_pose → domain6
-  - `laptop_bridge_launch.py`: 노트북 실행 런치
-  - `fleet_monitor.rviz`: 두 로봇 위치 + 지도 표시
-- [x] cyclonedds_peers.xml 실제 IP 입력 — done (2026-04-17): 192.168.0.115, 192.168.0.116
-- [x] camera TF frame prefix 적용 — done (2026-04-17)
-  - `camera_tilt_launch.py`: robot_name 인자 추가, 모든 카메라 프레임에 prefix 적용
-  - `teleop_launch.py`: Orbbec `camera_name=robot_name+'_camera'` → `robot1_camera_link` 연결
-- [x] Domain Bridge 설계 확정 — done (2026-04-17): DEC-010
-  - `robot_bridge_launch.py`: 각 LIMO에서 실행, ROS_DOMAIN_ID 자동 읽음
-  - `domain_bridge_robot.yaml`: 단일 템플릿, leader 인자로 /map 전송 여부 결정
-- [ ] 실기기 Domain Bridge 통신 검증 (테스트 예정)
-  - LIMO 1: `ros2 launch wego_fleet robot_bridge_launch.py leader:=true`
-  - 노트북: `ros2 run rviz2 rviz2` → map 위에 robot1 TF 확인
+- [x] cyclonedds_peers.xml 실제 IP 입력 — done (2026-04-22): LIMO1=192.168.0.100, LIMO2=192.168.0.101, 노트북1=192.168.0.115, 노트북2=192.168.0.116
+- [x] 멀티로봇 통신 설계 확정 — done (2026-04-21): DEC-011, DEC-012
+  - **amcl_pose 공유 방식** 채택 (TF frame prefix 방식 폐기)
+  - **맵 파일 사전 배포** 방식 채택 (domain bridge로 /map 스트리밍 방식 폐기)
+  - 각 기기가 로컬 map_server로 /map 발행, domain bridge는 amcl_pose만 전달
+- [x] `wego_bridge` 패키지 구현 완료 — done (2026-04-22): TS-002, TS-003 수정 포함
+  - `config/domain_bridge_robot.yaml`: ROBOT_DOMAIN, DEST_DOMAIN, ROBOT_NAME 플레이스홀더 템플릿 (맵 형식)
+  - `launch/robot_bridge_launch.py`: OpaqueFunction → bridge 인스턴스 2개 생성 (laptop/peer)
+  - 동작: `/amcl_pose` (domain N) → `/limo_1(2)/amcl_pose` (domain 5, domain PEER) 동시 브릿징
+- [x] 실기기 Domain Bridge 통신 검증 — done (2026-04-22)
+  - LIMO 1(domain 6) → 노트북(domain 5): `/limo_1/amcl_pose` 수신 확인
+  - TS-002, TS-003 발생 및 해결 (COMMUNICATION.md 참고)
 - [ ] Cartographer SLAM으로 학원 지도 작성 (LIMO 1 기준)
-- [ ] 저장된 맵을 LIMO 2에 복사
-- [ ] 노트북 RViz에서 두 로봇 위치 확인
+- [ ] 맵 파일(`map.pgm`, `map.yaml`) scp로 LIMO 2 및 노트북에 배포
+  ```bash
+  scp map.pgm map.yaml wego@192.168.0.101:~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
+  scp map.pgm map.yaml user@192.168.0.115:~/maps/
+  scp map.pgm map.yaml user@192.168.0.116:~/maps/
+  ```
+- [ ] 노트북에서 맵 + 두 로봇 위치 마커 확인
 
 ### P1 — 핵심 기능 구현 (Core)
-- [ ] `wego_fleet` 패키지: `/amcl_pose` 수신 → 원형 가상 장애물 costmap 주입 (FleetObstacleLayer C++ 플러그인)
+- [ ] `ulsan_obstacle_layer` 패키지: PeerObstacleLayer 빌드 및 실기기 검증
+  - `/limo_1/amcl_pose` 또는 `/limo_2/amcl_pose` 구독 (ROS_DOMAIN_ID로 자동 결정)
+  - 상대 로봇 위치 → 원형 가상 장애물 → global costmap LETHAL_OBSTACLE 주입
 - [ ] `waypoints.yaml` 작성: 강의실, 상담실, 회의실 등 목적지 좌표 정의
 - [ ] Nav2 BT 목적지 연동 (waypoint → navigate_to_pose action)
 - [ ] `wego_behaviour` 패키지: 최상단 BT 설계 (대기 → 호출 → 안내 → 복귀)

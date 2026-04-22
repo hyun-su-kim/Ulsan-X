@@ -4,6 +4,7 @@
 ulsan_ws/build/
 ulsan_ws/install/
 ulsan_ws/log/
+ulsan_ws/Log/
 
 # 대용량 ML 모델 파일
 *.engine

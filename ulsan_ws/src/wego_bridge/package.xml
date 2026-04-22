@@ -1,18 +1,14 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>wego_fleet</name>
-  <version>0.1.0</version>
-  <description>
-    멀티로봇 fleet 관리 패키지.
-    Domain Bridge 설정, 노트북 관제 RViz 구성을 담당.
-    (향후: 상대 로봇 위치 기반 가상 장애물 costmap 레이어 추가 예정)
-  </description>
-  <maintainer email="todo@todo.com">hyun-su-kim</maintainer>
+  <name>wego_bridge</name>
+  <version>0.0.1</version>
+  <description>Multi-robot domain bridge: amcl_pose bridging between robot and laptop domains</description>
+  <maintainer email="wego@todo.todo">wego</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>domain_bridge</exec_depend>
-  <exec_depend>rviz2</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

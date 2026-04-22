@@ -4,69 +4,88 @@
 
 ---
 
-### DEC-010: Domain Bridge 실행 위치 및 설정 구조
-- **Context**: 노트북에 ROS 워크스페이스가 없어 `laptop_bridge_launch.py`를 노트북에서 실행 불가. 브릿지를 어디서 어떻게 실행할 것인가.
-- **Options**:
-  - A) 노트북에 wego_fleet 패키지 설치
-  - B) 각 로봇에서 domain_bridge 실행 (push 방식)
-- **Decision**: **B — 각 로봇에서 실행**
+### DEC-013: wego_fleet 패키지 분리 — wego_bridge (Python) + wego_fleet (C++)
+- **Context**: 현재 `wego_fleet`(Python, ament_python)에 domain bridge launch 파일과 FleetObstacleLayer C++ 플러그인을 함께 넣으려 했으나, C++ Nav2 플러그인은 ament_cmake 패키지여야 하므로 같은 패키지에 공존 불가.
+- **Decision**: 패키지를 역할과 빌드 시스템 기준으로 분리
+  - `wego_bridge` (Python, ament_python): 현재 `wego_fleet` rename. domain bridge launch 파일만 담당.
+  - `wego_fleet` (C++, ament_cmake): FleetObstacleLayer Nav2 costmap 플러그인 전용. 신규 작성.
 - **Rationale**:
-  - 노트북은 RViz 전용으로 유지. 워크스페이스 설치 불필요.
-  - 단일 템플릿 YAML(`domain_bridge_robot.yaml`) + `ROS_DOMAIN_ID` 환경변수로 `from_domain` 자동 결정 → yaml 파일 하나로 모든 로봇 공유.
-  - `/map` 전송 여부는 `leader:=true` 인자로 결정 → 리더 로봇 한 대만 전송.
-- **구현**:
-  - `wego_fleet/config/domain_bridge_robot.yaml`: `ROBOT_DOMAIN` 플레이스홀더 템플릿
-  - `wego_fleet/launch/robot_bridge_launch.py`: OpaqueFunction으로 환경변수 읽어 치환, tempfile 전달
+  - Python launch 파일과 C++ 공유 라이브러리는 빌드 시스템(ament_python vs ament_cmake)이 달라 같은 패키지에 공존 불가.
+  - 역할도 분리됨: `wego_bridge`는 통신 인프라(domain bridge), `wego_fleet`은 Nav2 플러그인(장애물 회피 로직).
+  - 취업용 프로젝트 관점에서 "각 패키지의 책임이 단일하다"는 설명 가능.
+- **실행 예정 작업**: `ulsan_ws/src/wego_fleet/` 디렉토리 및 내부 파일 rename → `wego_bridge/`
+- **Date**: 2026-04-22
+
+---
+
+### DEC-012: 맵 배포 방식 — domain bridge 스트리밍 vs 파일 사전 배포
+- **Context**: 관제 노트북과 각 로봇이 동일한 맵을 사용해야 함. /map 토픽을 domain bridge로 스트리밍할 것인지, 파일로 미리 배포할 것인지 결정 필요.
+- **Options**:
+  - A) domain bridge로 `/map` 스트리밍: 리더 로봇이 /map을 domain 5로 실시간 전송
+  - B) 맵 파일 사전 배포: SLAM으로 생성한 map.pgm + map.yaml을 scp로 배포, 각 기기가 로컬 map_server 실행
+- **Decision**: **B — 맵 파일 사전 배포**
+- **Rationale**:
+  - `/map`은 OccupancyGrid 메시지로 수십~수백 KB. Wi-Fi 브릿징 시 TS-001 재현 위험.
+  - 학원 환경은 정적(맵 변경 없음). 매 부팅마다 스트리밍할 이유 없음.
+  - 각 기기가 자체 map_server 실행 → AMCL, Nav2, 관제 UI 모두 로컬 /map 구독 → 네트워크 의존성 제거.
+  - domain bridge 설정 단순화: /map 제거, /amcl_pose만 브릿징.
+  - `leader:=true` 구분 불필요 → 모든 로봇 동일한 launch 명령.
+- **운용 절차**:
+  1. LIMO 1에서 Cartographer SLAM 실행 → `ros2 run nav2_map_server map_saver_cli -f ~/map`
+  2. `scp map.pgm map.yaml` → LIMO 2, 노트북으로 배포
+  3. 각 기기 부팅 시 map_server 노드가 로컬 파일 읽어 /map 발행
+- **Date**: 2026-04-21
+
+---
+
+### DEC-011: 멀티로봇 fleet 통신 방식 — TF 공유 vs amcl_pose 공유
+- **Context**: 기존 구현에서 TF frame prefix(robot1/base_link 등)로 두 로봇 TF를 분리하고 `/tf` 를 노트북으로 브릿징했음. 이 방식을 폐기하고 amcl_pose 공유 방식으로 전환.
+- **Options**:
+  - A) TF frame prefix 방식: robot_state_publisher frame_prefix + EKF odom_frame 치환 → `/tf` 브릿징
+  - B) amcl_pose 공유 방식: 각 로봇이 표준 TF 유지, `/amcl_pose`만 브릿징
+- **Decision**: **B — amcl_pose 공유**
+- **Rationale**:
+  - Open-RMF(ROS2 공식 fleet 관제 표준)와 동일한 설계 원칙. fleet 경계에서 전달하는 것은 TF 트리가 아니라 pose(위치).
+  - TF는 단일 로봇 내부 센서 좌표 변환 도구. domain 경계를 넘어 TF 트리를 브릿징하는 것은 과설계.
+  - `/amcl_pose`(PoseWithCovarianceStamped)는 단일 메시지로 위치를 표현. 가볍고 브릿징 신뢰성 높음.
+  - `/tf`는 많은 노드가 퍼블리시하는 복합 스트림 → 브릿징 시 타이밍, 중복, 프레임 충돌 위험.
+  - 각 로봇의 TF 트리는 독립적으로 완결. 노트북은 pose만 받아 마커로 시각화.
+  - Robot 간 회피: 상대 amcl_pose → FleetObstacleLayer → costmap 가상 장애물. Nav2 플래너 변경 없이 적용 가능.
+- **폐기된 구현**:
+  - `wego/config/limo_ekf_robot.yaml` (ROBOT_NAME 템플릿)
+  - teleop_launch.py의 robot_name + frame_prefix 로직
+  - wego_fleet domain_bridge 설정 파일들 (TF 브릿징 버전)
+- **새 구현 대상**:
+  - `wego_fleet/config/domain_bridge_robot.yaml`: amcl_pose → domain5, amcl_pose → peer domain
+  - `wego_fleet/launch/robot_bridge_launch.py`: 환경변수로 ROBOT_DOMAIN/PEER_DOMAIN 자동 결정
+  - `wego_fleet/fleet_obstacle_layer/`: C++ costmap plugin (FleetObstacleLayer)
+- **Date**: 2026-04-21
+
+---
+
+### DEC-010: Domain Bridge 실행 위치 및 노트북 워크스페이스 구성
+- **Context**: domain_bridge를 어디서 실행하고, 노트북에 어떤 워크스페이스가 필요한가.
+- **Domain Bridge 실행 위치**:
+  - **각 LIMO 로봇에서 실행 (push 방식)**
+  - 노트북은 domain 5에서 amcl_pose를 수동으로 수신만 함. 브릿지 프로세스 불필요.
+  - 단일 템플릿 YAML + `ROS_DOMAIN_ID` 환경변수 → 로봇 1, 2 동일한 launch 명령
+- **노트북 워크스페이스 구성**:
+  - `wego_fleet` 패키지 불필요: domain_bridge와 FleetObstacleLayer 모두 LIMO에서만 실행
+  - `map_server`: `nav2_map_server` apt 패키지만 설치하면 실행 가능. 워크스페이스 불필요.
+  - Qt 관제 GUI: `wego_ui` 패키지 신규 작성 → 노트북 워크스페이스에만 존재
+  ```
+  laptop_ws/src/
+  └── wego_ui/    # Qt 관제 GUI (map_server 기동 + 위치 마커 시각화)
+  ```
+- **구현 (LIMO용)**:
+  - `wego_fleet/config/domain_bridge_robot.yaml`: `ROBOT_DOMAIN`, `PEER_DOMAIN`, `ROBOT_NAME` 플레이스홀더 템플릿
+  - `wego_fleet/launch/robot_bridge_launch.py`: OpaqueFunction으로 `ROS_DOMAIN_ID` 읽어 치환, tempfile 전달
 - **실행**:
   ```bash
-  ros2 launch wego_fleet robot_bridge_launch.py leader:=true   # 리더
-  ros2 launch wego_fleet robot_bridge_launch.py                # 서브
+  # LIMO 1, LIMO 2 동일한 명령
+  ros2 launch wego_fleet robot_bridge_launch.py
   ```
-- **Date**: 2026-04-17
-
----
-
-### DEC-008: 멀티로봇 TF 프레임 ID 분리 방법
-- **Context**: 두 로봇의 /tf를 노트북에서 합산할 때 `odom`, `base_link` 등 프레임 이름이 충돌. 각 로봇의 TF 프레임을 어떻게 분리할 것인가.
-- **Options**:
-  - A) 로봇에서 직접 수정: robot_state_publisher `frame_prefix` + EKF `odom_frame`/`base_link_frame` 변경 → launch 인자로 제어
-  - B) 노트북 relay 노드: domain_bridge로 `/tf`를 `/robot1/tf`로 수신 후 노드에서 프레임 이름 변환
-- **Decision**: **A — 로봇에서 직접 수정**
-- **Rationale**:
-  - B는 노트북 relay 노드에 의존성 생김. 노트북 없이 두 로봇만 운용 시 TF 충돌 발생.
-  - A는 각 로봇이 처음부터 올바른 프레임 이름을 발행. 어느 domain에서 수신해도 일관성 유지.
-  - AMCL/Nav2/EKF/robot_state_publisher 모두 같은 `robot_name` 런치 인자 하나로 통일 관리.
-  - 로봇 3대 확장 시 launch 인자만 바꾸면 됨 (yaml/코드 수정 불필요).
-- **구현**:
-  - `teleop_launch.py`: `robot_name` 인자 추가, OpaqueFunction 재구성
-    - `robot_state_publisher`: `frame_prefix: robot_name + "/"` 추가
-    - EKF: `wego_ws` 수정 불가 → `ulsan_ws/src/wego/config/limo_ekf_robot.yaml` 신규, ROBOT_NAME 치환
-  - `navigation_diff_launch.py`: 기존 robot_name 인자 + ROBOT_NAME 치환 유지
-- **TF 체인**:
-  ```
-  map (공유 전역 프레임, 불변)
-  ├── robot1/odom → robot1/base_link → robot1/base_scan ...
-  └── robot2/odom → robot2/base_link → robot2/base_scan ...
-  ```
-- **Date**: 2026-04-17
-
----
-
-### DEC-009: Domain Bridge 실행 위치 및 구성
-- **Context**: domain_bridge를 어디서 실행하고 어떻게 구성할 것인가.
-- **Options**:
-  - A) 각 로봇에서 실행: 자신의 토픽을 다른 domain으로 직접 push
-  - B) 노트북에서 실행: 노트북이 두 domain에서 pull
-- **Decision**: **B — 노트북에서 실행**
-- **Rationale**:
-  - 로봇은 주행/센서 처리 부하가 높음. bridge 프로세스 분리로 로봇 자원 절약.
-  - 노트북에서 두 bridge 프로세스를 한 런치 파일로 관리 → 운용 편의성.
-  - domain_bridge는 어느 기기에서 실행해도 동작.
-- **구현**:
-  - `wego_fleet/config/domain_bridge_robot1.yaml`: domain6→5(/tf,/map), domain6→7(/amcl_pose)
-  - `wego_fleet/config/domain_bridge_robot2.yaml`: domain7→5(/tf), domain7→6(/amcl_pose)
-  - `wego_fleet/launch/laptop_bridge_launch.py`: bridge x2 + RViz 실행
-- **Date**: 2026-04-17
+- **Date**: 2026-04-17 (수정: 2026-04-21)
 
 ---
 

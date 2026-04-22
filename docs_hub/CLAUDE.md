@@ -31,7 +31,7 @@ ulsan_ws/src/
 │   └── params/diff_navigation_params.yaml # Nav2 파라미터
 ├── wego_msgs/
 │   └── srv/Chalkak.srv                    # 서비스 정의
-└── (wego_fleet / wego_behaviour / wego_voice — 미생성 시 신규 작업 대상)
+└── (wego_behaviour / wego_voice — 미생성 시 신규 작업 대상)
 ```
 
 ### Step 3 — 현재 상태 요약 & 다음 작업 제안
@@ -44,47 +44,39 @@ ulsan_ws/src/
 ### 존재하는 패키지
 | 패키지 | 핵심 파일 | 상태 |
 |--------|-----------|------|
-| `wego` | teleop_launch.py, navigation_diff_launch.py | **멀티로봇 robot_name 인자 전 구간 적용 완료** |
-| `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | ROBOT_NAME 플레이스홀더 적용 완료 |
+| `wego` | teleop_launch.py, navigation_diff_launch.py | 단일 로봇 표준 구성 (robot_name 인자 없음) |
+| `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | 단일 로봇 표준 구성 |
 | `wego_msgs` | srv/Chalkak.srv | 기본 서비스만 존재 |
-| `wego_fleet` | domain_bridge_robot1/2.yaml, laptop_bridge_launch.py, fleet_monitor.rviz | **신규 생성 완료** |
+| `wego_bridge` | domain_bridge_robot.yaml, robot_bridge_launch.py | **domain bridge 구현 완료 (2026-04-22), 검증 완료. 디렉토리 rename 예정** |
 
-### 멀티로봇 TF frame 분리 — 전 구간 구현 완료
-- **방식**: TF frame ID를 robot_name으로 구분. ROS2 namespace 아님. (DEC-005, DEC-008)
-- **teleop**: `teleop_launch.py`에 `robot_name` 인자. robot_state_publisher `frame_prefix`, EKF ROBOT_NAME 치환. (DEC-008)
-- **nav2**: `diff_navigation_params.yaml` ROBOT_NAME 플레이스홀더 → launch 시 str.replace. (DEC-006)
-- **domain bridge**: 노트북에서 실행. robot1/2 각각 config 파일. (DEC-009)
+### 멀티로봇 설계 방향 (2026-04-21 확정, DEC-011, DEC-012)
+- **TF frame prefix 방식 폐기**: 각 로봇은 표준 TF 프레임 유지 (`base_link`, `odom`, `map`)
+- **amcl_pose 공유 방식 채택**: 위치 정보만 domain bridge로 전달
+- **맵 파일 사전 배포**: SLAM 후 scp로 배포. 각 기기가 로컬 map_server 실행. domain bridge로 /map 스트리밍 없음.
 
 ```bash
-# LIMO 1 (domain 6)
-ros2 launch wego teleop_launch.py robot_name:=robot1
-ros2 launch wego navigation_diff_launch.py robot_name:=robot1
+# LIMO 1, 2 (domain 6, 7) — 동일한 명령
+ros2 launch wego teleop_launch.py
+ros2 launch wego navigation_diff_launch.py
+ros2 launch wego_bridge robot_bridge_launch.py  # ROS_DOMAIN_ID 읽어 자동 설정
 
-# LIMO 2 (domain 7)
-ros2 launch wego teleop_launch.py robot_name:=robot2
-ros2 launch wego navigation_diff_launch.py robot_name:=robot2
-
-# 노트북 (domain 5)
-ros2 launch wego_fleet laptop_bridge_launch.py
+# 노트북 (domain 5) — apt 패키지만으로 실행
+ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=~/maps/map.yaml
+# + ros2 launch wego_ui gui_launch.py  (추후 구현)
 ```
 
-### TF 체인 (구현 완료)
-```
-map
-├── robot1/odom → robot1/base_link → robot1/base_scan ...
-└── robot2/odom → robot2/base_link → robot2/base_scan ...
-```
-
-### 미생성 패키지 (신규 구현 대상)
+### 미생성/재작성 패키지 (신규 구현 대상)
+- `wego_bridge` — **LIMO 전용** (Python, ament_python): domain bridge (amcl_pose 브릿지). 노트북에는 불필요.
+- `ulsan_obstacle_layer` — **LIMO 전용** (C++, ament_cmake): 상대 로봇 amcl_pose → global costmap LETHAL_OBSTACLE 주입. `PeerObstacleLayer` 플러그인 구현 완료.
 - `wego_behaviour` — 최상단 Behavior Tree (대기→호출→안내→복귀)
 - `wego_voice` — 음성 파이프라인 (VAD→Wake→STT→NLU→TTS)
-- `wego_fleet` FleetObstacleLayer — 상대 로봇 위치 → costmap 가상 장애물 (C++ 플러그인, 미구현)
+- `wego_ui` — **노트북 전용**: Qt 관제 GUI (map_server 기동 + amcl_pose 기반 위치 마커 시각화). laptop_ws에만 존재.
 
 ### 즉시 해야 할 작업 (P0)
-1. cyclonedds_peers.xml에 노트북 IP 입력
-2. 실기기 Domain Bridge 통신 검증 (`ros2 topic echo /tf` 노트북에서 확인)
-3. Cartographer SLAM으로 학원 지도 작성 (LIMO 1)
-4. 노트북 RViz에서 두 로봇 위치 확인
+1. **실기기 Domain Bridge 통신 검증** — AMCL 기동 후 `/robot1/amcl_pose` 노트북 수신 확인
+2. Cartographer SLAM으로 학원 지도 작성 (LIMO 1)
+3. 맵 파일 scp로 LIMO 2 및 노트북에 배포
+4. **`ulsan_obstacle_layer` 빌드 및 Nav2 연동 확인** — PeerObstacleLayer colcon build + 실기기 검증
 
 ---
 
@@ -110,7 +102,8 @@ map
 │   ├── wego/           # 기존: 드라이버, Cartographer
 │   ├── wego_2d_nav/    # 기존: Nav2
 │   ├── wego_msgs/      # 기존: 공통 메시지
-│   ├── wego_fleet/     # 신규: 가상 장애물 충돌 회피
+│   ├── wego_bridge/    # Python: domain bridge (amcl_pose 브릿징)
+│   ├── ulsan_obstacle_layer/  # C++: 상대 로봇 amcl_pose → global costmap 장애물 주입
 │   ├── wego_behaviour/ # 신규: 최상단 Behavior Tree
 │   └── wego_voice/     # 신규: 음성 파이프라인
 └── cyclone_peers.xml   # CycloneDDS 유니캐스트 설정

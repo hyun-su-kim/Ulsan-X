@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+  plugins.xml — pluginlib 플러그인 등록 파일
+  Nav2가 이 파일을 읽어 PeerObstacleLayer 클래스를 costmap 플러그인으로 인식한다.
+  CMakeLists.txt의 pluginlib_export_plugin_description_file()이 이 파일을
+  ament index에 등록해 Nav2가 런타임에 찾을 수 있게 한다.
+
+  path: 공유 라이브러리 이름 (lib 접두사, .so 제외) → CMakeLists의 target 이름과 일치
+  name: yaml의 plugin: 필드에 쓰는 이름
+  type: 실제 C++ 네임스페이스::클래스명
+  base_class_type: Nav2 Layer 인터페이스
+-->
+<library path="peer_obstacle_layer">
+  <class
+    name="ulsan_obstacle_layer/PeerObstacleLayer"
+    type="ulsan_obstacle_layer::PeerObstacleLayer"
+    base_class_type="nav2_costmap_2d::Layer">
+    <description>
+      Domain bridge로 수신한 상대 로봇의 amcl_pose를 global costmap에
+      LETHAL_OBSTACLE로 마킹하는 플러그인.
+      Thread 동기화는 std::atomic(lock-free)으로 처리해 costmap 루프 블로킹 없음.
+    </description>
+  </class>
+</library>

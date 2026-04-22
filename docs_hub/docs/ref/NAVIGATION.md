@@ -142,15 +142,15 @@ wego_behaviour BT
 
 ---
 
-## Fleet 충돌 회피 (wego_fleet)
+## Fleet 충돌 회피 (ulsan_obstacle_layer)
 
 상대 로봇을 동적 장애물로 인식시키는 방식.
 
 ```
-/robot2/amcl_pose 수신 (Domain Bridge 경유)
-  → wego_fleet: 해당 좌표에 반경 R의 원형 가상 장애물 생성
-  → Nav2 costmap에 obstacle layer로 주입
-  → Nav2 플래너가 자동으로 우회 경로 생성
+/limo_N/amcl_pose 수신 (Domain Bridge 경유)
+  → ulsan_obstacle_layer (PeerObstacleLayer): 해당 좌표에 반경 R의 원형 가상 장애물 생성
+  → global costmap에 LETHAL_OBSTACLE로 주입
+  → Nav2 글로벌 플래너(NavFn/A*)가 자동으로 우회 경로 생성
 ```
 
 **장점**: Nav2 기존 플래너 수정 없이 충돌 회피 가능.

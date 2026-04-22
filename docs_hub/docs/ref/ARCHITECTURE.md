@@ -4,22 +4,47 @@
 
 ```
 [ 학원 입구 ]
-  ┌─────────────┐    ┌─────────────┐
-  │  리더 로봇   │    │  서브 로봇   │
-  │  (Robot 1)  │    │  (Robot 2)  │
-  │ DOMAIN_ID=6 │    │ DOMAIN_ID=7 │
-  └──────┬──────┘    └──────┬──────┘
-         │  /amcl_pose (유니캐스트)  │
-         └──────────┬────────────────┘
-                    │
-          ┌─────────▼──────────┐
-          │   서버 노트북       │
-          │   DOMAIN_ID=5      │
-          │   관제 UI (추후)    │
-          └────────────────────┘
+  ┌──────────────────────┐       ┌──────────────────────┐
+  │     리더 로봇         │       │     서브 로봇          │
+  │     (Robot 1)        │       │     (Robot 2)         │
+  │   DOMAIN_ID=6        │       │   DOMAIN_ID=7         │
+  │                      │       │                       │
+  │  /amcl_pose ─────────┼──────►│ FleetObstacleLayer    │
+  │  FleetObstacleLayer ◄├───────┼─ /amcl_pose           │
+  └──────────┬───────────┘       └──────────┬────────────┘
+             │ /amcl_pose                   │ /amcl_pose
+             │ /map (리더만)                │
+             └──────────────┬───────────────┘
+                            │ (domain bridge → domain 5)
+                  ┌─────────▼──────────┐
+                  │   서버 노트북       │
+                  │   DOMAIN_ID=5      │
+                  │   관제 UI          │
+                  │  - 두 로봇 위치 표시│
+                  │  - 맵 표시         │
+                  └────────────────────┘
 ```
 
-**원칙**: 리더 로봇이 대기(idle) 상태일 때만 서브 로봇은 대기. 리더가 busy(안내 중/복귀 중)이면 서브가 활성화. → 우선순위 기반 임무 할당.
+**통신 흐름 요약:**
+- 각 로봇 → domain 5(노트북): `/amcl_pose` → 관제 UI 위치 마커 표시
+- Robot1 → domain 7(Robot2): `/amcl_pose` → Robot2 FleetObstacleLayer 입력
+- Robot2 → domain 6(Robot1): `/amcl_pose` → Robot1 FleetObstacleLayer 입력
+- `/map`: **domain bridge 없음**. 각 기기(LIMO 1, LIMO 2, 노트북)가 로컬 map_server로 독립 발행
+
+**맵 배포 방식 (DEC-012)**:
+```
+LIMO 1 (SLAM) → map.pgm + map.yaml 생성
+       ↓ scp
+LIMO 2, 노트북에 파일 복사
+       ↓
+각 기기: map_server → /map 로컬 발행
+         LIMO 1, 2: AMCL이 /map 구독
+         노트북: 관제 UI가 /map 구독
+```
+
+**설계 근거**: Open-RMF(ROS2 공식 fleet 관제 표준)와 동일한 "pose 공유" 원칙. TF 트리/맵 전체를 fleet 경계 너머로 브릿징하지 않고, 위치 정보(pose)만 선택적으로 전달. 2대 소규모 시스템에서 적절한 복잡도.
+
+**운용 원칙**: 리더 로봇이 대기(idle) 상태일 때만 서브 로봇은 대기. 리더가 busy(안내 중/복귀 중)이면 서브가 활성화. → 우선순위 기반 임무 할당.
 
 ---
 
@@ -63,7 +88,7 @@ ulsan_ws/src/
 ├── wego/                  # 기존: 로봇 기본 드라이버, Cartographer SLAM
 ├── wego_2d_nav/           # 기존: Nav2 기반 2D 경로 계획
 ├── wego_msgs/             # 기존: 공통 메시지 타입 정의
-├── wego_fleet/            # 신규: 상대 로봇 위치 → 가상 장애물 변환
+├── ulsan_obstacle_layer/  # C++: 상대 로봇 amcl_pose → global costmap LETHAL_OBSTACLE 주입
 ├── wego_behaviour/        # 신규: 최상단 Behavior Tree (임무 관리)
 └── wego_voice/            # 신규: 음성 파이프라인 (VAD→Wake→STT→NLU→TTS)
 ```
@@ -125,8 +150,9 @@ wego_behaviour (최상단 BT)
 | 결정 | 선택 | 이유 |
 |------|------|------|
 | DDS | CycloneDDS 유니캐스트 | 소규모 Wi-Fi 환경, 멀티캐스트 불필요 |
+| 멀티로봇 분리 | amcl_pose 공유 (TF frame prefix 아님) | Open-RMF 동일 원칙. TF 트리 브릿징은 과설계. |
 | 지도 공유 | 리더 지도 파일 복사 | 단일 환경, 실시간 공유 불필요 |
-| 충돌 회피 | 가상 장애물 costmap 주입 | Nav2 기존 플래너 재사용 가능 |
+| 충돌 회피 | FleetObstacleLayer (amcl_pose → 가상 장애물 costmap 주입) | Nav2 기존 플래너 재사용, pose 기반 업계 표준 패턴 |
 | STT 가속 | CUDA (Orin Nano 내장 GPU) | Whisper 실시간 처리 필수 |
 | NLU 폴백 | Gemma-2B (Ollama 로컬) | 네트워크 단절 시 최소 기능 보장 |
 | TTS | Piper (ONNX 로컬) | 지연 시간 최소화, 오프라인 동작 |
