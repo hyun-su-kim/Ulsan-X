@@ -68,7 +68,7 @@ ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=~/maps/map.yaml
 ### 미생성/재작성 패키지 (신규 구현 대상)
 - `wego_bridge` — **LIMO 전용** (Python, ament_python): domain bridge (amcl_pose 브릿지). 노트북에는 불필요.
 - `ulsan_obstacle_layer` — **LIMO 전용** (C++, ament_cmake): 상대 로봇 amcl_pose → global costmap LETHAL_OBSTACLE 주입. `PeerObstacleLayer` 플러그인 구현 완료.
-- `wego_behaviour` — 최상단 Behavior Tree (대기→호출→안내→복귀)
+- `wego_behaviour` — 최상단 미션 제어: **Yasmin FSM** (대기→호출→안내→복귀) + Nav2 BT 커스텀 노드 (DEC-014)
 - `wego_voice` — 음성 파이프라인 (VAD→Wake→STT→NLU→TTS)
 - `wego_ui` — **노트북 전용**: Qt 관제 GUI (map_server 기동 + amcl_pose 기반 위치 마커 시각화). laptop_ws에만 존재.
 

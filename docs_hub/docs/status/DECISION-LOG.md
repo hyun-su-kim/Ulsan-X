@@ -4,6 +4,49 @@
 
 ---
 
+### DEC-015: 멀티로봇 임무 할당 방식 — 분산 FSM vs 중앙 코디네이터
+- **Context**: LIMO 1이 임무 중일 때 새 방문자가 오면 누가 응대하는가. 각 로봇이 상대 상태를 보고 스스로 판단(분산)할지, 노트북 코디네이터가 결정(중앙화)할지 선택 필요.
+- **Options**:
+  - A) 분산 FSM: 각 로봇이 상대 robot_status 구독 → 스스로 수락/거절 판단
+  - B) 중앙 코디네이터 (노트북): 각 로봇 상태 구독 → on_duty 로봇 지정
+- **Decision**: **B — 중앙 코디네이터**
+- **Rationale**:
+  - 분산 방식은 로봇 추가 시 모든 FSM 로직을 수정해야 함 (하드코딩된 peer 관계). 확장성 없음.
+  - 중앙 코디네이터는 로봇 수에 무관하게 on_duty 결정 로직이 동일. 로봇 추가 시 status 토픽만 추가.
+  - Open-RMF(ROS2 공식 멀티로봇 표준)의 Dispatcher 패턴과 동일한 원칙. 단, Open-RMF는 bidding 방식이고 우리는 2대 고정이므로 코디네이터가 직접 결정하는 단순화 버전.
+  - 면접 어필: "Open-RMF의 dispatcher 패턴과 동일한 원칙이며, 2대 규모에서 bidding을 단순화한 트레이드오프를 인지하고 선택했다"고 설명 가능.
+- **on_duty 결정 규칙**:
+  | LIMO 1 | LIMO 2 | on_duty |
+  |--------|--------|---------|
+  | IDLE | IDLE | LIMO 1 |
+  | BUSY | IDLE | LIMO 2 |
+  | IDLE | BUSY | LIMO 1 |
+  | BUSY | BUSY | 없음 |
+- **on_duty 로봇 역할**: 사람 감지 → "어서오세요" → 음성 대화(STT/NLU) → 목적지 확정 → navigate_to_pose 호출까지 전체 파이프라인 자율 수행
+- **토픽 구조**:
+  - `/limo_N/robot_status` (로봇 → 코디네이터): IDLE / BUSY / RETURNING
+  - `/limo_N/on_duty` (코디네이터 → 로봇): true / false
+- **Date**: 2026-04-27
+
+---
+
+### DEC-014: wego_behaviour 구현 방식 — BT vs FSM
+- **Context**: 미션 레벨 제어(대기→호출→안내→복귀)를 BehaviorTree.CPP로 구현하려 했으나, 이 레이어에서 BT의 필요성이 불명확함. 동시에 "BT 설계 경험"을 면접에서 어필하려면 어느 레이어의 BT를 구현해야 하는지 검토 필요.
+- **Decision**:
+  - `wego_behaviour`: **Yasmin FSM** (Python, ament_python)으로 구현 — 미션 모드 전환 (대기 / 안내 중 / 복귀 중)
+  - **Nav2 BT 커스터마이징**: 커스텀 BT 조건·액션 노드 C++ 작성 + XML 트리 수정 — 이것이 면접 어필 포인트
+- **Rationale**:
+  - Nav2 공식 문서 및 업계 표준: BT는 복구 동작·병렬 행동·복잡한 조건 분기에 적합. 상태 5개 이하의 선형 흐름(우리 미션)에는 FSM이 적절.
+  - 자율주행 분야 면접에서 "BT 커스터마이징 경험"은 Nav2 내부 BT(커스텀 노드 작성, XML 설계)를 의미함. wego_behaviour를 BT로 짜는 것은 포트폴리오 가치가 낮음.
+  - Yasmin: ROS2 전용 경량 Python FSM 라이브러리. SMACH 후계. 상태 전환이 코드로 명확히 표현됨.
+  - 하이브리드 구조(고수준 FSM + 실행 레이어 BT)가 실제 서비스 로봇 업계 트렌드.
+- **Nav2 BT 커스텀 노드 후보**:
+  - `VoiceTriggerCondition`: 웨이크워드 감지 여부 → BT 컨디션 노드
+  - `PeerRobotBusyCondition`: 상대 로봇 임무 중 여부 → BT 컨디션 노드
+- **Date**: 2026-04-27
+
+---
+
 ### DEC-013: wego_fleet 패키지 분리 — wego_bridge (Python) + wego_fleet (C++)
 - **Context**: 현재 `wego_fleet`(Python, ament_python)에 domain bridge launch 파일과 FleetObstacleLayer C++ 플러그인을 함께 넣으려 했으나, C++ Nav2 플러그인은 ament_cmake 패키지여야 하므로 같은 패키지에 공존 불가.
 - **Decision**: 패키지를 역할과 빌드 시스템 기준으로 분리
