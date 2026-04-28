@@ -1,9 +1,9 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**지도 완성 — 맵 배포 및 AMCL 적용 단계**
-SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28).
-다음 단계: AMCL 파라미터 적용 → 맵 파일 각 기기 배포 → 로컬라이제이션 테스트.
+**단일 로봇 자율주행 검증 단계**
+SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28). Nav2 실기기 테스트 중.
+유리 구간 AMCL 위치추정 불안정 문제 확인 → 마커 방식(레트로리플렉터 vs ArUco) 검토 중 (DEC-016).
 
 ---
 
@@ -13,8 +13,8 @@ SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28).
 |------|------|------------|
 | 시스템 아키텍처 설계 | **완료** | — |
 | 통신 환경 구성 (CycloneDDS + Domain Bridge) | **완료** | wego_bridge |
-| SLAM 지도 작성 | in progress | wego (cartographer) |
-| Nav2 경로 계획 & AMCL | planned | wego_2d_nav |
+| SLAM 지도 작성 | **완료** | wego (cartographer) |
+| Nav2 경로 계획 & AMCL | in progress | wego_2d_nav |
 | Fleet 충돌 회피 (PeerObstacleLayer) | planned | ulsan_obstacle_layer |
 | 행동 트리 최상단 관리 | planned | wego_behaviour (신규) |
 | 음성 파이프라인 (VAD→Wake→STT→NLU→TTS) | planned | wego_voice (신규) |
@@ -24,82 +24,68 @@ SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28).
 
 ## Execution Checklist
 
-### P0 — 환경 기반 구축
+### 완료 — 환경 기반 구축
 - [x] CycloneDDS 설치 및 `cyclonedds_peers.xml` 유니캐스트 설정 — done (2026-04-16), TS-001 참고
 - [x] DOMAIN_ID 확정 — done (2026-04-16): 노트북=5, LIMO 1=6, LIMO 2=7
 - [x] cyclonedds_peers.xml 실제 IP 입력 — done (2026-04-22): LIMO1=192.168.0.101, LIMO2=192.168.0.102, 노트북1=192.168.0.115, 노트북2=192.168.0.116
 - [x] 멀티로봇 통신 설계 확정 — done (2026-04-21): DEC-011, DEC-012
-  - **amcl_pose 공유 방식** 채택 (TF frame prefix 방식 폐기)
-  - **맵 파일 사전 배포** 방식 채택 (domain bridge로 /map 스트리밍 방식 폐기)
-  - 각 기기가 로컬 map_server로 /map 발행, domain bridge는 amcl_pose만 전달
-- [x] `wego_bridge` 패키지 구현 완료 — done (2026-04-22): TS-002, TS-003 수정 포함
-  - `config/domain_bridge_robot.yaml`: ROBOT_DOMAIN, DEST_DOMAIN, ROBOT_NAME 플레이스홀더 템플릿 (맵 형식)
-  - `launch/robot_bridge_launch.py`: OpaqueFunction → bridge 인스턴스 2개 생성 (laptop/peer)
-  - 동작: `/amcl_pose` (domain N) → `/limo_1(2)/amcl_pose` (domain 5, domain PEER) 동시 브릿징
-- [x] 실기기 Domain Bridge 통신 검증 — done (2026-04-22)
-  - LIMO 1(domain 6) → 노트북(domain 5): `/limo_1/amcl_pose` 수신 확인
-  - TS-002, TS-003 발생 및 해결 (COMMUNICATION.md 참고)
-- [ ] Cartographer 파라미터 수정 (`wego/config/limo_lds_2d.lua`) — 유리+복도 환경 대응 **(SLAM 전에 적용)**
-  ```lua
-  POSE_GRAPH.optimize_every_n_nodes = 5
-  POSE_GRAPH.constraint_builder.min_score = 0.55
-  POSE_GRAPH.constraint_builder.global_localization_min_score = 0.55
-  POSE_GRAPH.global_sampling_ratio = 0.1
-  TRAJECTORY_BUILDER_2D.missing_data_ray_length = 1.0
-  TRAJECTORY_BUILDER_2D.submaps.num_range_data = 35
-  TRAJECTORY_BUILDER_2D.ceres_scan_matcher.rotation_weight = 100
-  TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 2
-  ```
-- [x] Cartographer SLAM으로 학원 지도 작성 (LIMO 1 기준) — done (2026-04-28)
-  - 유리에 종이 부착 → 복도 임시 장애물(화분) 배치 → 천천히 루프 주행
-  - RViz `/constraint_list`에서 loop closure 노란선 확인 후 저장
+- [x] `wego_bridge` 패키지 구현 + 실기기 통신 검증 — done (2026-04-22)
+- [x] Cartographer 파라미터 수정 (`wego/config/limo_lds_2d.lua`) — 유리+복도 환경 대응
+- [x] Cartographer SLAM 지도 작성 (LIMO 1) — done (2026-04-28)
 - [x] 맵 후보정 (GIMP) — done (2026-04-28)
-  - 화분 흔적 → 흰색(free space)으로 제거
-  - 유리 스파이크 노이즈 제거
-  - 유리 위치 → 검은 픽셀(가상 벽)으로 처리
-- [ ] AMCL 파라미터 수정 (`wego_2d_nav/params/diff_navigation_params.yaml`) — 스캔 불일치 최소화 **(지도 완성 후 적용, 실기기 테스트하며 확정)**
-  ```yaml
-  do_beamskip: true
-  z_hit: 0.4
-  z_rand: 0.6
-  sigma_hit: 0.35
-  max_beams: 120
-  min_particles: 1000
-  max_particles: 3000
-  recovery_alpha_slow: 0.001
-  recovery_alpha_fast: 0.1
-  ```
-- [x] 맵 파일 배포 — git에 커밋됨(`ulsan_ws/src/wego_2d_nav/maps/`). 각 기기 `git pull`로 자동 배포. scp 불필요.
-- [ ] 노트북에서 맵 + 두 로봇 위치 마커 확인
+- [x] 맵 파일 git 커밋 — 각 기기 `git pull`로 배포
 
-### P1 — 핵심 기능 구현 (Core)
+---
 
-#### 자율주행
-- [ ] `ulsan_obstacle_layer` 패키지: PeerObstacleLayer 빌드 및 실기기 검증
-  - `/limo_1/amcl_pose` 또는 `/limo_2/amcl_pose` 구독 (ROS_DOMAIN_ID로 자동 결정)
-  - 상대 로봇 위치 → 원형 가상 장애물 → global costmap LETHAL_OBSTACLE 주입
-- [ ] `waypoints.yaml` 작성: 강의실, 상담실, 회의실 등 목적지 좌표 정의
+### Phase 1 — 단일 LIMO 자율주행 완성 (현재 진행 중)
 
-#### 미션 제어 (FSM + Nav2 BT 커스텀)
-- [ ] `wego_behaviour` 패키지: **Yasmin FSM** 구현 (대기 / 안내 중 / 복귀 중 상태 전환) — DEC-014
-- [ ] Nav2 BT 커스텀 노드 작성: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
-- [ ] Nav2 `navigate_to_pose` 액션 연동 (waypoint → 목적지 이동)
-- [ ] 우선순위 기반 임무 할당: 상대 로봇 busy 여부 → 서브 활성화 로직
+> LIMO 1대가 학원을 완벽하게 자율주행하는 것이 목표
+
+- [x] `ulsan_obstacle_layer` 빌드 — LIMO ulsan_ws 전체 빌드 완료. `peer_valid_` 플래그로 상대 amcl_pose 수신 전까지 완전 no-op — 단독 주행에 영향 없음.
+- [ ] Nav2 전체 스택 실기기 테스트 — AMCL 초기 위치 설정(RViz 2D Pose Estimate) 후 동작 확인
+- [ ] AMCL 파라미터 튜닝 (`diff_navigation_params.yaml`) — 실기기 주행하며 확정
+- [ ] **마커 기반 AMCL 위치추정 보강** — 유리 구간 빙글빙글 문제 해결 (DEC-016)
+  - 마커 종류 결정 **미완료** (2026-04-29 결정 예정)
+    - A) 레트로리플렉터: LiDAR 기반, SLAM 재수행 필요, 소프트웨어 변경 없음
+    - B) ArUco/AprilTag: 카메라 기반, SLAM 재수행 불필요, AMCL 보정 노드 구현 필요 (Orbbec 카메라 기존 탑재)
+  - 유리문은 운용 중 항상 열린 상태로 가정
+- [ ] `waypoints.yaml` 작성 — 강의실, 상담실, 회의실 등 목적지 좌표 (Nav2로 실제 주행하며 기록)
+
+---
+
+### Phase 2 — 2대 Fleet 구성
+
+> LIMO 2대가 서로를 인식하고 회피하며 독립적으로 주행
+
+- [ ] `ulsan_obstacle_layer` 실기기 검증 — 2대 동시 운행 시 상대 amcl_pose → global costmap LETHAL_OBSTACLE 반영 확인
+- [ ] `wego_bridge` 실운용 — 두 로봇 amcl_pose 노트북(domain 5) 수신 확인
+- [ ] `wego_ui` 관제 GUI — 노트북에서 지도 + 두 로봇 실시간 위치 마커 시각화
+
+---
+
+### Phase 3 — 핵심 기능 구현
+
+#### 미션 제어
+- [ ] `wego_behaviour` 패키지: **Yasmin FSM** 구현 (대기 / 안내 중 / 복귀 중) — DEC-014
+- [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
+- [ ] 중앙 코디네이터 (노트북): robot_status 구독 → on_duty 결정 — DEC-015
+- [ ] Nav2 `navigate_to_pose` 액션 연동
 
 #### 음성 파이프라인
-- [ ] `wego_voice` 패키지: VAD + openWakeWord + faster-whisper (STT) 구현
-- [ ] NLU: 발화 키워드 파싱 → `waypoints.yaml` 목적지 매핑
-- [ ] TTS (Piper) 구현
-- [ ] 음성 파이프라인 → BT 연결 (발화 → navigate_to_pose 호출)
+- [ ] `wego_voice` 패키지: VAD + openWakeWord + faster-whisper (STT)
+- [ ] NLU: 발화 키워드 → `waypoints.yaml` 목적지 매핑
+- [ ] TTS (Piper)
+- [ ] 음성 파이프라인 → FSM 연결
 
-### P2 — 완성도 + 추가 개발
-- [ ] 관제 UI (`wego_ui`, 노트북 전용): 지도 + 두 로봇 실시간 위치 마커 시각화
-- [ ] 초음파/카메라 → local costmap 연동 (움직이는 유리문 동적 장애물 대응)
-- [ ] YOLO 사람 감지 → 방향 회전 + 안내 멘트 발화
-- [ ] NLU 백업: Gemma-2B (Ollama) 네트워크 단절 시 로컬 폴백
+---
+
+### Phase 4 — 완성도
+- [ ] 초음파 센서 → local costmap range_sensor_layer 연동 (유리문 닫힘 감지 + 음성 대기) — 유리문 닫힘 시 경로 생성 불가 → TTS "유리문을 열어주세요" + WAIT 상태
+- [ ] YOLO 사람 감지 → 방향 회전 + 안내 멘트
+- [ ] NLU 백업: Gemma-2B (Ollama) 로컬 폴백
 - [ ] 목적지 도달 후 "추가 용무 확인" 대화 흐름
-- [ ] GPU 메모리 프로파일링 (YOLO + faster-whisper 동시 가동 OOM 검증)
-- [ ] 다국어 안내 검토 (영어권 방문자 대응)
+- [ ] GPU 메모리 프로파일링 (YOLO + faster-whisper 동시 가동)
+- [ ] 다국어 안내 검토
 
 ---
 
