@@ -1,9 +1,9 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**SLAM 지도 작성 준비 중**
-Domain Bridge 실기기 통신 검증 완료 (2026-04-22). Cartographer + AMCL 파라미터 튜닝 정리 완료 (2026-04-27).
-다음 단계: 실기기 SLAM 지도 작성 → 맵 후보정 → 배포.
+**지도 완성 — 맵 배포 및 AMCL 적용 단계**
+SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28).
+다음 단계: AMCL 파라미터 적용 → 맵 파일 각 기기 배포 → 로컬라이제이션 테스트.
 
 ---
 
@@ -50,10 +50,10 @@ Domain Bridge 실기기 통신 검증 완료 (2026-04-22). Cartographer + AMCL �
   TRAJECTORY_BUILDER_2D.ceres_scan_matcher.rotation_weight = 100
   TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 2
   ```
-- [ ] Cartographer SLAM으로 학원 지도 작성 (LIMO 1 기준)
+- [x] Cartographer SLAM으로 학원 지도 작성 (LIMO 1 기준) — done (2026-04-28)
   - 유리에 종이 부착 → 복도 임시 장애물(화분) 배치 → 천천히 루프 주행
   - RViz `/constraint_list`에서 loop closure 노란선 확인 후 저장
-- [ ] 맵 후보정 (GIMP)
+- [x] 맵 후보정 (GIMP) — done (2026-04-28)
   - 화분 흔적 → 흰색(free space)으로 제거
   - 유리 스파이크 노이즈 제거
   - 유리 위치 → 검은 픽셀(가상 벽)으로 처리
