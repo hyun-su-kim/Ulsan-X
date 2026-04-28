@@ -69,13 +69,7 @@ SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28).
   recovery_alpha_slow: 0.001
   recovery_alpha_fast: 0.1
   ```
-- [ ] 맵 파일(`map.pgm`, `map.yaml`) scp로 LIMO 2 및 노트북에 배포
-  ```bash
-  scp map.pgm map.yaml wego@192.168.0.101:~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
-  scp map.pgm map.yaml wego@192.168.0.102:~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
-  scp map.pgm map.yaml user@192.168.0.115:~/maps/
-  scp map.pgm map.yaml user@192.168.0.116:~/maps/
-  ```
+- [x] 맵 파일 배포 — git에 커밋됨(`ulsan_ws/src/wego_2d_nav/maps/`). 각 기기 `git pull`로 자동 배포. scp 불필요.
 - [ ] 노트북에서 맵 + 두 로봇 위치 마커 확인
 
 ### P1 — 핵심 기능 구현 (Core)

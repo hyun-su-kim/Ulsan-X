@@ -1,4 +1,5 @@
 **/.vscode/
+.ros_env.sh
 
 # ROS2 빌드 산출물
 ulsan_ws/build/
