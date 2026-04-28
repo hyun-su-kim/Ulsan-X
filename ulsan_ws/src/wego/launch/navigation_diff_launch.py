@@ -3,8 +3,9 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
-from launch.actions import IncludeLaunchDescription
-from launch.substitutions import PathJoinSubstitution
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
+from launch.conditions import IfCondition
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 from launch_ros.substitutions import FindPackageShare
 
 from launch_ros.descriptions import ParameterFile
@@ -65,6 +66,11 @@ def generate_launch_description():
         }.items()
     )
 
+    declare_use_rviz_cmd = DeclareLaunchArgument(
+        'use_rviz',
+        default_value='true',
+        description='Whether to launch RViz')
+
     # setting for rviz
     rviz_config_node = Node(
             package='rviz2',
@@ -72,9 +78,11 @@ def generate_launch_description():
             name='rviz2',
             output='screen',
             arguments=['-d', rviz_config_path],
+            condition=IfCondition(LaunchConfiguration('use_rviz')),
         )
 
     return LaunchDescription([
+        declare_use_rviz_cmd,
         nav2_container,
         localization_launch,
         navigation_launch,
