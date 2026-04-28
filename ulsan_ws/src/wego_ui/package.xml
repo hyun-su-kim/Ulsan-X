@@ -13,7 +13,7 @@
   <exec_depend>rviz2</exec_depend>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <ament_cmake>
+  <export>
     <build_type>ament_cmake</build_type>
-  </ament_cmake>
+  </export>
 </package>
