@@ -27,7 +27,7 @@ SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28).
 ### P0 — 환경 기반 구축
 - [x] CycloneDDS 설치 및 `cyclonedds_peers.xml` 유니캐스트 설정 — done (2026-04-16), TS-001 참고
 - [x] DOMAIN_ID 확정 — done (2026-04-16): 노트북=5, LIMO 1=6, LIMO 2=7
-- [x] cyclonedds_peers.xml 실제 IP 입력 — done (2026-04-22): LIMO1=192.168.0.100, LIMO2=192.168.0.101, 노트북1=192.168.0.115, 노트북2=192.168.0.116
+- [x] cyclonedds_peers.xml 실제 IP 입력 — done (2026-04-22): LIMO1=192.168.0.101, LIMO2=192.168.0.102, 노트북1=192.168.0.115, 노트북2=192.168.0.116
 - [x] 멀티로봇 통신 설계 확정 — done (2026-04-21): DEC-011, DEC-012
   - **amcl_pose 공유 방식** 채택 (TF frame prefix 방식 폐기)
   - **맵 파일 사전 배포** 방식 채택 (domain bridge로 /map 스트리밍 방식 폐기)
@@ -72,6 +72,7 @@ SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28).
 - [ ] 맵 파일(`map.pgm`, `map.yaml`) scp로 LIMO 2 및 노트북에 배포
   ```bash
   scp map.pgm map.yaml wego@192.168.0.101:~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
+  scp map.pgm map.yaml wego@192.168.0.102:~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
   scp map.pgm map.yaml user@192.168.0.115:~/maps/
   scp map.pgm map.yaml user@192.168.0.116:~/maps/
   ```

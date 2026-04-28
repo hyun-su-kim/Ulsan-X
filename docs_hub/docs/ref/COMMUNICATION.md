@@ -54,8 +54,8 @@ export CYCLONEDDS_URI=file:///home/wego/Ulsan-X/cyclone_peers.xml
 |------|----|-----------|------|
 | 노트북 1 (관제) | 192.168.0.115 | **5** | 개발자 1 |
 | 노트북 2 (관제) | 192.168.0.116 | **5** | 개발자 2 (기능 동일) |
-| LIMO 1 | 192.168.0.100 | **6** | |
-| LIMO 2 | 192.168.0.101 | **7** | |
+| LIMO 1 | 192.168.0.101 | **6** | |
+| LIMO 2 | 192.168.0.102 | **7** | |
 
 > 노트북 2대는 동일한 관제 UI 역할. 개발자가 2명이라 2대이며 기능·설정 동일.
 
@@ -109,7 +109,7 @@ ros2 run nav2_map_server map_saver_cli -f ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/map
 # STEP 2: LIMO 2로 복사
 scp ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map.pgm \
     ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map.yaml \
-    wego@192.168.0.101:~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
+    wego@192.168.0.102:~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
 
 # STEP 3: 노트북으로 복사 (노트북 1, 2 동일)
 scp ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map.pgm \
@@ -151,7 +151,7 @@ scp ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map.pgm \
 □ 각 기기 DOMAIN_ID 확인: echo $ROS_DOMAIN_ID
   → 노트북=5, LIMO 1=6, LIMO 2=7
 
-□ cyclonedds_peers.xml에 실제 IP 주소 입력 — done (LIMO1=192.168.0.100, LIMO2=192.168.0.101, 노트북1=192.168.0.115, 노트북2=192.168.0.116)
+□ cyclonedds_peers.xml에 실제 IP 주소 입력 — done (LIMO1=192.168.0.101, LIMO2=192.168.0.102, 노트북1=192.168.0.115, 노트북2=192.168.0.116)
 □ 각 기기에서 CYCLONEDDS_URI 환경변수 설정 확인
 
 ■ Domain Bridge 실행 후 토픽 브릿징 확인 (노트북에서) — done (2026-04-22)
