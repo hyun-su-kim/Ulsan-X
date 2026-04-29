@@ -21,6 +21,8 @@ def generate_launch_description():
     # for remapping tf topic 
     remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
     
+    maps_dir = os.path.join(wego_share_dir, 'maps')
+
     # set the lifecycle nodes
     lifecycle_nodes = [
         'controller_server',
@@ -29,7 +31,9 @@ def generate_launch_description():
         'behavior_server',
         'bt_navigator',
         'waypoint_follower',
-        'velocity_smoother'
+        'velocity_smoother',
+        'filter_mask_server',        # keepout filter mask 제공
+        'costmap_filter_info_server' # KeepoutFilter에 메타데이터 제공
     ]
 
     load_composable_nodes = GroupAction(
@@ -87,12 +91,39 @@ def generate_launch_description():
                         remappings=remappings +
                             [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'cmd_vel')]
                     ),
+                    # filter_map.pgm을 OccupancyGrid로 /keepout_filter_mask 토픽에 publish
+                    ComposableNode(
+                        package='nav2_map_server',
+                        plugin='nav2_map_server::MapServer',
+                        name='filter_mask_server',
+                        parameters=[{
+                            'yaml_filename': os.path.join(maps_dir, 'filter_mask.yaml'),
+                            'topic_name': '/keepout_filter_mask',
+                            'frame_id': 'map',
+                        }],
+                        remappings=remappings
+                    ),
+                    # 마스크 해석 메타데이터(type, base, multiplier)를 /costmap_filter_info로 publish
+                    # type=0: KeepoutFilter, KeepoutFilter 플러그인이 이를 구독해 마스크 셀을 LETHAL_OBSTACLE로 변환
+                    ComposableNode(
+                        package='nav2_map_server',
+                        plugin='nav2_map_server::CostmapFilterInfoServer',
+                        name='costmap_filter_info_server',
+                        parameters=[{
+                            'type': 0,
+                            'filter_info_topic': '/costmap_filter_info',
+                            'mask_topic': '/keepout_filter_mask',
+                            'base': 0.0,
+                            'multiplier': 1.0,
+                        }],
+                        remappings=remappings
+                    ),
                     ComposableNode( # set the lifecycle manager
                         package='nav2_lifecycle_manager',
                         plugin='nav2_lifecycle_manager::LifecycleManager',
                         name='lifecycle_manager_navigation',
                         parameters=[{
-                            'autostart': True, 
+                            'autostart': True,
                             'node_names': lifecycle_nodes}
                         ],
                     ),
