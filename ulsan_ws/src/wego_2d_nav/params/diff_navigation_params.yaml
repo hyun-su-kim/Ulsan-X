@@ -185,7 +185,7 @@ global_costmap:
       robot_radius: 0.2
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer", "obstacle_layer", "ulsan_obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "ulsan_obstacle_layer", "denoise_layer", "inflation_layer"]
       filters: ["keepout_filter"]
       ulsan_obstacle_layer:
         plugin: "ulsan_obstacle_layer/PeerObstacleLayer"
@@ -212,6 +212,11 @@ global_costmap:
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
+      denoise_layer:
+      	puugin: "nav2_costmap_2d::DenoiseLayer"
+      	enbaled: True
+      	minimal_group_size: 3		# inflation_radius 크기 고려
+      	group_connectivity_type: 8
       # nav2 내장 플러그인. filter_info_topic으로 costmap_filter_info_server와 통신.
       # launch 파일에 costmap_filter_info_server + filter_mask_server 노드 추가 필요.
       keepout_filter:
@@ -221,7 +226,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.05 # 변경
+        inflation_radius: 0.09 # 변경
       always_send_full_costmap: True
 
 local_costmap:
