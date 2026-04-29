@@ -97,7 +97,7 @@ def generate_launch_description():
                         plugin='nav2_map_server::MapServer',
                         name='filter_mask_server',
                         parameters=[{
-                            'yaml_filename': os.path.join(maps_dir, 'filter_mask.yaml'),
+                            'yaml_filename': os.path.join(maps_dir, 'filter_map.yaml'),
                             'topic_name': '/keepout_filter_mask',
                             'frame_id': 'map',
                         }],
