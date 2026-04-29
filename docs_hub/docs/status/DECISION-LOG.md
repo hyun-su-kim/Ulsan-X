@@ -12,9 +12,18 @@
   - 유령 장애물이 경로를 막음 → 반복 리플래닝 → 빙글빙글
   - AMCL 파티클은 정상 → ArUco로 유리 구간 AMCL 보정은 불필요
   - 유리문 닫힘 시 경로 생성 불가 → **운용 정책: 유리문은 항상 열린 상태 유지 가정**
-- **유리 구간 문제 해결 방식**:
-  - **방법 A (즉시)**: Global costmap 파라미터 조정 — `obstacle_max_range` 축소, `obstacle_min_range` 추가로 난반사 포인트 필터링
-  - **방법 B (근본)**: Nav2 Keepout Filter — 유리 구간을 센서 무시 구역으로 지정, LiDAR 데이터 오버라이드
+- **시도한 해결 방법 및 결과**:
+  - `obstacle_max_range` 축소 → phantom이 2m 이내라 효과 없음
+  - Keepout Filter 센서 무시 구역 → phantom이 폴리곤 밖에도 찍혀 효과 없음
+  - 맵 유리 연장 (GIMP) → 로봇 통과 경로 차단
+  - `laser_filters` 각도 필터 → 회전 중 방향 변화로 완벽 해결 불가
+  - `observation_persistence` 단축 → 매 스캔 동일 위치 phantom 재생성으로 효과 없음
+  - VoxelLayer + Orbbec 카메라 → IR 구조광이 유리 투과, depth 값 없음. 유리 감지 불가로 부적합
+- **최종 결정 — Keepout Filter (금지구역) + DenoiseLayer**:
+  - Keepout Filter를 **금지구역**으로 사용: 유리 구간 주변 폴리곤 설정 → global planner가 우회 경로 생성 → 로봇이 유리에서 멀어짐 → 난반사 감소
+  - DenoiseLayer: Nav2 공식 플러그인. 고립 단일 셀 phantom 필터링. Keepout 보조
+  - Nav2 공식 문서 1급 기능. 상용 AMR(iRobot·Locus·Geek+) "가상 벽"과 동일 원리
+  - 면접 어필: "LiDAR 물리적 한계를 소프트웨어로 완전 해결할 수 없음을 인지하고, 전역경로 수준에서 유리 근접 자체를 차단하는 산업 표준 방식을 선택했다"
 - **ArUco 마커 용도 재정의 (DEC-016 핵심 결정)**:
   - 유리 구간 보정 목적 → **폐기**
   - **목적지(강의실, 상담실 등) 도착 시 누적 오차 보정** 목적으로 재정의

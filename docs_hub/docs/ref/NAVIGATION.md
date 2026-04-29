@@ -116,7 +116,7 @@ Nav2 플래너 수정 없이 적용 가능. `peer_pose_topic`을 비워두면 `R
 | 파라미터 | 기본값 | 적용값 | 이유 |
 |---------|--------|--------|------|
 | `do_beamskip` | false | **true** | 유리 투과·난반사 빔 자동 무시 |
-| `laser_max_range` | 12.0 | **5.0** | SLAM 시 max_range와 일치, 원거리 노이즈 제거 |
+| `laser_max_range` | 12.0 | **12.0** | wego_ws 원본 복원 (실기기 테스트 결과 원본이 더 안정적) |
 
 ---
 
@@ -163,12 +163,37 @@ SLAM 시에는 유리문에 종이를 부착해 LiDAR 특징점을 확보하고 
 - 난반사 빔은 raytrace 경로와 달라 자동 소거가 안 됨 → 유령 장애물 지속
 - 유령 장애물이 경로를 막음 → Nav2가 반복 리플래닝 → 빙글빙글
 
-### 해결 방향 (DEC-016)
+### 4단계 — 소프트웨어 해결 방법 전수 검토 (2026-04-29)
 
-| 방법 | 설명 | 상태 |
-|------|------|------|
-| **방법 A** (즉시) | `obstacle_max_range` 축소, `obstacle_min_range` 추가 — 난반사 포인트 필터링 | 적용 예정 |
-| **방법 B** (근본) | Nav2 Keepout Filter — 유리 구간을 센서 무시 구역으로 지정 | 방법 A 효과 확인 후 검토 |
+phantom 원인 확정 후 아래 방법들을 순서대로 시도·검토.
+
+| 방법 | 시도 결과 |
+|------|----------|
+| `obstacle_max_range` 축소 | phantom이 2m 이내 → 효과 없음 |
+| Keepout Filter (센서 무시 구역) | phantom이 폴리곤 밖에도 찍힘 → 효과 없음 |
+| 맵 유리 연장 (GIMP) | 로봇 통과 경로 차단 → 포기 |
+| `laser_filters` 각도 필터 | 회전 중 유리 방향 계속 바뀜 → 완벽 해결 불가 |
+| `observation_persistence` 단축 | phantom이 매 스캔 동일 위치 재생성 → 효과 없음 |
+| `clearing: False` + `combination_method` 조정 | phantom 누적 완화 시도했으나 근본 해결 안 됨 |
+
+**VoxelLayer + Orbbec 카메라 검토 결과**: Orbbec Astra는 IR 구조광 방식으로 유리 투과 → depth 값 없음. LiDAR phantom보다 오히려 유리를 아예 못 잡음. 유리 감지 목적으로는 부적합.
+
+### 최종 결정 — Keepout Filter (금지구역 방식) + DenoiseLayer
+
+**Keepout Filter를 금지구역으로 사용** (센서 무시 구역이 아님):
+- 유리 구간 주변에 금지구역 폴리곤 설정
+- global planner가 해당 구역을 우회하는 경로 생성
+- 로봇이 유리에 가까이 가지 않음 → 난반사 각도 감소 → phantom 감소
+- Nav2 공식 문서 등재 기능, 상용 AMR(iRobot·Locus·Geek+)의 "가상 벽"과 동일 원리
+
+**DenoiseLayer 추가**:
+- Nav2 공식 플러그인 — 고립된 단일 셀 phantom 필터링
+- 설정 거의 없이 바로 적용 가능
+- Keepout Filter 경계 밖으로 새어나오는 phantom 보조 차단
+
+**반사 테이프 (물리적 보완)**:
+- 허용될 경우 LiDAR 높이에 부착 → 유리를 실제 벽으로 인식 → 근본 해결
+- 구현 예정 (Phase 1 완성 후)
 
 > 운용 정책: 유리문은 항상 열린 상태 유지 가정. 닫힘 감지(초음파 + TTS)는 Phase 4.
 

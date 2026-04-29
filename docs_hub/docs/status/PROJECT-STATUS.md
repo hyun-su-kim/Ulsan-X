@@ -44,9 +44,9 @@ SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GI
 - [x] `ulsan_obstacle_layer` 빌드 — LIMO ulsan_ws 전체 빌드 완료. `peer_valid_` 플래그로 상대 amcl_pose 수신 전까지 완전 no-op — 단독 주행에 영향 없음.
 - [ ] Nav2 전체 스택 실기기 테스트 — AMCL 초기 위치 설정(RViz 2D Pose Estimate) 후 동작 확인
 - [ ] AMCL 파라미터 튜닝 (`diff_navigation_params.yaml`) — 실기기 주행하며 확정
-- [ ] **유리 구간 유령 장애물 해결** — LiDAR 난반사 → global costmap 오염 → 빙글빙글 (DEC-016 **확정**)
-  - 방법 A: Global costmap 파라미터 조정 (`obstacle_max_range` 축소, `obstacle_min_range` 추가)
-  - 방법 B: Nav2 Keepout Filter (유리 구간 센서 무시 구역 지정)
+- [ ] **유리 구간 유령 장애물 해결** — LiDAR 난반사 → global costmap 오염 → 빙글빙글 (DEC-016)
+  - 다수 소프트웨어 방법 시도 후 폐기 (obstacle_max_range·observation_persistence·laser_filters 등)
+  - **확정: Keepout Filter (금지구역) + DenoiseLayer** — 구현 예정
   - 유리문은 운용 중 항상 열린 상태로 가정
 - [ ] **ArUco 마커 기반 목적지 정차 보정** — 장시간 운영 시 누적 오차 리셋 (DEC-016)
   - 강의실, 상담실 등 각 목적지 벽에 마커 부착 (10cm × 10cm, DICT_4X4_50)
@@ -89,6 +89,36 @@ SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GI
 - [ ] 목적지 도달 후 "추가 용무 확인" 대화 흐름
 - [ ] GPU 메모리 프로파일링 (YOLO + faster-whisper 동시 가동)
 - [ ] 다국어 안내 검토
+
+---
+
+## Nav2 단독 주행 현황 (2026-04-29 기준)
+
+### 정상 동작
+- 복도·강의실 등 일반 구간 자율주행 정상
+- AMCL 위치추정 정상 (RViz `/particlecloud` 파티클 수렴 확인)
+
+### 미해결 문제
+
+| 문제 | 원인 | 해결 방향 | 상태 |
+|------|------|----------|------|
+| 유리 회전문 구간 빙글빙글 / 통과 불가 | LiDAR 난반사 → global costmap phantom obstacle | Keepout Filter + DenoiseLayer | **구현 예정** |
+| `waypoints.yaml` 미작성 | 실기기 주행하며 RViz로 좌표 기록 필요 | Nav2 주행 안정화 후 진행 | 미착수 |
+| AMCL 파라미터 미최적화 | 위치추정은 되나 장시간 운영 시 drift 가능성 | 실기기 장시간 주행하며 확정 | 진행 중 |
+
+### phantom obstacle 해결 시도 이력
+
+| 시도 방법 | 결과 |
+|----------|------|
+| `obstacle_max_range` 축소 | phantom이 2m 이내 → 범위 축소로 효과 없음 |
+| `observation_persistence` 단축 | 매 스캔 동일 위치 재생성 → 효과 없음 |
+| `laser_filters` 각도 필터 | 회전 중 유리 방향 계속 변화 → 완벽 해결 불가 |
+| 맵 유리 구간 연장 (GIMP) | 로봇 통과 경로 차단 → 포기 |
+| Keepout Filter (센서 무시 구역) | phantom이 폴리곤 밖에도 생성 → 효과 없음 |
+| `clearing` / `combination_method` 조정 | 근본 해결 안 됨 |
+| VoxelLayer + Orbbec 카메라 검토 | IR 카메라도 유리 투과 → depth 값 없음 → 부적합 |
+
+> 상세 엔지니어링 판단 기록: `docs/ref/NAVIGATION.md` — "Nav2 주행 문제 해결 과정" 섹션
 
 ---
 
