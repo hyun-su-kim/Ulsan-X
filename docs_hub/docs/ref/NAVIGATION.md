@@ -29,50 +29,79 @@ scp wego@<LIMO1_IP>:~/map_result/map.* \
 
 ---
 
+## SLAM 품질 향상 절차 (학원 환경 — 유리+복도)
+
+실기기 SLAM 시 발생한 문제와 해결 순서.
+
+### 문제
+- 유리 구간: LiDAR가 유리를 투과 → 특징점 없음 → 맵에 구멍
+- 복도 구간: 양쪽 벽만 있는 긴 직선 → loop closure 실패 → 복도 휨(drift)
+
+### 해결 절차
+
+1. **유리에 종이 부착** — LiDAR 반사 특징점 확보. 매핑 완료 후 제거.
+2. **복도 중간에 임시 장애물 배치** — 특징점 추가로 복도 drift 방지.
+3. **천천히 루프 주행(왕복)으로 매핑**
+   - RViz에서 `/constraint_list` 토픽 확인
+   - 노란 선이 출발 지점 부근에 생기면 loop closure 성공
+4. **맵 저장 후 임시 장애물 실제 환경에서 제거**
+5. **GIMP로 후보정** — 장애물 흔적 및 스파이크 노이즈 제거
+6. **가상 벽 처리** — 유리문 등 인식이 덜 된 구간을 GIMP로 직접 벽 그리기
+
+```bash
+# 맵 저장
+ros2 run nav2_map_server map_saver_cli -f ~/map_result/map
+
+# 저장된 맵을 프로젝트로 복사 (노트북에서 scp)
+scp wego@<LIMO1_IP>:~/map_result/map.* \
+  /home/wego/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
+```
+
+---
+
 ## 멀티로봇 위치 추정 구조
 
-### TF frame 분리 방식 (DEC-005 참고)
+> DEC-011 (2026-04-21): TF frame prefix 방식 폐기 → **amcl_pose 공유 방식** 확정
 
-각 로봇이 서로 다른 ROS domain(LIMO1=6, LIMO2=7)에서 동작하므로 토픽 이름은 그대로 둠.
-노트북(domain 5)에서 두 로봇의 `/tf`를 머지할 때만 frame 이름이 충돌 → **frame ID만 다르게 설정**.
+### 설계 원칙
+
+각 로봇은 표준 TF 프레임을 그대로 유지 (`base_link`, `odom`, `map`). prefix 없음.
+위치 정보는 `/amcl_pose`만 domain bridge로 전달. `/tf` 브릿징 없음.
 
 ```
-LIMO 1 (domain 6):  map → robot1/odom → robot1/base_link
-LIMO 2 (domain 7):  map → robot2/odom → robot2/base_link
-
-노트북 (domain 5, domain bridge 수신 후):
-  map
-  ├── robot1/odom → robot1/base_link
-  └── robot2/odom → robot2/base_link
+LIMO 1 (domain 6)            LIMO 2 (domain 7)
+map → odom → base_link       map → odom → base_link
+      ↓ /amcl_pose                  ↓ /amcl_pose
+      [wego_bridge]                 [wego_bridge]
+             ↓                             ↓
+        노트북 (domain 5)
+        /limo_1/amcl_pose   /limo_2/amcl_pose
+             ↓                             ↓
+        wego_ui (지도 위 위치 마커 시각화)
 ```
 
 ### 실행 방법
 
 ```bash
-# LIMO 1 (domain 6)에서
-ros2 launch wego navigation_diff_launch.py robot_name:=robot1
+# LIMO 1, LIMO 2 동일한 명령 (robot_name 인자 없음)
+ros2 launch wego teleop_launch.py
+ros2 launch wego navigation_diff_launch.py
+ros2 launch wego_bridge robot_bridge_launch.py  # ROS_DOMAIN_ID 읽어 자동 설정
 
-# LIMO 2 (domain 7)에서
-ros2 launch wego navigation_diff_launch.py robot_name:=robot2
+# 노트북 (domain 5)
+ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=<path>/map.yaml
 ```
 
-`robot_name` 인자가 `diff_navigation_params.yaml`의 `ROBOT_NAME` 플레이스홀더를 치환.
-→ AMCL의 `base_frame_id`, `odom_frame_id`, costmap의 `robot_base_frame` 등 자동 적용.
+### 상대 로봇 충돌 회피 (ulsan_obstacle_layer)
 
-### 변경된 파라미터 항목 (`diff_navigation_params.yaml`)
+```
+상대방 /amcl_pose 수신 (domain bridge 경유)
+  → PeerObstacleLayer: 해당 좌표에 반경 0.35m 원형 가상 장애물 생성
+  → global costmap LETHAL_OBSTACLE 주입
+  → Nav2 글로벌 플래너(A*)가 자동 우회 경로 생성
+```
 
-| 파라미터 | 원래 값 | robot1 실행 시 | robot2 실행 시 |
-|---------|---------|--------------|--------------|
-| `amcl.base_frame_id` | `base_link` | `robot1/base_link` | `robot2/base_link` |
-| `amcl.odom_frame_id` | `odom` | `robot1/odom` | `robot2/odom` |
-| `bt_navigator.robot_base_frame` | `base_link` | `robot1/base_link` | `robot2/base_link` |
-| `global_costmap.robot_base_frame` | `base_link` | `robot1/base_link` | `robot2/base_link` |
-| `global_costmap.global_frame` | `map` | `map` (변경 없음) | `map` (변경 없음) |
-| `local_costmap.global_frame` | `odom` | `robot1/odom` | `robot2/odom` |
-| `local_costmap.robot_base_frame` | `base_link` | `robot1/base_link` | `robot2/base_link` |
-| `behavior_server.local_frame` | `odom` | `robot1/odom` | `robot2/odom` |
-| `behavior_server.robot_base_frame` | `base_link` | `robot1/base_link` | `robot2/base_link` |
-| `fleet_obstacle_layer.pose_topic` | — | `robot2/amcl_pose` | `robot1/amcl_pose` |
+Nav2 플래너 수정 없이 적용 가능. `peer_pose_topic`을 비워두면 `ROS_DOMAIN_ID`로 자동 결정 (domain 6 → limo_2, domain 7 → limo_1).
 
 ---
 
@@ -81,7 +110,67 @@ ros2 launch wego navigation_diff_launch.py robot_name:=robot2
 - **방식**: Nav2 내장 AMCL (Adaptive Monte Carlo Localization)
 - **사용 센서**: LiDAR 스캔 (`/scan`)
 - **초기 위치**: Home 위치에서 초기 pose estimate 설정
-- **파티클 필터**: 기본 설정 사용 → 필요 시 튜닝
+
+### 수정된 AMCL 파라미터 (`diff_navigation_params.yaml`)
+
+| 파라미터 | 기본값 | 적용값 | 이유 |
+|---------|--------|--------|------|
+| `do_beamskip` | false | **true** | 유리 투과·난반사 빔 자동 무시 |
+| `laser_max_range` | 12.0 | **5.0** | SLAM 시 max_range와 일치, 원거리 노이즈 제거 |
+
+---
+
+## Nav2 주행 문제 해결 과정 — 유리 구간 (2026-04-28~29)
+
+포트폴리오·면접용 엔지니어링 판단 기록.
+
+### 배경
+
+SLAM 시에는 유리문에 종이를 부착해 LiDAR 특징점을 확보하고 맵을 완성했다.
+실제 운용 환경에서는 종이가 없으므로, 유리 구간에서 LiDAR 스캔 특징점이 부족해질 수 있었다.
+
+### 1단계 — AMCL 위치추정 문제 의심
+
+**증상**: 유리 회전문 통과 구간에서 로봇이 빙글빙글 돌며 통과 못함.
+
+**초기 가설**: 유리 구간에서 LiDAR가 특징점을 인식하지 못해 AMCL 파티클이 수렴하지 못하는 것 아닌가?
+
+**조치**: AMCL 파라미터 수정
+- `do_beamskip: true` — 유리 투과·난반사 빔 자동 무시
+- `laser_max_range: 5.0` — 원거리 노이즈 제거
+
+**결과**: RViz `/particlecloud` 확인 → 파티클이 유리 구간에서도 정상 수렴.
+→ **위치추정은 문제가 아니었다.** 가설 기각.
+
+### 2단계 — Inflation 조정 시도
+
+복도·강의실 등 다른 구간은 주행 정상. 유리 회전문 구간만 빙글빙글 도는 현상 지속.
+
+**가설**: 유리문 근처를 로봇이 지나갈 여유 공간이 부족한 것 아닌가?
+
+**조치**: global costmap `inflation_layer`의 `inflation_radius` 확대 (유리문 근처 여유 공간 확보 목적)
+
+**결과**: 해결되지 않음.
+
+### 3단계 — Global Costmap 시각화로 원인 확인
+
+**조치**: RViz에서 `/global_costmap/costmap` 토픽 직접 확인.
+
+**관찰**: 유리 회전문 구간 주변에 실제 장애물이 없음에도 costmap 곳곳에 장애물(occupied cell)이 찍혀 있음.
+
+**원인 확정**: **LiDAR 난반사(phantom obstacle)**
+- LiDAR 빔이 유리를 투과하거나 난반사 → 실제 없는 위치에 장애물 포인트 생성
+- 난반사 빔은 raytrace 경로와 달라 자동 소거가 안 됨 → 유령 장애물 지속
+- 유령 장애물이 경로를 막음 → Nav2가 반복 리플래닝 → 빙글빙글
+
+### 해결 방향 (DEC-016)
+
+| 방법 | 설명 | 상태 |
+|------|------|------|
+| **방법 A** (즉시) | `obstacle_max_range` 축소, `obstacle_min_range` 추가 — 난반사 포인트 필터링 | 적용 예정 |
+| **방법 B** (근본) | Nav2 Keepout Filter — 유리 구간을 센서 무시 구역으로 지정 | 방법 A 효과 확인 후 검토 |
+
+> 운용 정책: 유리문은 항상 열린 상태 유지 가정. 닫힘 감지(초음파 + TTS)는 Phase 4.
 
 ---
 

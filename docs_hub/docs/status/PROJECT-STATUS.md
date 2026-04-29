@@ -2,8 +2,7 @@
 
 ## Current Phase
 **단일 로봇 자율주행 검증 단계**
-SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28). Nav2 실기기 테스트 중.
-유리 구간 AMCL 위치추정 불안정 문제 확인 → 마커 방식(레트로리플렉터 vs ArUco) 검토 중 (DEC-016).
+SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GIMP 후보정). Nav2 주행 문제 해결 중.
 
 ---
 
@@ -30,9 +29,10 @@ SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28). Nav2 실기기 테스�
 - [x] cyclonedds_peers.xml 실제 IP 입력 — done (2026-04-22): LIMO1=192.168.0.101, LIMO2=192.168.0.102, 노트북1=192.168.0.115, 노트북2=192.168.0.116
 - [x] 멀티로봇 통신 설계 확정 — done (2026-04-21): DEC-011, DEC-012
 - [x] `wego_bridge` 패키지 구현 + 실기기 통신 검증 — done (2026-04-22)
-- [x] Cartographer 파라미터 수정 (`wego/config/limo_lds_2d.lua`) — 유리+복도 환경 대응
-- [x] Cartographer SLAM 지도 작성 (LIMO 1) — done (2026-04-28)
-- [x] 맵 후보정 (GIMP) — done (2026-04-28)
+- [x] Cartographer SLAM 지도 작성 완료 — done (2026-04-28~29)
+  - 유리 구간: 종이 부착으로 LiDAR 특징점 확보 (매핑 후 제거)
+  - 복도 drift: 임시 장애물 배치 + 루프 주행(왕복) + `/constraint_list` loop closure 확인
+  - 후처리: GIMP 노이즈 제거 + 유리문 구간 가상 벽 처리
 - [x] 맵 파일 git 커밋 — 각 기기 `git pull`로 배포
 
 ---
