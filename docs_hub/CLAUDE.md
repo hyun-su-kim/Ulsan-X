@@ -88,6 +88,7 @@ ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=~/maps/map.yaml
 | 음성 파이프라인 | `docs/ref/VOICE-PIPELINE.md` | 음성 관련 작업 시 |
 | SLAM & Nav2 | `docs/ref/NAVIGATION.md` | 경로 계획, waypoints 작업 시 |
 | 통신 설정 | `docs/ref/COMMUNICATION.md` | CycloneDDS, Domain Bridge 작업 시 |
+| ArUco 보정 | `docs/ref/ARUCO-LOCALIZER.md` | ArUco 마커 로컬라이제이션 작업 시 |
 
 ## 문서 관리 커맨드
 - `/doc-update` — 코드 변경 후 관련 문서 갱신

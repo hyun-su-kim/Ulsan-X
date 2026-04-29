@@ -44,11 +44,10 @@ SLAM 지도 작성 + GIMP 후보정 완료 (2026-04-28). Nav2 실기기 테스�
 - [x] `ulsan_obstacle_layer` 빌드 — LIMO ulsan_ws 전체 빌드 완료. `peer_valid_` 플래그로 상대 amcl_pose 수신 전까지 완전 no-op — 단독 주행에 영향 없음.
 - [ ] Nav2 전체 스택 실기기 테스트 — AMCL 초기 위치 설정(RViz 2D Pose Estimate) 후 동작 확인
 - [ ] AMCL 파라미터 튜닝 (`diff_navigation_params.yaml`) — 실기기 주행하며 확정
-- [ ] **마커 기반 AMCL 위치추정 보강** — 유리 구간 빙글빙글 문제 해결 (DEC-016)
-  - 마커 종류 결정 **미완료** (2026-04-29 결정 예정)
-    - A) 레트로리플렉터: LiDAR 기반, SLAM 재수행 필요, 소프트웨어 변경 없음
-    - B) ArUco/AprilTag: 카메라 기반, SLAM 재수행 불필요, AMCL 보정 노드 구현 필요 (Orbbec 카메라 기존 탑재)
+- [ ] **마커 기반 AMCL 위치추정 보강** — 유리 구간 빙글빙글 문제 해결 (DEC-016 **확정**)
+  - **ArUco 마커 채택** (10cm × 10cm, 종이 인쇄) — `wego_aruco` 패키지 신규 구현
   - 유리문은 운용 중 항상 열린 상태로 가정
+  - 구현 계획: `docs/ref/ARUCO-LOCALIZER.md` 참고
 - [ ] `waypoints.yaml` 작성 — 강의실, 상담실, 회의실 등 목적지 좌표 (Nav2로 실제 주행하며 기록)
 
 ---
