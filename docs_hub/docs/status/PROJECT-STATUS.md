@@ -42,12 +42,11 @@ SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GI
 > LIMO 1대가 학원을 완벽하게 자율주행하는 것이 목표
 
 - [x] `ulsan_obstacle_layer` 빌드 — LIMO ulsan_ws 전체 빌드 완료. `peer_valid_` 플래그로 상대 amcl_pose 수신 전까지 완전 no-op — 단독 주행에 영향 없음.
-- [ ] Nav2 전체 스택 실기기 테스트 — AMCL 초기 위치 설정(RViz 2D Pose Estimate) 후 동작 확인
+- [x] Nav2 전체 스택 실기기 테스트 — 목적지·홈 구간 정상 주행 확인 (2026-04-29)
 - [ ] AMCL 파라미터 튜닝 (`diff_navigation_params.yaml`) — 실기기 주행하며 확정
-- [ ] **유리 구간 유령 장애물 해결** — LiDAR 난반사 → global costmap 오염 → 빙글빙글 (DEC-016)
-  - 다수 소프트웨어 방법 시도 후 폐기 (obstacle_max_range·observation_persistence·laser_filters 등)
-  - **확정: Keepout Filter (금지구역) + DenoiseLayer** — 구현 예정
-  - 유리문은 운용 중 항상 열린 상태로 가정
+- [x] **유리 구간 유령 장애물** — Keepout Filter + DenoiseLayer 적용 완료 (2026-04-29)
+  - 목적지·홈 구간 주행에 문제 없음 → 운용상 수용
+  - 유리 회전문 통과는 LiDAR 물리 한계로 소프트웨어 완전 해결 불가 → **운용 정책: 유리 회전문 구간은 경로에서 제외**
 - [ ] **ArUco 마커 기반 목적지 정차 보정** — 장시간 운영 시 누적 오차 리셋 (DEC-016)
   - 강의실, 상담실 등 각 목적지 벽에 마커 부착 (10cm × 10cm, DICT_4X4_50)
   - 도착 시 마커 감지 → `/initialpose` 보정 → 정확한 정차 위치 보장
@@ -97,26 +96,23 @@ SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GI
 ### 정상 동작
 - 복도·강의실 등 일반 구간 자율주행 정상
 - AMCL 위치추정 정상 (RViz `/particlecloud` 파티클 수렴 확인)
+- **목적지·홈 위치 주행 정상 — 운용 목적 달성**
+- Keepout Filter (금지구역) + DenoiseLayer 적용 완료
 
-### 미해결 문제
+### 확정된 한계 및 운용 정책
 
-| 문제 | 원인 | 해결 방향 | 상태 |
-|------|------|----------|------|
-| 유리 회전문 구간 빙글빙글 / 통과 불가 | LiDAR 난반사 → global costmap phantom obstacle | Keepout Filter + DenoiseLayer | **구현 예정** |
-| `waypoints.yaml` 미작성 | 실기기 주행하며 RViz로 좌표 기록 필요 | Nav2 주행 안정화 후 진행 | 미착수 |
-| AMCL 파라미터 미최적화 | 위치추정은 되나 장시간 운영 시 drift 가능성 | 실기기 장시간 주행하며 확정 | 진행 중 |
+| 항목 | 내용 |
+|------|------|
+| 유리 회전문 통과 | LiDAR 물리 한계. 소프트웨어 완전 해결 불가. **경로에서 영구 제외** |
+| Keepout Filter 적용 범위 | global costmap만 적용. local costmap phantom은 소거 불가. |
+| 운용 전제 | 유리문은 항상 열린 상태 유지. 안내 주행 목적에 유리 회전문 통과 불필요. |
 
-### phantom obstacle 해결 시도 이력
+### 미해결 과제
 
-| 시도 방법 | 결과 |
-|----------|------|
-| `obstacle_max_range` 축소 | phantom이 2m 이내 → 범위 축소로 효과 없음 |
-| `observation_persistence` 단축 | 매 스캔 동일 위치 재생성 → 효과 없음 |
-| `laser_filters` 각도 필터 | 회전 중 유리 방향 계속 변화 → 완벽 해결 불가 |
-| 맵 유리 구간 연장 (GIMP) | 로봇 통과 경로 차단 → 포기 |
-| Keepout Filter (센서 무시 구역) | phantom이 폴리곤 밖에도 생성 → 효과 없음 |
-| `clearing` / `combination_method` 조정 | 근본 해결 안 됨 |
-| VoxelLayer + Orbbec 카메라 검토 | IR 카메라도 유리 투과 → depth 값 없음 → 부적합 |
+| 문제 | 상태 |
+|------|------|
+| `waypoints.yaml` 미작성 | Phase 2 직후 진행 |
+| AMCL 파라미터 미최적화 | 장시간 운영 시 drift 가능성 — 진행 중 |
 
 > 상세 엔지니어링 판단 기록: `docs/ref/NAVIGATION.md` — "Nav2 주행 문제 해결 과정" 섹션
 
