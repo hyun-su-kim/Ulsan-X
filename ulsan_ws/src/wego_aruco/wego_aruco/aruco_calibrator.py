@@ -130,6 +130,9 @@ class ArucoCalibrator(Node):
         # 현재 이미지에서 감지된 마커 목록 [(id, T_camera_marker), ...]
         self._detected: list[tuple[int, np.ndarray]] = []
 
+        # 마커 감지 상태 변화 감지용 (상태가 바뀔 때만 출력)
+        self._prev_detected_ids: set = set()
+
         # 저장된 결과 (yaml 파일에 누적)
         self._markers_data: dict = {}    # markers.yaml 내용
         self._waypoints_data: dict = {}  # waypoints.yaml 내용
@@ -215,10 +218,15 @@ class ArucoCalibrator(Node):
 
             self._detected.append((marker_id, T_camera_marker))
 
-        if self._detected:
-            ids_str = [str(d[0]) for d in self._detected]
-            self.get_logger().info(
-                f'[캘리브레이터] 마커 감지됨: ID {ids_str}', throttle_duration_sec=2.0)
+        # 감지된 마커 ID 집합이 바뀔 때만 출력 (타이핑 방해 방지)
+        current_ids = {d[0] for d in self._detected}
+        if current_ids != self._prev_detected_ids:
+            if current_ids:
+                print(f'\n[마커 감지] ID {sorted(current_ids)} — 목적지 이름 입력 후 엔터: ',
+                      end='', flush=True)
+            else:
+                print('\n[마커 없음] 카메라 시야 안에 마커를 위치시키세요.', flush=True)
+            self._prev_detected_ids = current_ids
 
     # ── 키보드 입력 루프 (별도 스레드) ─────────────────────────
 
@@ -233,7 +241,8 @@ class ArucoCalibrator(Node):
 
         while True:
             try:
-                name = input('목적지 이름 입력 (예: room_1, counseling_room): ').strip()
+                # 마커 감지 로그가 위에서 프롬프트를 출력하므로 여기선 빈 input()
+                name = input('').strip()
             except EOFError:
                 break
 
