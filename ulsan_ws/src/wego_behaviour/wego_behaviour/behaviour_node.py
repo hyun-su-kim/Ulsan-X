@@ -49,7 +49,12 @@ def main():
         waypoints = yaml.safe_load(f)['waypoints']
 
     node = BehaviourNode(waypoints)
-    navigator = BasicNavigator(node=node)
+    navigator = BasicNavigator()
+
+    # rclpy.spin은 별도 스레드에서 실행 (FSM이 메인 스레드를 점유하므로)
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
+
     navigator.waitUntilNav2Active()
 
     sm = StateMachine(outcomes=['finished'])
@@ -57,9 +62,6 @@ def main():
     sm.add_state('GUIDING',   GuidingState(node, navigator),        transitions={'succeeded': 'RETURNING', 'failed': 'IDLE'})
     sm.add_state('RETURNING', ReturningState(node, navigator),      transitions={'succeeded': 'IDLE',      'failed': 'IDLE'})
 
-    # rclpy.spin은 별도 스레드에서 실행 (FSM이 메인 스레드를 점유하므로)
-    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
-    spin_thread.start()
 
     try:
         sm.execute()
