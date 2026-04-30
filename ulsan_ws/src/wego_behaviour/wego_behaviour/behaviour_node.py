@@ -51,11 +51,11 @@ def main():
     node = BehaviourNode(waypoints)
     navigator = BasicNavigator()
 
+    navigator.waitUntilNav2Active()
+
     # rclpy.spin은 별도 스레드에서 실행 (FSM이 메인 스레드를 점유하므로)
     spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
     spin_thread.start()
-
-    navigator.waitUntilNav2Active()
 
     sm = StateMachine(outcomes=['finished'])
     sm.add_state('IDLE',      IdleState(node),                      transitions={'goto_destination': 'GUIDING'})
