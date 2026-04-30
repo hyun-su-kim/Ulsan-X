@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 import rclpy
 import yaml
+from ament_index_python.packages import get_package_share_directory
 from cv_bridge import CvBridge
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.node import Node
@@ -69,9 +70,9 @@ class ArucoLocalizer(Node):
     ARUCO_DICT  = cv2.aruco.DICT_4X4_50
     MARKER_SIZE = 0.10  # 마커 한 변 길이 (m) — 캘리브레이터와 동일해야 함
 
-    # markers.yaml 경로
+    # markers.yaml 경로: install/wego_aruco/share/wego_aruco/config/
     CONFIG_DIR = os.path.join(
-        os.path.dirname(__file__), '..', '..', 'config'
+        get_package_share_directory('wego_aruco'), 'config'
     )
 
     def __init__(self):

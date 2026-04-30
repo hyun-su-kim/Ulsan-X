@@ -12,12 +12,16 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 |------|------|------------|
 | 시스템 아키텍처 설계 | **완료** | — |
 | 통신 환경 구성 (CycloneDDS + Domain Bridge) | **완료** | wego_bridge |
-| 관제 UI (domain 5 위치 시각화) | **완료** | wego_ui |
+| 관제 UI 임시 테스트용 (RViz 위치 시각화) | **완료** | wego_ui |
 | SLAM 지도 작성 | **완료** | wego (cartographer) |
 | Nav2 경로 계획 & AMCL | **완료** | wego_2d_nav |
 | Fleet 충돌 회피 (PeerObstacleLayer) | **완료** | ulsan_obstacle_layer |
-| 행동 트리 최상단 관리 | planned | wego_behaviour (신규) |
+| waypoints.yaml 목적지 좌표 작성 | planned | wego_behaviour/config |
+| 행동 트리 최상단 관리 (FSM + BT 커스텀) | planned | wego_behaviour (신규) |
 | 음성 파이프라인 (VAD→Wake→STT→NLU→TTS) | planned | wego_voice (신규) |
+| 멀티로봇 on_duty 코디네이터 | planned | wego_coordinator (신규, 노트북) |
+| ArUco 마커 목적지 정차 보정 | planned | wego_aruco (신규) |
+| 데모용 Qt 관제 UI | planned | wego_ui (재구현) |
 
 ---
 
@@ -67,10 +71,12 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 
 ### Phase 3 — 핵심 기능 구현
 
+#### 사전 작업
+- [ ] `waypoints.yaml` 작성 — 강의실, 상담실, 회의실 등 목적지 좌표 (Nav2 실주행하며 기록)
+
 #### 미션 제어
 - [ ] `wego_behaviour` 패키지: **Yasmin FSM** 구현 (대기 / 안내 중 / 복귀 중) — DEC-014
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
-- [ ] 중앙 코디네이터 (노트북): robot_status 구독 → on_duty 결정 — DEC-015
 - [ ] Nav2 `navigate_to_pose` 액션 연동
 
 #### 음성 파이프라인
@@ -78,6 +84,28 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 - [ ] NLU: 발화 키워드 → `waypoints.yaml` 목적지 매핑
 - [ ] TTS (Piper)
 - [ ] 음성 파이프라인 → FSM 연결
+
+#### 멀티로봇 코디네이터
+- [ ] `wego_coordinator` 패키지 (노트북 전용): robot_status 구독 → on_duty 결정 — DEC-015
+- [ ] `/limo_N/robot_status` 구독 + `/limo_N/on_duty` 발행
+- [ ] wego_behaviour FSM과 on_duty 연동 확인
+
+#### ArUco 보정
+- [ ] `wego_aruco` 패키지: 목적지 도착 시 마커 감지 → `/initialpose` 보정
+- [ ] `markers.yaml` 목적지별 마커 좌표 입력 (실주행 후 기록)
+- [ ] 실기기 검증
+
+#### 데모용 관제 UI
+- [ ] `wego_ui` Qt 기반 재구현 (현재는 임시 RViz 테스트용)
+  - 지도 + 두 로봇 실시간 위치 마커
+  - 각 로봇 상태 (IDLE / BUSY / RETURNING) 표시
+  - on_duty 로봇 하이라이트
+  - 목적지 선택 / 수동 명령 패널
+
+#### 전체 통합 테스트
+- [ ] LIMO 2대 + 노트북 전체 파이프라인 실기기 검증
+  - 웨이크워드 → STT → NLU → FSM → navigate_to_pose → ArUco 보정 → TTS
+  - on_duty 전환 (LIMO 1 BUSY 시 LIMO 2 응대)
 
 ---
 

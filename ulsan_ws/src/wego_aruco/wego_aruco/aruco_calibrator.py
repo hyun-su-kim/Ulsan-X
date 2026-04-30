@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 import rclpy
 import yaml
+from ament_index_python.packages import get_package_share_directory
 from cv_bridge import CvBridge
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.node import Node
@@ -87,9 +88,10 @@ class ArucoCalibrator(Node):
     # 마커 한 변 길이 (m) — 인쇄한 실물 크기와 일치해야 함
     MARKER_SIZE = 0.10
 
-    # 저장 경로 (패키지 설치 경로 대신 소스 config 디렉토리에 직접 저장)
+    # 저장 경로: ament가 설치한 share 디렉토리 안의 config 폴더
+    # install/wego_aruco/share/wego_aruco/config/
     CONFIG_DIR = os.path.join(
-        os.path.dirname(__file__), '..', '..', 'config'
+        get_package_share_directory('wego_aruco'), 'config'
     )
 
     def __init__(self):
