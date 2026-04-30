@@ -24,6 +24,7 @@ setup(
         'console_scripts': [
             'aruco_calibrator = wego_aruco.aruco_calibrator:main',
             'aruco_localizer  = wego_aruco.aruco_localizer:main',
+            'waypoint_goto    = wego_aruco.waypoint_goto:main',
         ],
     },
 )
