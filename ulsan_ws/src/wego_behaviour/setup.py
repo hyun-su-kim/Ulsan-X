@@ -28,6 +28,7 @@ setup(
         'console_scripts': [
             'behaviour_node = wego_behaviour.behaviour_node:main',
             'waypoint_recorder = wego_behaviour.waypoint_recorder:main',
+            'goal_test_node = wego_behaviour.goal_test_node:main',
         ],
     },
 )
