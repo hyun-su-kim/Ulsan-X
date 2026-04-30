@@ -44,7 +44,7 @@ LIMO 2, 노트북에 파일 복사
 
 **설계 근거**: Open-RMF(ROS2 공식 fleet 관제 표준)와 동일한 "pose 공유" 원칙. TF 트리/맵 전체를 fleet 경계 너머로 브릿징하지 않고, 위치 정보(pose)만 선택적으로 전달. 2대 소규모 시스템에서 적절한 복잡도.
 
-**운용 원칙**: 리더 로봇이 대기(idle) 상태일 때만 서브 로봇은 대기. 리더가 busy(안내 중/복귀 중)이면 서브가 활성화. → 우선순위 기반 임무 할당.
+**운용 원칙 (DEC-015)**: 노트북 `wego_coordinator`가 두 로봇 상태를 보고 on_duty 로봇을 결정. LIMO1 IDLE이면 LIMO1 on_duty, LIMO1 BUSY이면 LIMO2 on_duty. 둘 다 BUSY이면 대기.
 
 ---
 
@@ -88,40 +88,44 @@ ulsan_ws/src/
 ├── wego/                  # 기존: 로봇 기본 드라이버, Cartographer SLAM
 ├── wego_2d_nav/           # 기존: Nav2 기반 2D 경로 계획
 ├── wego_msgs/             # 기존: 공통 메시지 타입 정의
-├── ulsan_obstacle_layer/  # C++: 상대 로봇 amcl_pose → global costmap LETHAL_OBSTACLE 주입
-├── wego_behaviour/        # 신규: 최상단 Behavior Tree (임무 관리)
-└── wego_voice/            # 신규: 음성 파이프라인 (VAD→Wake→STT→NLU→TTS)
+├── wego_bridge/           # 구현 완료: amcl_pose domain bridge (LIMO 전용)
+├── ulsan_obstacle_layer/  # 구현 완료: 상대 로봇 amcl_pose → global costmap LETHAL_OBSTACLE 주입 (C++)
+├── wego_ui/               # 구현 완료: RViz 기반 관제 UI (노트북 전용, 임시)
+├── wego_behaviour/        # 뼈대 완료: Yasmin FSM (IDLE/GUIDING/RETURNING) + Nav2 연동
+├── wego_voice/            # 미구현: 음성 파이프라인 (VAD→Wake→STT→NLU→TTS)
+├── wego_aruco/            # 미구현: 홈 복귀 ArUco 보정
+└── wego_coordinator/      # 미구현: on_duty 결정 (노트북 전용, laptop_ws)
 ```
 
 ---
 
-## 행동 트리 (Behavior Tree) 구조
+## 미션 제어 구조 (wego_behaviour)
+
+DEC-014: 최상단은 **Yasmin FSM**, 실행 레이어는 **Nav2 BT** (하이브리드).
 
 ```
-wego_behaviour (최상단 BT)
-│
-├── [Fallback] 로봇 활성화 조건
-│   ├── 리더 idle? → 리더 활성화
-│   └── 리더 busy? → 서브 활성화
-│
-└── [Sequence] 안내 임무
-    ├── [대기 상태]
-    │   ├── YOLO 사람 감지 → 주기적 안내 멘트 발화
-    │   └── VAD → openWakeWord "헤이 리모" 감지
-    │
-    ├── [호출 응답]
-    │   ├── YOLO 방향으로 로봇 회전
-    │   ├── "어떤 도움을 드릴까요?" TTS
-    │   └── STT → NLU 명령 해석
-    │
-    ├── [안내 임무] → Nav2 BT에 목적지(waypoint) 전달
-    │
-    └── [복귀]
-        ├── 목적지 도달 후 추가 용무 확인
-        └── 없으면 Home 좌표로 Nav2 복귀
+wego_coordinator (노트북)
+  /on_duty → wego_behaviour FSM
+                │
+                ├── IDLE
+                │   └── /goal_destination 수신 대기 (wego_voice → NLU 결과)
+                │
+                ├── GUIDING
+                │   └── navigate_to_pose(목적지 좌표) → Nav2 BT 위임
+                │
+                └── RETURNING
+                    └── navigate_to_pose(home 좌표) → Nav2 BT 위임
+                        └── 홈 도착 → wego_aruco 서비스 호출 (정밀 보정)
 ```
 
-`wego_behaviour`는 최상단 결정만 담당. 실제 주행은 **Nav2 BT**에 위임.
+`wego_behaviour`는 **어디로 갈지** 결정만 담당. 실제 주행은 **Nav2 내부 BT**에 위임 (경로 계획·장애물 회피·복구 포함).
+
+### Nav2 BT 커스텀 노드 (구현 예정, DEC-014)
+
+| 노드 | 타입 | 역할 |
+|------|------|------|
+| `VoiceTriggerCondition` | Condition | 웨이크워드 감지 여부 확인 |
+| `PeerRobotBusyCondition` | Condition | 상대 로봇 BUSY 여부 확인 |
 
 ---
 

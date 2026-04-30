@@ -216,57 +216,55 @@ phantom 원인 확정 후 아래 방법들을 순서대로 시도·검토.
 
 ## 목적지 관리 (waypoints.yaml)
 
-목적지 좌표는 `waypoints.yaml`에서 중앙 관리. Nav2 BT에 이름으로 전달.
+목적지 좌표는 `wego_behaviour/config/waypoints.yaml`에서 중앙 관리.
+`wego_behaviour` FSM이 읽어 `navigate_to_pose` 액션으로 전달.
 
-```yaml
-# waypoints.yaml 예시 구조
-waypoints:
-  home_robot1:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-  home_robot2:
-    x: 0.5
-    y: 0.0
-    yaw: 0.0
-  room_1:         # 1강의실
-    x: 5.2
-    y: 3.1
-    yaw: 1.57
-  room_2:         # 2강의실
-    x: 8.4
-    y: 3.1
-    yaw: 1.57
-  counseling_room: # 상담실
-    x: 12.0
-    y: 1.5
-    yaw: 3.14
-  meeting_room:   # 회의실
-    x: 10.5
-    y: 5.0
-    yaw: 0.0
-  restroom:       # 화장실
-    x: 3.0
-    y: 7.2
-    yaw: -1.57
+좌표 기록 방법:
+```bash
+# Nav2 기동 후 teleop으로 목적지까지 이동 → 현재 pose 출력
+ros2 topic echo /amcl_pose --once
+# pose.pose.position.x, y 와 orientation.z, w → yaw = 2 * arctan2(z, w)
 ```
 
-> 실제 좌표는 지도 작성 후 RViz에서 측정하여 채워야 함.
+실제 목적지 목록 (좌표는 실주행 후 기록):
+```yaml
+waypoints:
+  home_robot1:   { x: 0.0, y: 0.0, yaw: 0.0, label: "로봇1 홈" }
+  home_robot2:   { x: 0.0, y: 0.0, yaw: 0.0, label: "로봇2 홈" }
+  classroom_1:   { x: 0.0, y: 0.0, yaw: 0.0, label: "1강의실" }
+  classroom_2:   { x: 0.0, y: 0.0, yaw: 0.0, label: "2강의실" }
+  classroom_3:   { x: 0.0, y: 0.0, yaw: 0.0, label: "3강의실" }
+  classroom_4:   { x: 0.0, y: 0.0, yaw: 0.0, label: "4강의실" }
+  classroom_5:   { x: 0.0, y: 0.0, yaw: 0.0, label: "5강의실" }
+  counseling_1:  { x: 0.0, y: 0.0, yaw: 0.0, label: "상담실1" }
+  counseling_2:  { x: 0.0, y: 0.0, yaw: 0.0, label: "상담실2" }
+  intensive_counseling_1: { x: 0.0, y: 0.0, yaw: 0.0, label: "집중상담실1" }
+  intensive_counseling_2: { x: 0.0, y: 0.0, yaw: 0.0, label: "집중상담실2" }
+  vice_principal: { x: 0.0, y: 0.0, yaw: 0.0, label: "부원장실" }
+  counter:       { x: 0.0, y: 0.0, yaw: 0.0, label: "카운터" }
+  multi:         { x: 0.0, y: 0.0, yaw: 0.0, label: "멀티룸" }
+```
 
 ---
 
-## Nav2 행동 트리 연동
-
-`wego_behaviour` BT에서 목적지 결정 → Nav2 `navigate_to_pose` action으로 전달.
+## wego_behaviour FSM 연동
 
 ```
-wego_behaviour BT
-  → NLU에서 destination 추출 (예: "room_1")
+wego_voice NLU → /goal_destination (String 키, 예: "classroom_1")
+  → wego_behaviour IDLE 상태 수신
   → waypoints.yaml에서 좌표 조회
-  → Nav2 /navigate_to_pose action goal 전송
-    → Nav2 BT 실행 (경로 계획 + 장애물 회피 + 제어)
-      → 도달 시 결과 반환
-  → wego_behaviour BT 다음 단계 진행 (추가 용무 확인)
+  → GUIDING: navigate_to_pose 액션 전송
+    → Nav2 내부 BT (경로 계획 + 장애물 회피 + 복구)
+      → 도달 시 RETURNING 전환
+        → navigate_to_pose(home_robotN)
+          → 홈 도착 → wego_aruco 서비스 호출 (ArUco 정밀 보정)
+            → IDLE 복귀
+```
+
+`home_key` 파라미터로 각 로봇이 자신의 홈 좌표를 사용:
+```bash
+ros2 launch wego_behaviour behaviour_launch.py home_key:=home_robot1  # LIMO 1
+ros2 launch wego_behaviour behaviour_launch.py home_key:=home_robot2  # LIMO 2
 ```
 
 ---
@@ -291,9 +289,14 @@ wego_behaviour BT
 
 ```
 목적지 도달 (Nav2 action 성공)
-  → TTS: "다른 도움이 필요하시면 말씀해 주세요"
-  → STT 짧게 대기 (타임아웃: ~10s)
+  → TTS: "다른 도움이 필요하시면 말씀해 주세요"  (구현 예정)
+  → STT 짧게 대기 (타임아웃: ~10s)              (구현 예정)
     ├── 추가 요청 있음 → 새 목적지로 안내
-    └── 없음 / 타임아웃 → Home 좌표로 navigate_to_pose
-        → 도착 후 대기 상태 복귀
+    └── 없음 / 타임아웃
+          → RETURNING: navigate_to_pose(home_robotN)
+              → 홈 도착
+                → wego_aruco 서비스 호출 → ArUco 마커 감지 → /initialpose 보정
+                → IDLE 복귀
 ```
+
+ArUco 보정은 홈에만 적용 (DEC-016). 목적지 도착 시 보정 없음 — Nav2 정밀도로 충분.

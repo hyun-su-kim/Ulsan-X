@@ -51,9 +51,9 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 - [x] **유리 구간 유령 장애물** — Keepout Filter + DenoiseLayer 적용 완료 (2026-04-29)
   - 목적지·홈 구간 주행에 문제 없음 → 운용상 수용
   - 유리 회전문 통과는 LiDAR 물리 한계로 소프트웨어 완전 해결 불가 → **운용 정책: 유리 회전문 구간은 경로에서 제외**
-- [ ] **ArUco 마커 기반 목적지 정차 보정** — 장시간 운영 시 누적 오차 리셋 (DEC-016)
-  - 강의실, 상담실 등 각 목적지 벽에 마커 부착 (10cm × 10cm, DICT_4X4_50)
-  - 도착 시 마커 감지 → `/initialpose` 보정 → 정확한 정차 위치 보장
+- [ ] **ArUco 마커 기반 홈 정차 보정** — 장시간 운영 시 누적 오차 리셋 (DEC-016)
+  - 홈 위치에만 마커 2개 (로봇1 홈, 로봇2 홈)
+  - 홈 복귀 도착 시 마커 감지 → `/initialpose` 보정 → 정확한 정차 위치 보장
   - 구현 계획: `docs/ref/ARUCO-LOCALIZER.md` 참고
 - [ ] `waypoints.yaml` 작성 — 강의실, 상담실, 회의실 등 목적지 좌표 (Nav2로 실제 주행하며 기록)
 
@@ -72,12 +72,11 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 ### Phase 3 — 핵심 기능 구현
 
 #### 사전 작업
-- [ ] `waypoints.yaml` 작성 — 강의실, 상담실, 회의실 등 목적지 좌표 (Nav2 실주행하며 기록)
+- [ ] `waypoints.yaml` 좌표 입력 — 구조 완성, 목적지별 실좌표 미입력 (Nav2 실주행하며 기록)
 
 #### 미션 제어
-- [ ] `wego_behaviour` 패키지: **Yasmin FSM** 구현 (대기 / 안내 중 / 복귀 중) — DEC-014
+- [x] `wego_behaviour` 패키지 뼈대: **Yasmin FSM** (IDLE / GUIDING / RETURNING) + `navigate_to_pose` 연동 — done (2026-04-30)
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
-- [ ] Nav2 `navigate_to_pose` 액션 연동
 
 #### 음성 파이프라인
 - [ ] `wego_voice` 패키지: VAD + openWakeWord + faster-whisper (STT)
@@ -91,8 +90,8 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 - [ ] wego_behaviour FSM과 on_duty 연동 확인
 
 #### ArUco 보정
-- [ ] `wego_aruco` 패키지: 목적지 도착 시 마커 감지 → `/initialpose` 보정
-- [ ] `markers.yaml` 목적지별 마커 좌표 입력 (실주행 후 기록)
+- [ ] `wego_aruco` 패키지: 홈 복귀 도착 시 마커 감지 → `/initialpose` 보정
+- [ ] `markers.yaml` 홈 마커 좌표 입력 2개 (robot1_home, robot2_home)
 - [ ] 실기기 검증
 
 #### 데모용 관제 UI
