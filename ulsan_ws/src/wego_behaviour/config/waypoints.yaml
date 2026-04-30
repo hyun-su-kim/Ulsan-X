@@ -1,71 +1,71 @@
 waypoints:
-  home_robot1:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "로봇1 홈"
-  home_robot2:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "로봇2 홈"
   classroom_1:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "1강의실"
+    label: 1강의실
+    x: 6.8485
+    y: -3.6873
+    yaw: 0.4123
   classroom_2:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "2강의실"
+    label: 2강의실
+    x: 0.8751
+    y: -3.7055
+    yaw: 0.3299
   classroom_3:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "3강의실"
+    label: 3강의실
+    x: -5.2893
+    y: -3.7109
+    yaw: 0.3712
   classroom_4:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "4강의실"
+    label: 4강의실
+    x: -10.6177
+    y: -3.7103
+    yaw: 0.3977
   classroom_5:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "5강의실"
+    label: 5강의실
+    x: -6.055
+    y: -2.1284
+    yaw: -0.2498
   counseling_1:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "상담실1"
+    label: 상담실1
+    x: 6.2903
+    y: 4.4278
+    yaw: -1.3889
   counseling_2:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "상담실2"
-  intensive_counseling_1:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "집중상담실1"
-  intensive_counseling_2:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "집중상담실2"
-  vice_principal:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "부원장실"
+    label: 상담실2
+    x: 8.3634
+    y: 4.4103
+    yaw: -1.5808
   counter:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "카운터"
+    label: 카운터
+    x: 9.7218
+    y: 0.9151
+    yaw: 2.9943
+  home_robot1:
+    label: 로봇1 홈
+    x: 10.956
+    y: -3.4193
+    yaw: 1.4979
+  home_robot2:
+    label: 로봇2 홈
+    x: 10.5191
+    y: -3.5377
+    yaw: 1.4413
+  intensive_counseling_1:
+    label: 집중상담실1
+    x: 3.9723
+    y: 3.191
+    yaw: -1.1722
+  intensive_counseling_2:
+    label: 집중상담실2
+    x: 9.9871
+    y: 3.2842
+    yaw: -2.4806
   multi:
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-    label: "멀티룸"
+    label: 멀티룸
+    x: -0.6257
+    y: 1.3398
+    yaw: -0.2044
+  vice_principal:
+    label: 부원장실
+    x: 1.6336
+    y: 3.4363
+    yaw: -1.0229
