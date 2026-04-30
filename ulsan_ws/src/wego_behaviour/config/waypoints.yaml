@@ -1,0 +1,71 @@
+waypoints:
+  home_robot1:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "로봇1 홈"
+  home_robot2:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "로봇2 홈"
+  classroom_1:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "1강의실"
+  classroom_2:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "2강의실"
+  classroom_3:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "3강의실"
+  classroom_4:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "4강의실"
+  classroom_5:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "5강의실"
+  counseling_1:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "상담실1"
+  counseling_2:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "상담실2"
+  intensive_counseling_1:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "집중상담실1"
+  intensive_counseling_2:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "집중상담실2"
+  vice_principal:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "부원장실"
+  counter:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "카운터"
+  multi:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    label: "멀티룸"
