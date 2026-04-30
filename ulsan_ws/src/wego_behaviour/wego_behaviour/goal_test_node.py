@@ -1,6 +1,8 @@
 """
-behaviour_node 테스트용 — /on_duty + /goal_destination 수동 발행
-사용법: ros2 run wego_behaviour goal_test_node
+[임시 테스트 노드 — wego_voice 완성 후 삭제]
+wego_voice(음성 파이프라인) 구현 전까지 /on_duty, /goal_destination을
+키보드로 수동 발행하여 behaviour_node FSM 동작을 검증하는 용도.
+wego_voice가 /goal_destination을, wego_coordinator가 /on_duty를 담당하게 되면 불필요.
 """
 import yaml
 import rclpy
