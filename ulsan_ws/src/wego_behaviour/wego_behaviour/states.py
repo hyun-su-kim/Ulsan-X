@@ -4,6 +4,7 @@ import time
 from yasmin import State
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
+from std_srvs.srv import Trigger
 
 
 def _make_pose(wp: dict) -> PoseStamped:
@@ -71,12 +72,13 @@ class GuidingState(State):
 
 
 class ReturningState(State):
-    """복귀 상태: 홈 위치까지 이동 (도착 후 wego_aruco 보정 예정)."""
+    """복귀 상태: 홈 위치까지 이동 후 ArUco 보정."""
 
     def __init__(self, node, navigator: BasicNavigator):
         super().__init__(outcomes=['succeeded', 'failed'])
         self._node = node
         self._navigator = navigator
+        self._aruco_client = node.create_client(Trigger, '/aruco_correct')
 
     def execute(self, blackboard):
         self._node.publish_status('RETURNING')
@@ -89,10 +91,21 @@ class ReturningState(State):
             time.sleep(0.1)
 
         result = self._navigator.getResult()
-        if result == TaskResult.SUCCEEDED:
-            self._node.get_logger().info('홈 도착')
-            # TODO: wego_aruco 서비스 호출 → 정밀 보정
-            return 'succeeded'
+        if result != TaskResult.SUCCEEDED:
+            self._node.get_logger().warn(f'홈 복귀 실패: {result}')
+            return 'failed'
 
-        self._node.get_logger().warn(f'홈 복귀 실패: {result}')
-        return 'failed'
+        self._node.get_logger().info('홈 도착 — ArUco 보정 요청')
+        if self._aruco_client.wait_for_service(timeout_sec=2.0):
+            future = self._aruco_client.call_async(Trigger.Request())
+            while not future.done():
+                time.sleep(0.05)
+            resp = future.result()
+            if resp.success:
+                self._node.get_logger().info(f'ArUco 보정: {resp.message}')
+            else:
+                self._node.get_logger().warn(f'ArUco 보정 실패: {resp.message}')
+        else:
+            self._node.get_logger().warn('aruco_localizer 서비스 없음 — 보정 생략')
+
+        return 'succeeded'
