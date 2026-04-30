@@ -27,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'behaviour_node = wego_behaviour.behaviour_node:main',
+            'waypoint_recorder = wego_behaviour.waypoint_recorder:main',
         ],
     },
 )
