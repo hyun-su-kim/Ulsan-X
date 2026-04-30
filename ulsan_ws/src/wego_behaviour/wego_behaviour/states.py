@@ -4,6 +4,7 @@ import time
 from yasmin import State
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
+from std_srvs.srv import Trigger
 
 
 def _make_pose(wp: dict) -> PoseStamped:
@@ -71,28 +72,54 @@ class GuidingState(State):
 
 
 class ReturningState(State):
-    """복귀 상태: 홈 위치까지 이동 (도착 후 wego_aruco 보정 예정)."""
+    """복귀 상태: 홈 대략 이동 → ArUco AMCL 보정 → 홈 정밀 재이동."""
+
+    _AMCL_CONVERGE_SEC = 2.0  # /initialpose 발행 후 파티클 수렴 대기
 
     def __init__(self, node, navigator: BasicNavigator):
         super().__init__(outcomes=['succeeded', 'failed'])
         self._node = node
         self._navigator = navigator
+        self._aruco_client = node.create_client(Trigger, '/aruco_correct')
+
+    def _nav_to(self, home: dict) -> bool:
+        self._navigator.goToPose(_make_pose(home))
+        while not self._navigator.isTaskComplete():
+            time.sleep(0.1)
+        return self._navigator.getResult() == TaskResult.SUCCEEDED
 
     def execute(self, blackboard):
         self._node.publish_status('RETURNING')
         home = self._node.waypoints[self._node.home_key]
-        self._node.get_logger().info('RETURNING: 홈으로 복귀 중')
 
-        self._navigator.goToPose(_make_pose(home))
+        # Step 1: 대략 이동
+        self._node.get_logger().info('RETURNING: 홈으로 대략 이동 중')
+        if not self._nav_to(home):
+            self._node.get_logger().warn('홈 1차 이동 실패')
+            return 'failed'
 
-        while not self._navigator.isTaskComplete():
-            time.sleep(0.1)
-
-        result = self._navigator.getResult()
-        if result == TaskResult.SUCCEEDED:
-            self._node.get_logger().info('홈 도착')
-            # TODO: wego_aruco 서비스 호출 → 정밀 보정
+        # Step 2: ArUco 보정 → AMCL 위치 업데이트
+        if not self._aruco_client.wait_for_service(timeout_sec=2.0):
+            self._node.get_logger().warn('aruco_localizer 없음 — 정밀 정차 생략')
             return 'succeeded'
 
-        self._node.get_logger().warn(f'홈 복귀 실패: {result}')
-        return 'failed'
+        future = self._aruco_client.call_async(Trigger.Request())
+        while not future.done():
+            time.sleep(0.05)
+        resp = future.result()
+
+        if not resp.success:
+            self._node.get_logger().warn(f'ArUco 감지 실패: {resp.message} — 정밀 정차 생략')
+            return 'succeeded'
+
+        self._node.get_logger().info(f'ArUco 보정: {resp.message}')
+
+        # Step 3: AMCL 수렴 대기 후 정밀 재이동
+        time.sleep(self._AMCL_CONVERGE_SEC)
+        self._node.get_logger().info('RETURNING: 정밀 재이동 중')
+        if not self._nav_to(home):
+            self._node.get_logger().warn('홈 2차 정밀 이동 실패')
+            return 'failed'
+
+        self._node.get_logger().info('정밀 정차 완료')
+        return 'succeeded'
