@@ -5,7 +5,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from std_msgs.msg import Bool, String
-from yasmin import StateMachine
+from yasmin import StateMachine, Blackboard
 
 from wego_behaviour.states import GuidingState, IdleState, ReturningState
 from nav2_simple_commander.robot_navigator import BasicNavigator
@@ -64,7 +64,7 @@ def main():
 
 
     try:
-        sm.execute()
+        sm.execute(Blackboard())
     except KeyboardInterrupt:
         pass
     finally:
