@@ -256,3 +256,6 @@
 ## Resolved
 
 > 해결된 결정은 [docs/archive/decisions-resolved.md](../archive/decisions-resolved.md)로 이동
+
+### DEC-016 → 최종 결론 확정 (2026-04-29)
+Pending 섹션 상단에 기록. 실기기 검증으로 유리 구간 소프트웨어 완전 해결 불가 확정. 운용 정책으로 수용.

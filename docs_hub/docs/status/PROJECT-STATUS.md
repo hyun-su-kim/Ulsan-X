@@ -1,8 +1,8 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**단일 로봇 자율주행 검증 단계**
-SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GIMP 후보정). Nav2 주행 문제 해결 중.
+**Phase 2 완료 → Phase 3 진입 (행동 트리 + 음성 파이프라인)**
+Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유리 구간 간헐적 버벅임은 알려진 한계로 수용, 개발 완료 후 재검토.
 
 ---
 
@@ -12,12 +12,12 @@ SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GI
 |------|------|------------|
 | 시스템 아키텍처 설계 | **완료** | — |
 | 통신 환경 구성 (CycloneDDS + Domain Bridge) | **완료** | wego_bridge |
+| 관제 UI (domain 5 위치 시각화) | **완료** | wego_ui |
 | SLAM 지도 작성 | **완료** | wego (cartographer) |
-| Nav2 경로 계획 & AMCL | in progress | wego_2d_nav |
-| Fleet 충돌 회피 (PeerObstacleLayer) | planned | ulsan_obstacle_layer |
+| Nav2 경로 계획 & AMCL | **완료** | wego_2d_nav |
+| Fleet 충돌 회피 (PeerObstacleLayer) | **완료** | ulsan_obstacle_layer |
 | 행동 트리 최상단 관리 | planned | wego_behaviour (신규) |
 | 음성 파이프라인 (VAD→Wake→STT→NLU→TTS) | planned | wego_voice (신규) |
-| 관제 UI | planned | wego_ui (신규, 노트북 전용) |
 
 ---
 
@@ -43,7 +43,7 @@ SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GI
 
 - [x] `ulsan_obstacle_layer` 빌드 — LIMO ulsan_ws 전체 빌드 완료. `peer_valid_` 플래그로 상대 amcl_pose 수신 전까지 완전 no-op — 단독 주행에 영향 없음.
 - [x] Nav2 전체 스택 실기기 테스트 — 목적지·홈 구간 정상 주행 확인 (2026-04-29)
-- [ ] AMCL 파라미터 튜닝 (`diff_navigation_params.yaml`) — 실기기 주행하며 확정
+- [x] AMCL 파라미터 튜닝 — `do_beamskip: true` 단일 수정. 파티클 수렴 정상 확인 (2026-04-29)
 - [x] **유리 구간 유령 장애물** — Keepout Filter + DenoiseLayer 적용 완료 (2026-04-29)
   - 목적지·홈 구간 주행에 문제 없음 → 운용상 수용
   - 유리 회전문 통과는 LiDAR 물리 한계로 소프트웨어 완전 해결 불가 → **운용 정책: 유리 회전문 구간은 경로에서 제외**
@@ -59,9 +59,9 @@ SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GI
 
 > LIMO 2대가 서로를 인식하고 회피하며 독립적으로 주행
 
-- [ ] `ulsan_obstacle_layer` 실기기 검증 — 2대 동시 운행 시 상대 amcl_pose → global costmap LETHAL_OBSTACLE 반영 확인
-- [ ] `wego_bridge` 실운용 — 두 로봇 amcl_pose 노트북(domain 5) 수신 확인
-- [ ] `wego_ui` 관제 GUI — 노트북에서 지도 + 두 로봇 실시간 위치 마커 시각화
+- [x] `ulsan_obstacle_layer` 실기기 검증 — 각 로봇 global costmap에 상대 amcl_pose LETHAL 원형 반영 확인 (2026-04-29)
+- [x] `wego_bridge` 실운용 — 두 로봇 amcl_pose 노트북(domain 5) 수신 확인 (2026-04-29)
+- [x] `wego_ui` 관제 GUI — 노트북 domain 5에서 지도 + 두 로봇 실시간 위치 마커 정상 시각화 (2026-04-29)
 
 ---
 
@@ -88,6 +88,8 @@ SLAM 완료 (유리 종이 부착 + 복도 임시 장애물 + 루프 주행 + GI
 - [ ] 목적지 도달 후 "추가 용무 확인" 대화 흐름
 - [ ] GPU 메모리 프로파일링 (YOLO + faster-whisper 동시 가동)
 - [ ] 다국어 안내 검토
+- [ ] **유리 구간 주행 버벅임 개선** — Keepout+DenoiseLayer 적용 후에도 간헐적 버벅임 잔존. 추가 해결책 탐색 (local costmap phantom 근본 억제 또는 경로 설계 개선)
+- [ ] **2대 충돌 회피 완성도 개선** — 운용 중 간헐적 충돌 발생. 유추 원인: ① 네트워크 지연으로 상대 위치 업데이트 늦음 ② 양 로봇이 대칭으로 같은 방향 회피 → 교착. 정확한 원인 실기기 진단 후 해결
 
 ---
 
