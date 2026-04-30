@@ -1,8 +1,8 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 2 완료 → Phase 3 진입 (행동 트리 + 음성 파이프라인)**
-Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유리 구간 간헐적 버벅임은 알려진 한계로 수용, 개발 완료 후 재검토.
+**Phase 3 진행 중 — 음성 파이프라인 구현 전 behaviour FSM 실기기 검증 중**
+waypoints.yaml 실좌표 입력 완료 (2026-04-30). goal_test_node로 behaviour FSM 웨이포인트 주행 테스트 진행 중.
 
 ---
 
@@ -16,11 +16,11 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 | SLAM 지도 작성 | **완료** | wego (cartographer) |
 | Nav2 경로 계획 & AMCL | **완료** | wego_2d_nav |
 | Fleet 충돌 회피 (PeerObstacleLayer) | **완료** | ulsan_obstacle_layer |
-| waypoints.yaml 목적지 좌표 작성 | planned | wego_behaviour/config |
-| 행동 트리 최상단 관리 (FSM + BT 커스텀) | planned | wego_behaviour (신규) |
+| waypoints.yaml 목적지 좌표 작성 | **완료** | wego_behaviour/config |
+| 행동 트리 최상단 관리 (FSM + BT 커스텀) | **진행 중** | wego_behaviour |
 | 음성 파이프라인 (VAD→Wake→STT→NLU→TTS) | planned | wego_voice (신규) |
 | 멀티로봇 on_duty 코디네이터 | planned | wego_coordinator (신규, 노트북) |
-| ArUco 마커 목적지 정차 보정 | planned | wego_aruco (신규) |
+| ArUco 마커 홈 정차 보정 | planned | wego_aruco (신규) |
 | 데모용 Qt 관제 UI | planned | wego_ui (재구현) |
 
 ---
@@ -55,7 +55,7 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
   - 홈 위치에만 마커 2개 (로봇1 홈, 로봇2 홈)
   - 홈 복귀 도착 시 마커 감지 → `/initialpose` 보정 → 정확한 정차 위치 보장
   - 구현 계획: `docs/ref/ARUCO-LOCALIZER.md` 참고
-- [ ] `waypoints.yaml` 작성 — 강의실, 상담실, 회의실 등 목적지 좌표 (Nav2로 실제 주행하며 기록)
+- [x] `waypoints.yaml` 작성 — 강의실, 상담실, 회의실 등 목적지 좌표 (Nav2로 실제 주행하며 기록) — done (2026-04-30)
 
 ---
 
@@ -72,17 +72,22 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 ### Phase 3 — 핵심 기능 구현
 
 #### 사전 작업
-- [ ] `waypoints.yaml` 좌표 입력 — 구조 완성, 목적지별 실좌표 미입력 (Nav2 실주행하며 기록)
+- [x] `waypoints.yaml` 좌표 입력 — 완료 (2026-04-30)
 
 #### 미션 제어
 - [x] `wego_behaviour` 패키지 뼈대: **Yasmin FSM** (IDLE / GUIDING / RETURNING) + `navigate_to_pose` 연동 — done (2026-04-30)
+- [x] `goal_test_node` 추가 — wego_voice 완성 전 FSM 검증용 임시 노드 (2026-04-30)
+- [ ] **behaviour FSM 실기기 웨이포인트 주행 검증** — IDLE→GUIDING 전환 및 주행 명령 확인. executor 충돌 수정 후 재검증 필요.
+  - yasmin: `~/yasmin_repo/yasmin`을 colcon build로 설치 완료 (LIMO)
+  - BasicNavigator executor 충돌 수정 완료 (MultiThreadedExecutor 분리)
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
 
 #### 음성 파이프라인
 - [ ] `wego_voice` 패키지: VAD + openWakeWord + faster-whisper (STT)
+  - **설계 원칙 (DEC-017)**: `/on_duty` 구독 → `on_duty=False`이면 웨이크워드 감지 비활성화. GPU 중복 소모 및 두 로봇 동시 응대 방지.
 - [ ] NLU: 발화 키워드 → `waypoints.yaml` 목적지 매핑
 - [ ] TTS (Piper)
-- [ ] 음성 파이프라인 → FSM 연결
+- [ ] 음성 파이프라인 → FSM 연결 (`/goal_destination` 발행)
 
 #### 멀티로봇 코디네이터
 - [ ] `wego_coordinator` 패키지 (노트북 전용): robot_status 구독 → on_duty 결정 — DEC-015
@@ -140,7 +145,7 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 
 | 문제 | 상태 |
 |------|------|
-| `waypoints.yaml` 미작성 | Phase 2 직후 진행 |
+| `waypoints.yaml` 미작성 | 완료 (2026-04-30) |
 | AMCL 파라미터 미최적화 | 장시간 운영 시 drift 가능성 — 진행 중 |
 
 > 상세 엔지니어링 판단 기록: `docs/ref/NAVIGATION.md` — "Nav2 주행 문제 해결 과정" 섹션
@@ -153,5 +158,5 @@ Fleet 통신·위치 공유·관제 UI 실기기 검증 완료 (2026-04-29). 유
 |------|--------|------|
 | Orin Nano GPU 메모리: YOLO + faster-whisper 동시 가동 시 OOM 가능성 | High | P2에서 프로파일링 예정 |
 | openWakeWord "헤이 리모" 커스텀 모델 학습 필요 여부 | Medium | 미결정 |
-| 두 로봇이 동시에 호출될 때 충돌 시나리오 | Medium | BT 설계 시 처리 예정 |
+| 두 로봇이 동시에 호출될 때 충돌 시나리오 | Medium | DEC-017: wego_voice에서 on_duty 게이팅으로 해결 예정 |
 | Gemini API 응답 지연이 대화 흐름에 미치는 영향 | Low | 모니터링 |

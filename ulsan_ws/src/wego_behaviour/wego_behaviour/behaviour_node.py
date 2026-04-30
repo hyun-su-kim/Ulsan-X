@@ -1,6 +1,7 @@
 import threading
 
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
@@ -53,8 +54,10 @@ def main():
 
     navigator.waitUntilNav2Active()
 
-    # rclpy.spin은 별도 스레드에서 실행 (FSM이 메인 스레드를 점유하므로)
-    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    # BehaviourNode를 별도 executor로 분리 — BasicNavigator 내부 global executor와 충돌 방지
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
 
     sm = StateMachine(outcomes=['finished'])
