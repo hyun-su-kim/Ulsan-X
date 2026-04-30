@@ -64,7 +64,7 @@ def main():
 
 
     try:
-        sm.execute(Blackboard())
+        sm(Blackboard())
     except KeyboardInterrupt:
         pass
     finally:
