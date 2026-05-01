@@ -6,18 +6,22 @@
 
 ### DEC-018: ArUco 홈 도킹 방식 — Coarse-to-Fine (Visual Servoing + AMCL 리셋)
 - **Context**: 홈 복귀 시 ArUco 마커 활용 방식을 결정. 초기 설계는 /initialpose 발행(AMCL 교정)만 수행하는 방식이었으나, visual servoing(물리 정밀 정차)으로 전환 논의 후 두 방식을 결합하는 방향으로 최종 확정.
-- **Decision**: **Coarse-to-Fine 패턴** — Nav2 대략 이동 → ArUco visual servoing 정밀 정차 → home 좌표 /initialpose 발행
+- **Decision**: **Coarse-to-Fine 패턴** — Nav2 대략 이동 → ArUco visual servoing 정밀 정차 → 마커 역산 /initialpose 발행
 - **Rationale**:
   - visual servoing만: 물리 위치는 정밀하나 AMCL drift 미보정 → 다음 안내에서 오차 누적
   - /initialpose만: AMCL 보정되나 물리 위치는 Nav2 허용 오차(±10~30cm) 그대로
-  - 두 방식 결합: 물리 정밀 정차 + AMCL 리셋 동시 달성. 정차 위치가 항상 home 좌표와 일치하므로 /initialpose 값이 정확함
+  - 두 방식 결합: 물리 정밀 정차 + AMCL 리셋 동시 달성
   - MiR, Fetch 등 상용 AMR 및 Nav2 opennav_docking과 동일한 산업 표준 패턴
   - 면접 어필: "Coarse-to-Fine Localization 패턴을 적용했으며, 정밀 정차 후 알려진 절대 좌표로 AMCL을 리셋하는 방식은 상용 AMR과 동일한 구조"
-- **구현**:
-  - `wego_aruco/aruco_localizer.py`: P제어 visual servoing (cmd_vel), /aruco_correct 서비스
-  - `wego_behaviour/states.py` ReturningState: /aruco_correct 호출 → 정차 완료 후 publish_initial_pose()
-  - /initialpose 발행 주체: `wego_behaviour` (waypoints.yaml home 좌표 사용) — wego_aruco는 정차만 담당
-- **마커 구성**: ID 0 (LIMO1), ID 1 (LIMO2) — 각 로봇 홈 정면 벽 부착
+- **구현 (2026-05-01 업데이트)**:
+  - `wego_aruco/aruco_localizer.py`: solvePnP 기반 pose 추정, rvec 법선 벡터 yaw 보정, /aruco_correct 서비스, 완료 후 /initialpose 직접 발행
+  - `wego_behaviour/states.py` ReturningState: /aruco_correct 호출만 수행. publish_initial_pose() 제거 예정.
+  - /initialpose 발행 주체 변경: `wego_behaviour`(고정 waypoint 좌표) → `wego_aruco`(마커 map 좌표 역산)
+    - 역산 공식: `robot_x = marker_x - (target_dist + cam_offset) × cos(marker_yaw)`
+    - cam_offset: 0.23m (base_link → camera_link, camera_tilt_launch.py 기준)
+  - **변경 이유**: visual servoing 완료 위치가 접근 방향에 따라 달라지므로 고정 waypoint 좌표로 리셋하면 부정확. 마커 map 좌표(고정) + target_dist 역산이 항상 정확.
+- **마커 구성**: ID 0 (LIMO1), ID 1 (LIMO2) — 각 로봇 홈 정면 벽 부착, 크기 20cm × 20cm
+- **markers.yaml 추가 예정 필드**: `map_x`, `map_y`, `map_yaw`, `cam_offset`
 - **Date**: 2026-05-01
 
 ---

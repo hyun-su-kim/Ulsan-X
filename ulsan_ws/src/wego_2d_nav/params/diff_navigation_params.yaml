@@ -130,8 +130,8 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.20   # 0.25 → 0.20: 홈 복귀 시 방향 오차 개선 (2026-05-01)
+      yaw_goal_tolerance: 0.15  # 0.25 → 0.15: 마커 정면 도착 보장, ArUco 서보잉 진입 조건
 
     # DWB parameters
     FollowPath:

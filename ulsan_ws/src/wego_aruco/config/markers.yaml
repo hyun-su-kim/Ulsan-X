@@ -3,11 +3,19 @@
 # target_dist: 마커 정면에서 정차할 거리 (m) — 실기기 조정 필요
 markers:
   0:                  # 로봇1 홈 마커
-    size: 0.10
-    target_dist: 0.30
+    size: 0.20
+    target_dist: 0.976
+    cam_offset: 0.23
+    map_x: 12.613
+    map_y: -2.420
+    map_yaw: -1.667
   1:                  # 로봇2 홈 마커
-    size: 0.10
+    size: 0.20
     target_dist: 0.30
+    cam_offset: 0.23
+    map_x: 0.0        # 미측정
+    map_y: 0.0
+    map_yaw: 0.0
 
 # home_key → marker_id 매핑
 home_marker:

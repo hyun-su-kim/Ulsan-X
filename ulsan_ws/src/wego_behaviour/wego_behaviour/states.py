@@ -110,9 +110,6 @@ class ReturningState(State):
             self._node.get_logger().warn(f'ArUco 정밀 정차 실패: {resp.message}')
             return 'succeeded'
 
+        # /initialpose는 aruco_localizer가 정차 완료 시 직접 발행
         self._node.get_logger().info(f'정밀 정차 완료: {resp.message}')
-
-        # Step 3: 정차 위치 = home 좌표 → /initialpose로 AMCL 리셋
-        self._node.publish_initial_pose()
-        self._node.get_logger().info('AMCL 리셋 완료')
         return 'succeeded'

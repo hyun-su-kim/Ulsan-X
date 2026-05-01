@@ -1,8 +1,8 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 3 진행 중 — 음성 파이프라인 구현 전 behaviour FSM 실기기 검증 중**
-waypoints.yaml 실좌표 입력 완료 (2026-04-30). goal_test_node로 behaviour FSM 웨이포인트 주행 테스트 진행 중.
+**Phase 3 진행 중 — ArUco visual servoing 실기기 통합 검증 중**
+wego_aruco 구현 완료 (2026-05-01). Nav2 홈 복귀 시 방향 오류로 마커 미감지 문제 미해결 → 내일 계속.
 
 ---
 
@@ -95,9 +95,23 @@ waypoints.yaml 실좌표 입력 완료 (2026-04-30). goal_test_node로 behaviour
 - [ ] wego_behaviour FSM과 on_duty 연동 확인
 
 #### ArUco 보정
-- [ ] `wego_aruco` 패키지: 홈 복귀 도착 시 마커 감지 → `/initialpose` 보정
-- [ ] `markers.yaml` 홈 마커 좌표 입력 2개 (robot1_home, robot2_home)
-- [ ] 실기기 검증
+- [x] `wego_aruco` 패키지 구현 — done (2026-05-01)
+  - OpenCV 4.7+: `estimatePoseSingleMarkers` → `solvePnP` 교체
+  - rvec 법선 벡터 기반 yaw 보정 (`KP_YAW`, `YAW_TOL`) 추가
+  - `/initialpose` 발행 주체를 `wego_aruco`로 이전 — 마커 map 좌표 역산
+  - `wego_behaviour` ReturningState `publish_initial_pose()` 제거
+  - 마커 크기 20cm 확정 (거리 1.8m, size/distance = 0.11)
+  - `target_dist: 0.976m` 실측 완료 (20cm 마커 기준)
+  - `markers.yaml` ID 0: `map_x/y/yaw`, `cam_offset: 0.23` 입력 완료
+  - `home_robot1` waypoint 실좌표 갱신 — done (2026-05-01)
+- [x] Nav2 goal tolerance 조정 — done (2026-05-01)
+  - `xy_goal_tolerance: 0.25 → 0.20`, `yaw_goal_tolerance: 0.25 → 0.15`
+- [ ] **[미해결] Nav2 홈 복귀 시 방향 오류** — 마커가 카메라 시야 밖으로 벗어남
+  - 현상: Nav2 goal succeeded 후 로봇이 마커 반대 방향을 향해 정차
+  - 원인: AMCL drift로 실제 도착 yaw가 waypoint yaw(1.475)와 불일치
+  - yaw_goal_tolerance 0.15로 줄였으나 여전히 발생 → 내일 추가 대응 필요
+  - 후보 해결책: ① tolerance 추가 축소 ② 홈 도착 후 마커 방향 강제 회전 스텝 추가
+- [ ] ArUco visual servoing 실기기 통합 검증 (위 문제 해결 후)
 
 #### 데모용 관제 UI
 - [ ] `wego_ui` Qt 기반 재구현 (현재는 임시 RViz 테스트용)
