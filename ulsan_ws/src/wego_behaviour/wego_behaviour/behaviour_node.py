@@ -1,3 +1,4 @@
+import math
 import threading
 
 import rclpy
@@ -6,6 +7,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from std_msgs.msg import Bool, String
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from yasmin import StateMachine, Blackboard
 
 from wego_behaviour.states import GuidingState, IdleState, ReturningState
@@ -24,8 +26,26 @@ class BehaviourNode(Node):
         self.pending_destination: str | None = None
 
         self._status_pub = self.create_publisher(String, '/robot_status', 10)
+        self._initialpose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, '/initialpose', 10
+        )
         self.create_subscription(Bool, '/on_duty', self._on_duty_cb, 10)
         self.create_subscription(String, '/goal_destination', self._dest_cb, 10)
+
+    def publish_initial_pose(self) -> None:
+        home = self.waypoints[self.home_key]
+        msg = PoseWithCovarianceStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        msg.pose.pose.position.x = float(home['x'])
+        msg.pose.pose.position.y = float(home['y'])
+        yaw = float(home['yaw'])
+        msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
+        self._initialpose_pub.publish(msg)
+        self.get_logger().info(
+            f'초기 포즈 발행: {home["label"]} (x={home["x"]}, y={home["y"]}, yaw={yaw:.3f})'
+        )
 
     def _on_duty_cb(self, msg: Bool) -> None:
         self.on_duty = msg.data
@@ -53,6 +73,8 @@ def main():
     navigator = BasicNavigator()
 
     navigator.waitUntilNav2Active()
+
+    node.publish_initial_pose()
 
     # BehaviourNode를 별도 executor로 분리 — BasicNavigator 내부 global executor와 충돌 방지
     executor = MultiThreadedExecutor()

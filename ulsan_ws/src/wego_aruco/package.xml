@@ -3,7 +3,7 @@
 <package format="3">
   <name>wego_aruco</name>
   <version>0.0.1</version>
-  <description>ArUco marker-based AMCL correction at home position</description>
+  <description>ArUco marker-based visual servoing for precise home docking and AMCL reset</description>
   <maintainer email="wego@todo.todo">wego</maintainer>
   <license>Apache-2.0</license>
 
@@ -11,8 +11,6 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>std_srvs</depend>
-  <depend>tf2_ros</depend>
-  <depend>tf2_geometry_msgs</depend>
   <depend>cv_bridge</depend>
 
   <buildtool_depend>ament_python</buildtool_depend>

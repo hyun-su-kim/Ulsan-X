@@ -72,9 +72,7 @@ class GuidingState(State):
 
 
 class ReturningState(State):
-    """복귀 상태: 홈 대략 이동 → ArUco AMCL 보정 → 홈 정밀 재이동."""
-
-    _AMCL_CONVERGE_SEC = 2.0  # /initialpose 발행 후 파티클 수렴 대기
+    """복귀 상태: Nav2 홈 이동 → ArUco visual servoing 정밀 정차 → AMCL 리셋."""
 
     def __init__(self, node, navigator: BasicNavigator):
         super().__init__(outcomes=['succeeded', 'failed'])
@@ -92,13 +90,13 @@ class ReturningState(State):
         self._node.publish_status('RETURNING')
         home = self._node.waypoints[self._node.home_key]
 
-        # Step 1: 대략 이동
-        self._node.get_logger().info('RETURNING: 홈으로 대략 이동 중')
+        # Step 1: Nav2로 홈 근처 이동
+        self._node.get_logger().info('RETURNING: 홈으로 이동 중')
         if not self._nav_to(home):
-            self._node.get_logger().warn('홈 1차 이동 실패')
+            self._node.get_logger().warn('홈 이동 실패')
             return 'failed'
 
-        # Step 2: ArUco 보정 → AMCL 위치 업데이트
+        # Step 2: ArUco visual servoing → 정밀 정차
         if not self._aruco_client.wait_for_service(timeout_sec=2.0):
             self._node.get_logger().warn('aruco_localizer 없음 — 정밀 정차 생략')
             return 'succeeded'
@@ -109,17 +107,12 @@ class ReturningState(State):
         resp = future.result()
 
         if not resp.success:
-            self._node.get_logger().warn(f'ArUco 감지 실패: {resp.message} — 정밀 정차 생략')
+            self._node.get_logger().warn(f'ArUco 정밀 정차 실패: {resp.message}')
             return 'succeeded'
 
-        self._node.get_logger().info(f'ArUco 보정: {resp.message}')
+        self._node.get_logger().info(f'정밀 정차 완료: {resp.message}')
 
-        # Step 3: AMCL 수렴 대기 후 정밀 재이동
-        time.sleep(self._AMCL_CONVERGE_SEC)
-        self._node.get_logger().info('RETURNING: 정밀 재이동 중')
-        if not self._nav_to(home):
-            self._node.get_logger().warn('홈 2차 정밀 이동 실패')
-            return 'failed'
-
-        self._node.get_logger().info('정밀 정차 완료')
+        # Step 3: 정차 위치 = home 좌표 → /initialpose로 AMCL 리셋
+        self._node.publish_initial_pose()
+        self._node.get_logger().info('AMCL 리셋 완료')
         return 'succeeded'
