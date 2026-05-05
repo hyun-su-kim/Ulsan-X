@@ -1,8 +1,8 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 3 진행 중 — ArUco visual servoing 실기기 통합 검증 중**
-wego_aruco 구현 완료 (2026-05-01). Nav2 홈 복귀 시 방향 오류로 마커 미감지 문제 미해결 → 내일 계속.
+**Phase 1 재진행 — SLAM Toolbox 재매핑 + 로컬라이저 정량 비교 실험**
+홈 복귀 위치 오차가 허용 범위 초과 → 재매핑 결정 (2026-05-05). SLAM 도구를 Cartographer → SLAM Toolbox로 전환. 재매핑 후 AMCL vs SLAM Toolbox localization 정량 비교로 로컬라이저 확정 → ArUco 개발 재개 예정.
 
 ---
 
@@ -13,7 +13,7 @@ wego_aruco 구현 완료 (2026-05-01). Nav2 홈 복귀 시 방향 오류로 마�
 | 시스템 아키텍처 설계 | **완료** | — |
 | 통신 환경 구성 (CycloneDDS + Domain Bridge) | **완료** | wego_bridge |
 | 관제 UI 임시 테스트용 (RViz 위치 시각화) | **완료** | wego_ui |
-| SLAM 지도 작성 | **완료** | wego (cartographer) |
+| SLAM 지도 작성 | **진행 중** | wego (slam_toolbox) |
 | Nav2 경로 계획 & AMCL | **완료** | wego_2d_nav |
 | Fleet 충돌 회피 (PeerObstacleLayer) | **완료** | ulsan_obstacle_layer |
 | waypoints.yaml 목적지 좌표 작성 | **완료** | wego_behaviour/config |
@@ -41,7 +41,7 @@ wego_aruco 구현 완료 (2026-05-01). Nav2 홈 복귀 시 방향 오류로 마�
 
 ---
 
-### Phase 1 — 단일 LIMO 자율주행 완성 (현재 진행 중)
+### Phase 1 — 단일 LIMO 자율주행 완성 (재진행 중)
 
 > LIMO 1대가 학원을 완벽하게 자율주행하는 것이 목표
 
@@ -51,11 +51,20 @@ wego_aruco 구현 완료 (2026-05-01). Nav2 홈 복귀 시 방향 오류로 마�
 - [x] **유리 구간 유령 장애물** — Keepout Filter + DenoiseLayer 적용 완료 (2026-04-29)
   - 목적지·홈 구간 주행에 문제 없음 → 운용상 수용
   - 유리 회전문 통과는 LiDAR 물리 한계로 소프트웨어 완전 해결 불가 → **운용 정책: 유리 회전문 구간은 경로에서 제외**
-- [ ] **ArUco 마커 기반 홈 정차 보정** — 장시간 운영 시 누적 오차 리셋 (DEC-016)
+- [ ] **SLAM Toolbox 재매핑** — 홈 위치 원점(0,0,0) 기준 재작성 (2026-05-05~)
+  - Cartographer → SLAM Toolbox 전환 이유: 동일 맵으로 AMCL + SLAM Toolbox localization 둘 다 비교 가능
+  - `slam_toolbox_launch.py` 생성 완료
+  - 홈 위치 (0,0,0) 확인 완료 (`tf2_echo map base_link` → translation [0,0,0])
+  - LIMO 1 매핑 진행 중 → LIMO 2에서 이어서 진행 예정
+  - PGM + posegraph 두 포맷 동시 저장 예정
+- [ ] **waypoints.yaml 재설정** — 재매핑 후 새 맵 기준 목적지 좌표 재측정
+- [ ] **로컬라이저 정량 비교** — AMCL vs SLAM Toolbox localization
+  - 측정 항목: 홈 복귀 반복 오차 / 초기 수렴 속도 / 장거리 drift
+  - 수치 근거로 로컬라이저 확정 → `docs/ref/NAVIGATION.md` 결과 기록
+- [ ] **ArUco 마커 기반 홈 정차 보정** — 로컬라이저 확정 후 재개 (DEC-016, DEC-018)
   - 홈 위치에만 마커 2개 (로봇1 홈, 로봇2 홈)
-  - 홈 복귀 도착 시 마커 감지 → `/initialpose` 보정 → 정확한 정차 위치 보장
   - 구현 계획: `docs/ref/ARUCO-LOCALIZER.md` 참고
-- [x] `waypoints.yaml` 작성 — 강의실, 상담실, 회의실 등 목적지 좌표 (Nav2로 실제 주행하며 기록) — done (2026-04-30)
+- [x] `waypoints.yaml` 초안 작성 — 1차 맵 기준 좌표 (재매핑으로 무효화, 재측정 필요)
 
 ---
 
@@ -97,21 +106,24 @@ wego_aruco 구현 완료 (2026-05-01). Nav2 홈 복귀 시 방향 오류로 마�
 #### ArUco 보정
 - [x] `wego_aruco` 패키지 구현 — done (2026-05-01)
   - OpenCV 4.7+: `estimatePoseSingleMarkers` → `solvePnP` 교체
-  - rvec 법선 벡터 기반 yaw 보정 (`KP_YAW`, `YAW_TOL`) 추가
   - `/initialpose` 발행 주체를 `wego_aruco`로 이전 — 마커 map 좌표 역산
   - `wego_behaviour` ReturningState `publish_initial_pose()` 제거
-  - 마커 크기 20cm 확정 (거리 1.8m, size/distance = 0.11)
-  - `target_dist: 0.976m` 실측 완료 (20cm 마커 기준)
+  - 마커 크기 20cm 확정
   - `markers.yaml` ID 0: `map_x/y/yaw`, `cam_offset: 0.23` 입력 완료
-  - `home_robot1` waypoint 실좌표 갱신 — done (2026-05-01)
+  - `home_robot1` waypoint 갱신: x=12.498, y=-3.619, yaw=1.475 — done (2026-05-04)
 - [x] Nav2 goal tolerance 조정 — done (2026-05-01)
   - `xy_goal_tolerance: 0.25 → 0.20`, `yaw_goal_tolerance: 0.25 → 0.15`
-- [ ] **[미해결] Nav2 홈 복귀 시 방향 오류** — 마커가 카메라 시야 밖으로 벗어남
-  - 현상: Nav2 goal succeeded 후 로봇이 마커 반대 방향을 향해 정차
-  - 원인: AMCL drift로 실제 도착 yaw가 waypoint yaw(1.475)와 불일치
-  - yaw_goal_tolerance 0.15로 줄였으나 여전히 발생 → 내일 추가 대응 필요
-  - 후보 해결책: ① tolerance 추가 축소 ② 홈 도착 후 마커 방향 강제 회전 스텝 추가
-- [ ] ArUco visual servoing 실기기 통합 검증 (위 문제 해결 후)
+- [x] **2-Phase visual servoing 설계 및 실기기 검증** — done (2026-05-04)
+  - Phase 1: 전진 접근 → 30cm + lateral 보정 (lat=0.001m 수렴)
+  - Phase 2: 후진 → 2.007m + lateral 보정 (lat=0.008m 수렴)
+  - 설계 원칙: 제자리 회전 금지 (lateral-only 보정) — 마커 FOV 유지
+  - `target_dist: 2.007m` 실측 확정 (home_robot1 위치 기준)
+  - `KP_ANGULAR: 1.2`, `MAX_LINEAR: 0.08 m/s` 튜닝 완료
+- [ ] **`_publish_initialpose` 부호 버그 수정** — 확인 완료, 수정 대기
+  - 버그: `robot_x = map_x - total_dist × cos(map_yaw)` → 수정: `+`
+  - 수정 후 `/initialpose` 주석 해제 예정
+- [ ] **물리 위치 ~15cm 편차 해소** — /initialpose 활성화 후 재측정 예정
+- [ ] markers.yaml ID 1 (LIMO2) map 좌표 측정 및 입력
 
 #### 데모용 관제 UI
 - [ ] `wego_ui` Qt 기반 재구현 (현재는 임시 RViz 테스트용)

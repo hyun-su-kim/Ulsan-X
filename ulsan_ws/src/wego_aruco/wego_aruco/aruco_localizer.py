@@ -18,20 +18,44 @@ from std_srvs.srv import Trigger
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()
+
+# OpenCV ArUco 기본값으로 복원 (2026-05-04)
+# Phase 1에서 2m → 30cm 전진 접근하므로 원거리 특화 파라미터 불필요.
+# 기본값으로도 2m 거리의 20cm 마커 충분히 검출 가능.
+ARUCO_PARAMS.adaptiveThreshWinSizeMin = 3
+ARUCO_PARAMS.adaptiveThreshWinSizeMax = 23   # 기본값
+ARUCO_PARAMS.adaptiveThreshWinSizeStep = 10  # 기본값
+ARUCO_PARAMS.minMarkerPerimeterRate = 0.03   # 기본값
+ARUCO_PARAMS.errorCorrectionRate = 0.6       # 기본값
+
 DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
 
 class ArucoLocalizer(Node):
-    KP_LINEAR = 0.4
-    KP_ANGULAR = 0.8
+    # ── 제어 게인 ──────────────────────────────────────────────────
+    # KP_LINEAR  : 거리 오차 → 선속도 변환 게인
+    # KP_ANGULAR : lateral 오차 → 각속도 변환 게인 (클수록 좌우 보정 강함)
+    # KP_YAW     : yaw 오차 → 각속도 변환 게인 (현재 미사용)
+    KP_LINEAR = 0.3
+    KP_ANGULAR = 1.2   # 0.8 → 1.2: lateral 보정 강도 상향
     KP_YAW = 0.5
-    MAX_LINEAR = 0.15    # m/s
-    MAX_ANGULAR = 0.4    # rad/s
-    DIST_TOL = 0.03      # m
-    LAT_TOL = 0.03       # m
-    YAW_TOL = 0.05       # rad (~3°)
-    CONTROL_RATE = 10    # Hz
-    TIMEOUT_SEC = 30.0
+
+    # ── 속도 제한 ──────────────────────────────────────────────────
+    # MAX_LINEAR 낮출수록 이동 중 보정 반응 시간 확보 → 정밀도 향상
+    # MAX_ANGULAR 낮출수록 과보정(oscillation) 방지
+    MAX_LINEAR = 0.08   # m/s  0.15 → 0.08: 저속으로 정밀도 향상
+    MAX_ANGULAR = 0.3   # rad/s  0.4 → 0.3: 과보정 방지
+
+    # ── 수렴 허용 오차 ─────────────────────────────────────────────
+    DIST_TOL = 0.03     # m   — 거리 오차 허용 범위
+    LAT_TOL = 0.03      # m   — lateral(좌우) 오차 허용 범위
+    YAW_TOL = 0.05      # rad — yaw 오차 허용 범위 (~3°, 현재 미사용)
+
+    # ── 기타 ───────────────────────────────────────────────────────
+    CONTROL_RATE = 10        # Hz — 제어 루프 주기
+    TIMEOUT_SEC = 60.0       # s  — Phase1 + Phase2 합산 타임아웃
+    SEARCH_ANGULAR = 0.10    # rad/s — Phase1 미감지 시 저속 전진 대체 (미사용)
+    INTERMEDIATE_DIST = 0.30 # m  — Phase1 목표 거리 (30cm 근접 정렬)
 
     def __init__(self):
         super().__init__('aruco_localizer')
@@ -143,7 +167,12 @@ class ArucoLocalizer(Node):
         """
         R, _ = cv2.Rodrigues(rvec)
         normal = R[:, 2]  # 카메라 프레임에서 마커 법선 벡터
-        return math.atan2(normal[0], normal[2])
+        # OpenCV 카메라 좌표계에서 마커가 카메라를 정면으로 바라볼 때
+        # 마커 z축(법선)은 카메라 -z 방향을 가리킴 → normal[2] ≈ -1
+        # atan2(0, -1) = ±π 가 되어 정면에서 0이 나와야 하는 조건이 깨짐.
+        # -normal[2]로 부호 반전하면 정면 시 atan2(0, 1) = 0 으로 수렴.
+        # 수정 전: math.atan2(normal[0], normal[2])
+        return math.atan2(normal[0], -normal[2])
 
     def _debug_cb(self) -> None:
         """마커 감지 시 /aruco_debug 토픽으로 거리·yaw 발행 — 측정 및 모니터링용."""
@@ -196,58 +225,143 @@ class ArucoLocalizer(Node):
             res.message = 'CameraInfo 미수신'
             return res
 
-        self.get_logger().info('visual servoing 시작')
         interval = 1.0 / self.CONTROL_RATE
         start = time.time()
+        last_search_dir = 1
+
+        # ══════════════════════════════════════════════════════════════
+        # Phase 1 — INTERMEDIATE_DIST(30cm)까지 전진 + lateral 보정
+        # ══════════════════════════════════════════════════════════════
+        # [설계 원칙] 제자리 회전을 하지 않는다.
+        #   - 제자리 yaw 보정(회전)을 하면 마커가 FOV를 벗어나 미감지 발생.
+        #   - 전진하면서 lateral(좌우 편차)만 보정하면:
+        #       ① 마커가 항상 카메라 시야 안에 유지됨
+        #       ② 마커에 가까워질수록 픽셀 해상도 증가 → 정밀도 향상
+        #       ③ lateral 보정(이미지 중앙 맞춤)은 yaw도 기하학적으로 수렴시킴
+        #          (2m 거리에서 마커를 중앙으로 맞추면 로봇이 마커 정면을 향하게 됨)
+        # [수렴 조건] 30cm 도달 + lateral 허용 오차 이내
+        self.get_logger().info(
+            f'Phase 1 시작: {self.INTERMEDIATE_DIST}m 전진 접근 + lateral 보정'
+        )
+        phase1_done = False
 
         while time.time() - start < self.TIMEOUT_SEC:
             result = self._detect()
 
             if result is None:
-                self._stop()
-                self.get_logger().warn(f'마커 ID {self._target_id} 미감지 — 대기 중')
+                # 미감지 시 저속 전진 유지 — 정지하면 마커를 다시 찾기 어려움
+                # 전진하면 마커가 점점 커져 재감지 확률이 높아짐
+                slow_twist = Twist()
+                slow_twist.linear.x = 0.05  # 저속 전진
+                self._cmd_pub.publish(slow_twist)
+                self.get_logger().warn(
+                    f'마커 ID {self._target_id} 미감지 — 저속 전진으로 재감지 시도'
+                )
                 time.sleep(interval)
                 continue
 
             tvec, rvec = result
-            # tvec[2]: depth (마커까지 전방 거리), tvec[0]: lateral (좌우 편차)
-            dist_err = tvec[2] - self._target_dist
-            lat_err = tvec[0]
-            yaw = self._yaw_err(rvec)
+            dist_err = tvec[2] - self.INTERMEDIATE_DIST
+            lat_err  = tvec[0]
+            # yaw_err: 마커 법선과 카메라 정면 사이의 각도.
+            #   0이면 마커가 카메라에서 직사각형으로 보임 (수직 접근).
+            #   값이 크면 사다리꼴로 보임 (비스듬히 접근).
+            yaw_err  = self._yaw_err(rvec)
 
-            # 3축 수렴 조건: 거리·측면·법선 yaw 모두 허용 오차 이내
-            if abs(dist_err) < self.DIST_TOL and abs(lat_err) < self.LAT_TOL and abs(yaw) < self.YAW_TOL:
+            # 수렴 조건: 거리 + lateral + yaw 세 축 모두 허용 오차 이내여야 Phase 1 완료.
+            # yaw 조건을 생략하면 마커가 이미지 중앙에 있어도 비스듬히 접근한 채로
+            # Phase 2로 넘어가 최종 정차 각도가 틀어질 수 있다.
+            if (abs(dist_err) < self.DIST_TOL
+                    and abs(lat_err) < self.LAT_TOL
+                    and abs(yaw_err) < self.YAW_TOL):
                 self._stop()
                 self.get_logger().info(
-                    f'정밀 정차 완료 '
-                    f'(dist_err={dist_err:.3f}m, lat_err={lat_err:.3f}m, yaw_err={yaw:.3f}rad)'
+                    f'Phase 1 완료 '
+                    f'(dist_err={dist_err:.3f}m, lat={lat_err:.3f}m, yaw={yaw_err:.3f}rad)'
                 )
-                self._publish_initialpose()
-                res.success = True
-                res.message = (
-                    f'정차 완료: depth={tvec[2]:.3f}m, '
-                    f'lateral={tvec[0]:.3f}m, yaw={yaw:.3f}rad'
-                )
-                return res
+                phase1_done = True
+                break
 
             lin = float(np.clip(self.KP_LINEAR * dist_err, -self.MAX_LINEAR, self.MAX_LINEAR))
-            # angular = 측면 편차 보정(KP_ANGULAR) + 법선 yaw 오차 보정(KP_YAW)
-            # 두 항을 합산해 단일 angular velocity로 제어
+            # lateral + yaw 동시 보정.
+            # KP_ANGULAR: 좌우 편차(lateral) 보정 — 마커를 이미지 중앙으로 정렬.
+            # KP_YAW    : 수직 편차(yaw) 보정   — 마커가 직사각형으로 보이도록 정렬.
+            # 둘 다 전진(linear.x > 0) 중에 각속도로만 수정하므로 제자리 회전이 아님.
             ang = float(np.clip(
-                -self.KP_ANGULAR * lat_err - self.KP_YAW * yaw,
+                -self.KP_ANGULAR * lat_err - self.KP_YAW * yaw_err,
                 -self.MAX_ANGULAR, self.MAX_ANGULAR
             ))
-
             twist = Twist()
             twist.linear.x = lin
             twist.angular.z = ang
             self._cmd_pub.publish(twist)
             time.sleep(interval)
 
-        self._stop()
-        res.success = False
-        res.message = f'타임아웃 ({self.TIMEOUT_SEC}s) — 마커 미감지 또는 수렴 실패'
-        self.get_logger().warn(res.message)
+        if not phase1_done:
+            self._stop()
+            res.success = False
+            res.message = f'Phase 1 타임아웃 ({self.TIMEOUT_SEC}s) — 접근/정렬 실패'
+            self.get_logger().warn(res.message)
+            return res
+
+        # ══════════════════════════════════════════════════════════════
+        # Phase 2 — target_dist까지 후진 + lateral 보정 유지
+        # ══════════════════════════════════════════════════════════════
+        # [설계 원칙] 후진 중에도 lateral만 보정한다.
+        #   - Phase 1에서 yaw가 수렴된 상태(마커가 직사각형으로 보임)로 진입.
+        #   - 후진 거리(~1.7m)에 비례해 잔류 yaw 오차로 lateral이 누적될 수 있으므로
+        #     실시간으로 lateral을 보정하며 후진한다.
+        #   - yaw 보정은 추가하지 않음: Phase 1에서 이미 수직 정렬 완료.
+        #     후진 중 추가 yaw 보정은 오히려 궤적을 틀어뜨릴 수 있음.
+        self.get_logger().info(
+            f'Phase 2 시작: {self._target_dist}m까지 후진 + lateral 보정 유지'
+        )
+        phase2_done = False
+
+        while time.time() - start < self.TIMEOUT_SEC:
+            result = self._detect()
+
+            if result is None:
+                # 후진 중 일시적 미감지 — 정지 후 재감지 대기
+                self._stop()
+                time.sleep(interval)
+                continue
+
+            tvec, _ = result
+            dist_err = tvec[2] - self._target_dist  # 음수 → 후진
+            lat_err  = tvec[0]
+
+            if abs(dist_err) < self.DIST_TOL:
+                self._stop()
+                self.get_logger().info(
+                    f'Phase 2 완료 — 정밀 주차 '
+                    f'(dist_err={dist_err:.3f}m, lat={lat_err:.3f}m)'
+                )
+                phase2_done = True
+                break
+
+            lin = float(np.clip(self.KP_LINEAR * dist_err, -self.MAX_LINEAR, self.MAX_LINEAR))
+            # lateral만 보정 — yaw 보정 제외 (후진 중 제자리 회전 방지)
+            ang = float(np.clip(
+                -self.KP_ANGULAR * lat_err,
+                -self.MAX_ANGULAR, self.MAX_ANGULAR
+            ))
+            twist = Twist()
+            twist.linear.x = lin
+            twist.angular.z = ang
+            self._cmd_pub.publish(twist)
+            time.sleep(interval)
+
+        if not phase2_done:
+            self._stop()
+            res.success = False
+            res.message = f'Phase 2 타임아웃 ({self.TIMEOUT_SEC}s) — 후진 실패'
+            self.get_logger().warn(res.message)
+            return res
+
+        # self._publish_initialpose()  # 주차 위치 확정 후 활성화
+        res.success = True
+        res.message = f'정밀 주차 완료: target_dist={self._target_dist}m'
         return res
 
 

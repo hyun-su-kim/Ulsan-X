@@ -4,11 +4,12 @@
 markers:
   0:                  # 로봇1 홈 마커
     size: 0.20
-    target_dist: 0.976
+    target_dist: 2.007  # 실측 (2026-05-04, 최종 주차 위치 기준)
+    # 참고: 0.699m = Phase1 중간 정렬 거리가 아닌, 예전 근접 주차 측정값
     cam_offset: 0.23
-    map_x: 12.613
-    map_y: -2.420
-    map_yaw: -1.667
+    map_x: 12.712  # home_robot1(12.498,-3.619,yaw=1.475) + total_dist(2.237)*cos(1.475)
+    map_y: -1.393  # home_robot1(-3.619) + total_dist(2.237)*sin(1.475)
+    map_yaw: -1.667  # home_robot1 yaw(1.475) - π
   1:                  # 로봇2 홈 마커
     size: 0.20
     target_dist: 0.30

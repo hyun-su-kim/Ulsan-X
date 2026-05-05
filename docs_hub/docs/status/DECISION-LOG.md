@@ -4,25 +4,30 @@
 
 ---
 
-### DEC-018: ArUco 홈 도킹 방식 — Coarse-to-Fine (Visual Servoing + AMCL 리셋)
-- **Context**: 홈 복귀 시 ArUco 마커 활용 방식을 결정. 초기 설계는 /initialpose 발행(AMCL 교정)만 수행하는 방식이었으나, visual servoing(물리 정밀 정차)으로 전환 논의 후 두 방식을 결합하는 방향으로 최종 확정.
-- **Decision**: **Coarse-to-Fine 패턴** — Nav2 대략 이동 → ArUco visual servoing 정밀 정차 → 마커 역산 /initialpose 발행
+### DEC-018: ArUco 홈 도킹 방식 — 2-Phase Lateral-Only Visual Servoing + AMCL 리셋
+- **Context**: 홈 복귀 시 ArUco 마커 활용 방식을 결정. 초기 설계는 /initialpose 발행(AMCL 교정)만 수행하는 방식이었으나, visual servoing(물리 정밀 정차)으로 전환 논의 후 두 방식을 결합하는 방향으로 최종 확정. 이후 실기기 검증 과정에서 2-Phase 설계로 구체화.
+- **Decision**: **Coarse-to-Fine 패턴** — Nav2 대략 이동 → 2-Phase ArUco visual servoing → 마커 역산 /initialpose 발행
+  - Phase 1: 전진 접근 (2m → 30cm) + lateral-only 보정
+  - Phase 2: 후진 정밀 정차 (30cm → 2.007m) + lateral-only 보정
 - **Rationale**:
   - visual servoing만: 물리 위치는 정밀하나 AMCL drift 미보정 → 다음 안내에서 오차 누적
   - /initialpose만: AMCL 보정되나 물리 위치는 Nav2 허용 오차(±10~30cm) 그대로
   - 두 방식 결합: 물리 정밀 정차 + AMCL 리셋 동시 달성
   - MiR, Fetch 등 상용 AMR 및 Nav2 opennav_docking과 동일한 산업 표준 패턴
-  - 면접 어필: "Coarse-to-Fine Localization 패턴을 적용했으며, 정밀 정차 후 알려진 절대 좌표로 AMCL을 리셋하는 방식은 상용 AMR과 동일한 구조"
-- **구현 (2026-05-01 업데이트)**:
-  - `wego_aruco/aruco_localizer.py`: solvePnP 기반 pose 추정, rvec 법선 벡터 yaw 보정, /aruco_correct 서비스, 완료 후 /initialpose 직접 발행
-  - `wego_behaviour/states.py` ReturningState: /aruco_correct 호출만 수행. publish_initial_pose() 제거 예정.
-  - /initialpose 발행 주체 변경: `wego_behaviour`(고정 waypoint 좌표) → `wego_aruco`(마커 map 좌표 역산)
-    - 역산 공식: `robot_x = marker_x - (target_dist + cam_offset) × cos(marker_yaw)`
-    - cam_offset: 0.23m (base_link → camera_link, camera_tilt_launch.py 기준)
-  - **변경 이유**: visual servoing 완료 위치가 접근 방향에 따라 달라지므로 고정 waypoint 좌표로 리셋하면 부정확. 마커 map 좌표(고정) + target_dist 역산이 항상 정확.
+  - **2-Phase 설계 이유**: 단순 전진 접근(dist→target_dist)은 30cm에서 lateral 미수렴으로 타임아웃 발생. 30cm까지 전진 정렬 후 후진하면 Phase 1의 정밀 정렬이 Phase 2 시작점으로 활용됨.
+  - **lateral-only 제어 이유**: 제자리 yaw 보정 시 로봇 회전으로 마커가 카메라 FOV 이탈 → 미감지. lateral만 보정해도 전진 중 기하학적으로 yaw가 수렴함.
+  - 면접 어필: "Coarse-to-Fine Localization 패턴을 적용했으며, 정밀 정차 후 알려진 절대 좌표로 AMCL을 리셋하는 방식은 상용 AMR과 동일한 구조. 카메라 FOV 유지를 위한 lateral-only 제어는 실기기 반복 검증을 통해 도출."
+- **구현 현황 (2026-05-04)**:
+  - `wego_aruco/aruco_localizer.py`: 2-Phase 구조, lateral-only P제어, /aruco_correct 서비스
+  - `wego_behaviour/states.py` ReturningState: /aruco_correct 호출만 수행
+  - /initialpose 발행 주체: `wego_aruco` (마커 map 좌표 역산)
+    - 역산 공식: `robot_x = marker_x + total_dist × cos(marker_yaw)` (**+ 부호**)
+    - cam_offset: 0.23m (base_link → camera_link)
+  - 실기기 검증 결과: Phase 1 lat=0.001m, Phase 2 lat=0.008m 수렴
 - **마커 구성**: ID 0 (LIMO1), ID 1 (LIMO2) — 각 로봇 홈 정면 벽 부착, 크기 20cm × 20cm
-- **markers.yaml 추가 예정 필드**: `map_x`, `map_y`, `map_yaw`, `cam_offset`
-- **Date**: 2026-05-01
+- **markers.yaml 현황**: ID 0 완료 (map_x=12.712, map_y=-1.393, map_yaw=-1.667, target_dist=2.007). ID 1 미측정.
+- **미완료**: _publish_initialpose 부호 버그 수정 + /initialpose 주석 해제 (다음 세션)
+- **Date**: 2026-05-01 → 2026-05-04 업데이트
 
 ---
 

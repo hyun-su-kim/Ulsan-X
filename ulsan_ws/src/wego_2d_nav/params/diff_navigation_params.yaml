@@ -130,8 +130,8 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.20   # 0.25 → 0.20: 홈 복귀 시 방향 오차 개선 (2026-05-01)
-      yaw_goal_tolerance: 0.15  # 0.25 → 0.15: 마커 정면 도착 보장, ArUco 서보잉 진입 조건
+      xy_goal_tolerance: 0.10   # 0.25 → 0.20 (2026-05-01) → 0.10 (2026-05-04): ArUco 마커 시야 확보
+      yaw_goal_tolerance: 0.10  # 0.25 → 0.15 (2026-05-01) → 0.10 (2026-05-04): AMCL drift 차단
 
     # DWB parameters
     FollowPath:
@@ -158,7 +158,7 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.2
+      xy_goal_tolerance: 0.10  # general_goal_checker와 동일하게 맞춤 (2026-05-04)
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
       stateful: True

@@ -16,29 +16,52 @@
 - 부착 위치: 각 로봇 홈 위치 **정면** 벽 (로봇이 홈에 서면 카메라 정면에 마커)
 - 각 로봇은 자신의 마커 ID만 추적
 
-## 동작 흐름
+## 동작 흐름 (2-Phase Visual Servoing)
 
 ```
 Nav2로 홈 근처 이동 (±10~30cm)
     ↓
 /aruco_correct 서비스 호출
     ↓ [wego_aruco 내부]
-    마커 ID 감지
-    solvePnP → tvec (거리/측면), rvec (법선 벡터)
-    dist_err = tvec[2] - target_dist
+
+    ── Phase 1: 전진 접근 ──────────────────────────────
+    마커 ID 감지 → solvePnP → tvec
+    dist_err = tvec[2] - INTERMEDIATE_DIST (0.30m 목표)
     lat_err  = tvec[0]
-    yaw_err  = atan2(R[0,2], R[2,2])  ← rvec 법선 벡터
-    P제어 → cmd_vel 발행 (loop)
-    3축 오차 threshold 이내 → 정차
+    linear  = clip(KP_LINEAR × dist_err,  ±MAX_LINEAR)
+    angular = clip(-KP_ANGULAR × lat_err, ±MAX_ANGULAR)  ← lateral만, yaw 제외
+    수렴 조건: |dist_err| < 0.03m AND |lat_err| < 0.03m → Phase 2 진입
+    미감지 시: 저속 전진(0.05 m/s)으로 마커 재감지 시도
+
+    ── Phase 2: 후진 정밀 정차 ─────────────────────────
+    dist_err = tvec[2] - target_dist (2.007m 목표, 음수 → 후진)
+    lat_err  = tvec[0]
+    linear  = clip(KP_LINEAR × dist_err,  ±MAX_LINEAR)
+    angular = clip(-KP_ANGULAR × lat_err, ±MAX_ANGULAR)  ← lateral만, yaw 제외
+    수렴 조건: |dist_err| < 0.03m → 정차
+    미감지 시: 정지 후 재감지 대기
+
     ↓
-마커 map 좌표 역산
-    robot_x = marker_x - (target_dist + cam_offset) × cos(marker_yaw)
-    robot_y = marker_y - (target_dist + cam_offset) × sin(marker_yaw)
+마커 map 좌표 역산 (부호 주의: +)
+    total_dist = target_dist + cam_offset  (2.007 + 0.23 = 2.237m)
+    robot_x = marker_x + total_dist × cos(marker_yaw)   ← + (marker_yaw는 마커→로봇 방향)
+    robot_y = marker_y + total_dist × sin(marker_yaw)
+    robot_yaw = marker_yaw + π
     ↓
 /initialpose 발행 (AMCL 리셋) ← wego_aruco가 직접 발행
     ↓
 정차 완료 응답 → wego_behaviour IDLE 전환
 ```
+
+### 설계 원칙: 제자리 회전 금지
+
+Phase 1/2 모두 **lateral(좌우) 오차만 보정하고 yaw 보정(제자리 회전)은 수행하지 않는다.**
+
+- 제자리 yaw 보정을 하면 로봇이 회전하면서 마커가 카메라 FOV를 벗어나 미감지 발생
+- 전진하면서 lateral만 보정해도 yaw가 기하학적으로 수렴:
+  - 2m 거리에서 마커를 이미지 중앙에 맞추면 로봇이 마커 정면을 향하게 됨
+  - 마커에 가까워질수록 픽셀 해상도 증가 → 정밀도 향상
+- Phase 1 실기기 검증 결과: lat=0.001m 수렴 확인 (2026-05-04)
 
 ## 패키지 구조
 
@@ -81,17 +104,21 @@ ulsan_ws/src/wego_aruco/
 
 ## P 제어 파라미터 (aruco_localizer.py 클래스 상수)
 
-| 상수 | 기본값 | 설명 |
-|------|--------|------|
-| `KP_LINEAR` | 0.4 | 전진/후진 게인 |
-| `KP_ANGULAR` | 0.8 | 측면 편차 회전 게인 |
-| `KP_YAW` | — | 법선 yaw 오차 게인 (rvec 추가 후 설정) |
-| `MAX_LINEAR` | 0.15 m/s | 최대 전진 속도 |
-| `MAX_ANGULAR` | 0.4 rad/s | 최대 회전 속도 |
-| `DIST_TOL` | 0.03 m | 거리 허용 오차 |
-| `LAT_TOL` | 0.03 m | 측면 허용 오차 |
-| `YAW_TOL` | — | 법선 yaw 허용 오차 (rvec 추가 후 설정) |
-| `TIMEOUT_SEC` | 30.0 s | 수렴 타임아웃 |
+> 2026-05-04 실기기 튜닝 완료 기준값
+
+| 상수 | 값 | 설명 | 변경 이력 |
+|------|-----|------|----------|
+| `KP_LINEAR` | 0.3 | 거리 오차 → 선속도 게인 | — |
+| `KP_ANGULAR` | 1.2 | lateral 오차 → 각속도 게인 | 0.8 → 1.2 (lateral 보정 강도 상향) |
+| `KP_YAW` | 0.5 | yaw 오차 게인 (현재 미사용) | — |
+| `MAX_LINEAR` | 0.08 m/s | 최대 선속도 | 0.15 → 0.08 (저속 정밀도 향상) |
+| `MAX_ANGULAR` | 0.3 rad/s | 최대 각속도 | 0.4 → 0.3 (과보정 방지) |
+| `DIST_TOL` | 0.03 m | 거리 수렴 허용 오차 | — |
+| `LAT_TOL` | 0.03 m | lateral 수렴 허용 오차 | — |
+| `YAW_TOL` | 0.05 rad | yaw 허용 오차 (현재 미사용) | — |
+| `CONTROL_RATE` | 10 Hz | 제어 루프 주기 | — |
+| `TIMEOUT_SEC` | 60.0 s | Phase 1+2 합산 타임아웃 | 30 → 60 |
+| `INTERMEDIATE_DIST` | 0.30 m | Phase 1 목표 거리 (30cm 근접) | — |
 
 ## markers.yaml 형식
 
@@ -99,22 +126,51 @@ ulsan_ws/src/wego_aruco/
 markers:
   0:                   # LIMO1 홈 마커
     size: 0.20         # 마커 한 변 길이 (m)
-    target_dist: ???   # 정차 목표 거리 (m) — 20cm 마커 교체 후 재측정 필요
+    target_dist: 2.007 # 정차 목표 거리 (m) — home_robot1 위치에서 실측 (2026-05-04)
     cam_offset: 0.23   # base_link → camera_link 전방 오프셋 (m)
-    map_x: ???         # 마커 map 좌표 — 측정 대기
-    map_y: ???
-    map_yaw: ???       # 마커가 바라보는 방향 (로봇 접근 방향의 반대)
+    map_x: 12.712      # 마커 map 좌표 (home_robot1 + total_dist × cos(1.475))
+    map_y: -1.393      # 마커 map 좌표 (home_robot1 + total_dist × sin(1.475))
+    map_yaw: -1.667    # home_robot1 yaw(1.475) - π  ← 마커→로봇 방향각
   1:                   # LIMO2 홈 마커
     size: 0.20
-    target_dist: 0.30  # 재측정 필요
+    target_dist: 0.30  # 미측정
     cam_offset: 0.23
-    map_x: ???
-    map_y: ???
-    map_yaw: ???
+    map_x: 0.0         # 미측정
+    map_y: 0.0
+    map_yaw: 0.0
 
 home_marker:
   home_robot1: 0
   home_robot2: 1
+```
+
+### map_x/y 계산 방법
+
+```
+# 로봇이 home_robot1(rx, ry, ryaw)에서 마커를 바라볼 때:
+total_dist = target_dist + cam_offset
+map_x = rx + total_dist × cos(ryaw)
+map_y = ry + total_dist × sin(ryaw)
+map_yaw = ryaw - π   ← 마커→로봇 방향 (로봇 접근 방향의 반대)
+
+# 예: home_robot1 (12.498, -3.619, 1.475), total_dist=2.237
+# map_x = 12.498 + 2.237 × cos(1.475) = 12.498 + 0.219 = 12.717
+# map_y = -3.619 + 2.237 × sin(1.475) = -3.619 + 2.226 = -1.393
+```
+
+### _publish_initialpose 역산 공식 (부호 주의)
+
+`map_yaw`는 마커→로봇 방향각이므로 역산 시 **더하기(+)** 를 사용한다.
+
+```python
+# 올바른 공식
+robot_x = marker_x + total_dist * cos(marker_yaw)   # ← + (틀리기 쉬운 부분)
+robot_y = marker_y + total_dist * sin(marker_yaw)
+robot_yaw = marker_yaw + π
+
+# 검증 (home_robot1 재현):
+# 12.712 + 2.237 × cos(-1.667) = 12.712 - 0.214 = 12.498 ✓
+# -1.393 + 2.237 × sin(-1.667) = -1.393 - 2.226 = -3.619 ✓
 ```
 
 > `cam_offset` 출처: `wego/launch/camera_tilt_launch.py` — base_link→camera_mount(0.20m) + camera_rotate→camera_link(0.03m) = 0.23m
@@ -129,29 +185,45 @@ ros2 launch wego_aruco aruco_localizer_launch.py home_key:=home_robot1
 ros2 launch wego_aruco aruco_localizer_launch.py home_key:=home_robot2
 ```
 
-## 구현 현황 (2026-05-01)
+## 구현 현황 (2026-05-04)
 
 | 항목 | 상태 |
 |------|------|
 | solvePnP 기반 pose 추정 | 완료 |
-| tvec 기반 dist/lateral P제어 | 완료 |
-| rvec 법선 벡터 yaw 보정 | 완료 |
-| /initialpose 발행 (wego_aruco) | 완료 |
-| markers.yaml ID 0 map 좌표 입력 | 완료 (AMCL 역산, 2차 검증 예정) |
-| target_dist 재측정 (20cm 마커) | 완료 (0.976m) |
+| 2-Phase lateral-only P제어 | 완료 (2026-05-04) |
+| Phase 1: 전진 30cm + lateral 보정 | 완료 — lat=0.001m 수렴 확인 |
+| Phase 2: 후진 2.007m + lateral 보정 | 완료 — lat=0.008m 수렴 확인 |
+| target_dist = 2.007m 확정 | 완료 (home_robot1 위치 실측) |
+| ArUco 기본 감지 파라미터 복원 | 완료 (원거리 특화 불필요) |
+| home_robot1 waypoint 갱신 | 완료 (x=12.498, y=-3.619, yaw=1.475) |
+| markers.yaml ID 0 map 좌표 | 완료 (12.712, -1.393, -1.667) |
+| markers.yaml ID 1 map 좌표 | **미완료** (LIMO 2 측정 필요) |
+| _publish_initialpose 공식 버그 수정 | **미완료** — 부호 오류 확인, 수정 대기 |
+| /initialpose 활성화 | **미완료** — 공식 수정 후 주석 해제 예정 |
+| 물리 위치 15cm 편차 원인 규명 | **진행 중** — /initialpose 활성화 후 재측정 예정 |
 | markers.yaml ID 1 map 좌표 입력 | **미완료** (LIMO 2 측정 필요) |
-| **Nav2 홈 복귀 방향 오류** | **미해결** — 마커 카메라 시야 밖 |
-| 실기기 통합 검증 | **미완료** (방향 오류 해결 후) |
 
-## 미해결 이슈 (2026-05-01)
+## 미해결 이슈 (2026-05-04)
 
-**Nav2 홈 복귀 시 방향 오류**
-- 현상: Nav2 goal succeeded 후 로봇이 마커 반대 방향으로 정차 → 카메라에 마커 미감지
-- 원인: AMCL drift로 실제 도착 yaw가 home_robot1 waypoint yaw(1.475)와 불일치
-- 시도: `yaw_goal_tolerance 0.25 → 0.15` 축소 — 여전히 발생
-- 후보 해결책:
-  1. tolerance 추가 축소 (수렴 실패 위험)
-  2. 홈 도착 후 마커 방향으로 강제 회전 스텝 추가 (ReturningState)
+### _publish_initialpose 부호 버그
+
+- 현상: 주석 해제 시 AMCL이 (12.828, -0.193)으로 리셋 — 실제 위치(12.498, -3.619)와 크게 다름
+- 원인: 역산 공식에서 `-` 를 사용했으나 `+` 가 맞음 (map_yaw는 마커→로봇 방향이므로)
+  ```python
+  # 버그: robot_x = map_x - total_dist * cos(map_yaw)
+  # 수정: robot_x = map_x + total_dist * cos(map_yaw)
+  ```
+- 상태: 확인 완료, 수정 + /initialpose 주석 해제 예정
+
+### 물리 위치 ~15cm 편차
+
+- 현상: Phase 2 완료 후 물리 정차 위치가 home_robot1(12.498, -3.619)에서 약 15cm 벗어남
+- 현재 제어 정밀도: Phase 1 lat=0.001m, Phase 2 lat=0.008m (제어 자체는 정상)
+- 추정 원인:
+  1. Phase 1 곡선 접근으로 인한 축 이동 → Phase 2 후진 축이 home_robot1과 다름
+  2. AMCL drift (누적 오차) — /initialpose 활성화 후 개선 여부 확인 필요
+  3. 주행 거리(3.4m 왕복) 대비 odometry 기계적 오차
+- 다음 단계: _publish_initialpose 버그 수정 → /initialpose 활성화 → 재측정
 
 ## 주의사항
 

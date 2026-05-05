@@ -41,8 +41,8 @@ waypoints:
     yaw: 2.9943
   home_robot1:
     label: 로봇1 홈
-    x: 12.498
-    y: -3.619
+    x: 12.498   # 2m 주차 위치 (Phase2 target_dist=1.990m 기준)
+    y: -3.619   # 이전 근접값: x=12.487, y=-3.459, yaw=1.421 (0.699m 위치)
     yaw: 1.475
   home_robot2:
     label: 로봇2 홈
