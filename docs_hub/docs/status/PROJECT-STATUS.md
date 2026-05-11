@@ -1,8 +1,8 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 1 재진행 — SLAM Toolbox 재매핑 + 로컬라이저 정량 비교 실험**
-홈 복귀 위치 오차가 허용 범위 초과 → 재매핑 결정 (2026-05-05). SLAM 도구를 Cartographer → SLAM Toolbox로 전환. 재매핑 후 AMCL vs SLAM Toolbox localization 정량 비교로 로컬라이저 확정 → ArUco 개발 재개 예정.
+**Phase 3 — ArUco AMCL 보정 + FSM 주행 통합 검증 완료**
+passive ArUco pose corrector 실기기 검증 완료 (2026-05-08). classroom_1 → home1 왕복 FSM 주행 중 마커 감지 → AMCL 자동 보정 확인. home1 Nav2 goal 성공. 다음: 음성 파이프라인 구현.
 
 ---
 
@@ -51,20 +51,14 @@
 - [x] **유리 구간 유령 장애물** — Keepout Filter + DenoiseLayer 적용 완료 (2026-04-29)
   - 목적지·홈 구간 주행에 문제 없음 → 운용상 수용
   - 유리 회전문 통과는 LiDAR 물리 한계로 소프트웨어 완전 해결 불가 → **운용 정책: 유리 회전문 구간은 경로에서 제외**
-- [ ] **SLAM Toolbox 재매핑** — 홈 위치 원점(0,0,0) 기준 재작성 (2026-05-05~)
-  - Cartographer → SLAM Toolbox 전환 이유: 동일 맵으로 AMCL + SLAM Toolbox localization 둘 다 비교 가능
-  - `slam_toolbox_launch.py` 생성 완료
-  - 홈 위치 (0,0,0) 확인 완료 (`tf2_echo map base_link` → translation [0,0,0])
-  - LIMO 1 매핑 진행 중 → LIMO 2에서 이어서 진행 예정
-  - PGM + posegraph 두 포맷 동시 저장 예정
-- [ ] **waypoints.yaml 재설정** — 재매핑 후 새 맵 기준 목적지 좌표 재측정
-- [ ] **로컬라이저 정량 비교** — AMCL vs SLAM Toolbox localization
-  - 측정 항목: 홈 복귀 반복 오차 / 초기 수렴 속도 / 장거리 drift
-  - 수치 근거로 로컬라이저 확정 → `docs/ref/NAVIGATION.md` 결과 기록
-- [ ] **ArUco 마커 기반 홈 정차 보정** — 로컬라이저 확정 후 재개 (DEC-016, DEC-018)
-  - 홈 위치에만 마커 2개 (로봇1 홈, 로봇2 홈)
-  - 구현 계획: `docs/ref/ARUCO-LOCALIZER.md` 참고
-- [x] `waypoints.yaml` 초안 작성 — 1차 맵 기준 좌표 (재매핑으로 무효화, 재측정 필요)
+- [x] **재매핑 완료** — 홈 위치 원점(0,0,0) 기준 새 맵으로 교체 (2026-05-07)
+  - AMCL 위치추정: Cartographer 맵 기반 AMCL 유지 (SLAM Toolbox 비교 실험 계획 → 실용성 우선으로 건너뜀)
+  - 새 map origin: [-7.1, -12.2, 0]
+  - `filter_map.yaml` 재생성 (새 origin 반영)
+- [x] **waypoints.yaml 재측정 완료** — 새 맵 기준 실기기 recorder로 재기록 (2026-05-07)
+  - home_robot1: x=0.0, y=0.98, yaw=-1.5708 (2026-05-08 재측정: 마커 시야 확보 위해 98cm 이동)
+  - classroom_1~5, counseling_1~2, counter, intensive_counseling_1~2, multi, vice_principal 전부 재측정
+- [x] `waypoints.yaml` 완료 — 새 맵 기준 좌표 확정 (2026-05-07)
 
 ---
 
@@ -86,9 +80,9 @@
 #### 미션 제어
 - [x] `wego_behaviour` 패키지 뼈대: **Yasmin FSM** (IDLE / GUIDING / RETURNING) + `navigate_to_pose` 연동 — done (2026-04-30)
 - [x] `goal_test_node` 추가 — wego_voice 완성 전 FSM 검증용 임시 노드 (2026-04-30)
-- [ ] **behaviour FSM 실기기 웨이포인트 주행 검증** — IDLE→GUIDING 전환 및 주행 명령 확인. executor 충돌 수정 후 재검증 필요.
-  - yasmin: `~/yasmin_repo/yasmin`을 colcon build로 설치 완료 (LIMO)
-  - BasicNavigator executor 충돌 수정 완료 (MultiThreadedExecutor 분리)
+- [x] **behaviour FSM 실기기 웨이포인트 주행 검증** — done (2026-05-08)
+  - classroom_1 → home1 왕복 주행 성공 (IDLE→GUIDING→RETURNING→IDLE)
+  - goal_test_node로 목적지 수동 발행 → FSM 전환 정상 확인
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
 
 #### 음성 파이프라인
@@ -109,21 +103,33 @@
   - `/initialpose` 발행 주체를 `wego_aruco`로 이전 — 마커 map 좌표 역산
   - `wego_behaviour` ReturningState `publish_initial_pose()` 제거
   - 마커 크기 20cm 확정
-  - `markers.yaml` ID 0: `map_x/y/yaw`, `cam_offset: 0.23` 입력 완료
-  - `home_robot1` waypoint 갱신: x=12.498, y=-3.619, yaw=1.475 — done (2026-05-04)
+  - `markers.yaml` ID 0 재측정 완료 (2026-05-08):
+    - target_dist=0.946, map_x=0.0, map_y=-0.196, map_yaw=1.5708, calibrated=true
+    - home_robot1 위치 기준 역산: camera_y=0.75, marker_y=0.75-0.946=-0.196
 - [x] Nav2 goal tolerance 조정 — done (2026-05-01)
-  - `xy_goal_tolerance: 0.25 → 0.20`, `yaw_goal_tolerance: 0.25 → 0.15`
+  - `xy_goal_tolerance: 0.10`, `yaw_goal_tolerance: 0.10` (2026-05-04 재조정)
+- [x] AMCL 업데이트 빈도 조정 (2026-05-08)
+  - `update_min_d: 0.1 → 0.2`, `update_min_a: 0.1 → 0.2`
+  - CPU 부하 절감 목적 (Control loop missed rate 경고 대응)
 - [x] **2-Phase visual servoing 설계 및 실기기 검증** — done (2026-05-04)
   - Phase 1: 전진 접근 → 30cm + lateral 보정 (lat=0.001m 수렴)
-  - Phase 2: 후진 → 2.007m + lateral 보정 (lat=0.008m 수렴)
+  - Phase 2: 후진 → 1.974m + lateral 보정 (lat=0.008m 수렴)
   - 설계 원칙: 제자리 회전 금지 (lateral-only 보정) — 마커 FOV 유지
-  - `target_dist: 2.007m` 실측 확정 (home_robot1 위치 기준)
-  - `KP_ANGULAR: 1.2`, `MAX_LINEAR: 0.08 m/s` 튜닝 완료
+- [x] **passive ArUco pose corrector 구현** — done (2026-05-07), DEC-020
+  - `wego_aruco/pose_corrector.py` 신규 작성
+  - 전략: 웨이포인트 바닥/벽 마커 감지 → 주행 중 /initialpose 자동 발행 (visual servoing 없음)
+  - 조건: MIN_CONSISTENT=3회, COOLDOWN=10초
+  - 변환 체인: `T_map_base = T_map_marker × inv(T_cam_marker) × inv(T_base_cam)`
+  - TF lookup으로 camera tilt 자동 반영
+- [x] **passive corrector 물리 마커 설치 + 실기기 검증** — done (2026-05-08)
+  - home1 바닥 마커(ID 0) 방향 캘리브레이션 완료 (시계방향 90° 회전으로 map_yaw=π/2 확정)
+  - classroom_1 → home1 왕복 주행 중 AMCL 보정 확인 (10초 cooldown 간격 정상 동작)
+  - 보정값 수렴: x≈0.15, y≈1.22, yaw≈-1.52 (home1 기준 ~0.25m 오차, Nav2 goal 성공)
 - [ ] **`_publish_initialpose` 부호 버그 수정** — 확인 완료, 수정 대기
   - 버그: `robot_x = map_x - total_dist × cos(map_yaw)` → 수정: `+`
   - 수정 후 `/initialpose` 주석 해제 예정
-- [ ] **물리 위치 ~15cm 편차 해소** — /initialpose 활성화 후 재측정 예정
 - [ ] markers.yaml ID 1 (LIMO2) map 좌표 측정 및 입력
+- [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI
 - [ ] `wego_ui` Qt 기반 재구현 (현재는 임시 RViz 테스트용)

@@ -4,6 +4,62 @@
 
 ---
 
+### DEC-020: 복도 AMCL drift 해결 방식 — passive ArUco pose corrector
+- **Context**: 복도 주행 중 AMCL이 y 방향으로 ~0.29m drift 발생. Nav2 goal checker는 TF(`map→base_link`) 기반 판정 = AMCL 추정값 기반이므로, drift된 상태에서 실제 홈에 도착하기 전에 goal 판정이 내려지는 문제 발생. 복도(긴 직선, 특징점 없음)에서 AMCL symmetric ambiguity로 위치가 당겨지는 현상.
+- **문제 분석**:
+  - y좌표 모니터링 결과: 복도 진행 중 0.292m 오추정 → goal 판정 → 제자리 회전 후 AMCL 재수렴(0.52). 실제 홈 도착 전에 멈추는 패턴 반복.
+  - 복도 벽 마커: 로봇이 복도를 가로질러 홈 방향으로 이동하므로 카메라가 벽을 바라보지 않아 감지 불가.
+  - visual servoing: 홈 도착 후 1회 보정에는 적합하나 주행 중 drift 누적을 막지 못함.
+- **Options**:
+  - A) Nav2 time-based goal checker (일정 시간 머물러야 판정) — Nav2 플러그인 커스텀 필요, 복잡
+  - B) goal tolerance 완화 → 이미 0.10m, 더 완화하면 반대로 정밀도 저하
+  - C) update_min_d/a 낮춰 AMCL 업데이트 빈도 증가 → 부분 완화
+  - D) **passive ArUco pose corrector** — 바닥 마커를 웨이포인트마다 설치, 주행 중 감지 시 /initialpose 자동 발행
+- **Decision**: **C + D 병행**
+  - `update_min_d: 0.25→0.1`, `update_min_a: 0.2→0.1` (즉시 적용)
+  - `aruco_pose_corrector` 노드: 주행 중 바닥/벽 마커 감지 → full 3D transform → /initialpose 발행
+- **Rationale**:
+  - 바닥 마커(카메라 하향 약 15°, 높이 20cm → 75cm 앞 바닥 인식): 로봇 진행 방향 앞에 두면 이동 경로에서 반드시 감지됨.
+  - TF lookup(`base_link←camera_optical`)으로 camera tilt 자동 반영 → 마커 위치 부정확한 수동 계산 불필요.
+  - MIN_CONSISTENT=3, COOLDOWN=10s: 단일 프레임 노이즈 방지 + 과도한 AMCL 리셋 방지.
+  - 변환 체인: `T_map_base = T_map_marker × inv(T_cam_marker) × inv(T_base_cam)` (full 3D, 카메라 tilt 반영)
+  - 면접 어필: "AMCL만으로 해결 불가한 복도 drift를 마커 절대 좌표로 주기적 리셋하는 구조. 상용 AGV의 QR 바닥 마커 체크포인트와 동일한 원리."
+- **구현 현황 (2026-05-07)**:
+  - `wego_aruco/pose_corrector.py` 신규 작성 (aruco_pose_corrector 노드)
+  - `setup.py` entry point 추가
+  - markers.yaml 확장: map 좌표 미측정(map_x=0, map_y=0)이면 자동 건너뜀
+- **실기기 검증 완료 (2026-05-08)**:
+  - home1 바닥 마커(ID 0) 방향 캘리브레이션: 시계방향 90° 회전으로 map_yaw=π/2 확정
+  - classroom_1 → home1 왕복 주행 중 AMCL 자동 보정 확인 (10s cooldown 간격)
+  - Nav2 home1 goal 성공 확인
+- **Date**: 2026-05-07 → 2026-05-08 검증 완료
+
+---
+
+### DEC-019: SLAM 알고리즘 선택 — Cartographer (SLAM Toolbox 제외)
+- **Context**: 학원 복도(긴 직선 + 유리 환경)에서 SLAM 맵 빌딩 필요. ROS2 표준인 SLAM Toolbox를 먼저 시도했으나 맵 빌딩 실패 반복.
+- **문제 분석**:
+  - SLAM Toolbox(karto 백엔드)는 스캔-스캔 매칭 방식 → 복도처럼 양쪽 벽 패턴이 동일한 환경에서 현재 스캔을 이전 위치의 스캔으로 오인 (Symmetric Ambiguity)
+  - 결과: 로봇이 전진해도 TF가 계속 당겨져 맵에서 제자리걸음 현상 발생
+  - 추가 문제: YDLiDAR Tmini Plus의 드라이버가 매 스캔 포인트 수를 250↔251로 흔들림 → SLAM Toolbox karto가 첫 스캔 기준 포인트 수와 다른 스캔을 전부 reject → 맵 업데이트 없음
+- **Decision**: **Cartographer로 SLAM 전환**
+  - SLAM: Cartographer → `.pgm` + `.yaml` 맵 저장
+  - 위치추정: AMCL (Cartographer 맵 호환)
+  - 주행: Nav2
+- **Rationale**:
+  - Cartographer는 서브맵(submap) 단위로 스캔을 누적 후 매칭 → 단일 스캔 오매칭에 강함
+  - CSM(Correlative Scan Matcher) + Ceres 최적화로 복도 환경에서 더 안정적
+  - 스캔 포인트 수 변동에 관대 (karto처럼 reject 없음)
+  - 유리 환경에서의 난반사 강건성은 두 알고리즘 동일 (센서 레벨 문제)
+  - Cartographer 맵(.pgm)은 AMCL과 완전 호환 → 기존 Nav2 스택 재사용 가능
+- **트레이드오프**:
+  - SLAM Toolbox localization 모드(posegraph 기반) 사용 불가 → AMCL로 대체
+  - Cartographer는 SLAM Toolbox보다 무거움 (실시간 주행 중 CPU 부하 높음)
+- **면접 어필**: "복도 환경의 Symmetric Ambiguity 문제를 실험적으로 확인하고, 서브맵 기반 CSM을 사용하는 Cartographer로 전환했습니다. 스캔-스캔 매칭 방식의 한계를 직접 경험하고 알고리즘 특성을 비교 분석하여 선택했습니다."
+- **Date**: 2026-05-05
+
+---
+
 ### DEC-018: ArUco 홈 도킹 방식 — 2-Phase Lateral-Only Visual Servoing + AMCL 리셋
 - **Context**: 홈 복귀 시 ArUco 마커 활용 방식을 결정. 초기 설계는 /initialpose 발행(AMCL 교정)만 수행하는 방식이었으나, visual servoing(물리 정밀 정차)으로 전환 논의 후 두 방식을 결합하는 방향으로 최종 확정. 이후 실기기 검증 과정에서 2-Phase 설계로 구체화.
 - **Decision**: **Coarse-to-Fine 패턴** — Nav2 대략 이동 → 2-Phase ArUco visual servoing → 마커 역산 /initialpose 발행
@@ -25,9 +81,13 @@
     - cam_offset: 0.23m (base_link → camera_link)
   - 실기기 검증 결과: Phase 1 lat=0.001m, Phase 2 lat=0.008m 수렴
 - **마커 구성**: ID 0 (LIMO1), ID 1 (LIMO2) — 각 로봇 홈 정면 벽 부착, 크기 20cm × 20cm
-- **markers.yaml 현황**: ID 0 완료 (map_x=12.712, map_y=-1.393, map_yaw=-1.667, target_dist=2.007). ID 1 미측정.
-- **미완료**: _publish_initialpose 부호 버그 수정 + /initialpose 주석 해제 (다음 세션)
-- **Date**: 2026-05-01 → 2026-05-04 업데이트
+- **markers.yaml 현황 (2026-05-08 업데이트)**:
+  - ID 0: target_dist=0.946, map_x=0.0, map_y=-0.196, map_yaw=1.5708, calibrated=true
+    - home_robot1 (0.0, 0.98, -π/2) 기준 역산: camera_y=0.75, marker_y=0.75-0.946=-0.196
+    - 마커 방향: 시계방향 90° 회전으로 map_yaw=π/2 확정 (캘리브레이션)
+  - ID 1: 미측정.
+- **미완료**: _publish_initialpose 부호 버그 수정 + /initialpose 주석 해제, markers.yaml ID 1 측정
+- **Date**: 2026-05-01 → 2026-05-04 → 2026-05-08 업데이트
 
 ---
 
