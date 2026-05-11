@@ -19,14 +19,14 @@ from std_srvs.srv import Trigger
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 
-# OpenCV ArUco 기본값으로 복원 (2026-05-04)
-# Phase 1에서 2m → 30cm 전진 접근하므로 원거리 특화 파라미터 불필요.
-# 기본값으로도 2m 거리의 20cm 마커 충분히 검출 가능.
+# 원거리 + 비스듬한 각도 감지 개선 (2026-05-07)
+# Nav2 goal 오차로 로봇이 2m 지점에 lateral 오프셋 + 비스듬한 yaw로 도착하는 경우
+# 기본값(WinSizeMax=23)으로는 원근 왜곡 환경에서 미감지 발생 → 파라미터 조정.
 ARUCO_PARAMS.adaptiveThreshWinSizeMin = 3
-ARUCO_PARAMS.adaptiveThreshWinSizeMax = 23   # 기본값
-ARUCO_PARAMS.adaptiveThreshWinSizeStep = 10  # 기본값
-ARUCO_PARAMS.minMarkerPerimeterRate = 0.03   # 기본값
-ARUCO_PARAMS.errorCorrectionRate = 0.6       # 기본값
+ARUCO_PARAMS.adaptiveThreshWinSizeMax = 53   # 23 → 53: 더 큰 스케일까지 탐색
+ARUCO_PARAMS.adaptiveThreshWinSizeStep = 5   # 10 → 5: 스케일 탐색 촘촘하게
+ARUCO_PARAMS.minMarkerPerimeterRate = 0.02   # 0.03 → 0.02: 작게 보이는 마커 허용
+ARUCO_PARAMS.errorCorrectionRate = 0.8       # 0.6 → 0.8: 비스듬한 각도 오류 내성 증가
 
 DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
@@ -37,8 +37,9 @@ class ArucoLocalizer(Node):
     # KP_ANGULAR : lateral 오차 → 각속도 변환 게인 (클수록 좌우 보정 강함)
     # KP_YAW     : yaw 오차 → 각속도 변환 게인 (현재 미사용)
     KP_LINEAR = 0.3
-    KP_ANGULAR = 1.2   # 0.8 → 1.2: lateral 보정 강도 상향
-    KP_YAW = 0.5
+    KP_ANGULAR = 1.2   # Phase 2 lateral 보정 게인
+    KP_PHI = 2.0       # Phase 1 bearing angle(φ=atan2(tvec[0],tvec[2])) → 각속도 게인
+    KP_YAW = 0.5       # Phase 1.5 yaw 보정 게인
 
     # ── 속도 제한 ──────────────────────────────────────────────────
     # MAX_LINEAR 낮출수록 이동 중 보정 반응 시간 확보 → 정밀도 향상
@@ -268,12 +269,11 @@ class ArucoLocalizer(Node):
             #   값이 크면 사다리꼴로 보임 (비스듬히 접근).
             yaw_err  = self._yaw_err(rvec)
 
-            # 수렴 조건: 거리 + lateral + yaw 세 축 모두 허용 오차 이내여야 Phase 1 완료.
-            # yaw 조건을 생략하면 마커가 이미지 중앙에 있어도 비스듬히 접근한 채로
-            # Phase 2로 넘어가 최종 정차 각도가 틀어질 수 있다.
+            # 수렴 조건: 거리 + lateral 이내면 Phase 1 완료.
+            # yaw 보정은 Phase 1.5(제자리 회전)에서 별도 수행.
+            # 30cm 접근 중 전진하면서 yaw까지 동시 수렴시키려 하면 plateau 발생.
             if (abs(dist_err) < self.DIST_TOL
-                    and abs(lat_err) < self.LAT_TOL
-                    and abs(yaw_err) < self.YAW_TOL):
+                    and abs(lat_err) < self.LAT_TOL):
                 self._stop()
                 self.get_logger().info(
                     f'Phase 1 완료 '
@@ -283,12 +283,15 @@ class ArucoLocalizer(Node):
                 break
 
             lin = float(np.clip(self.KP_LINEAR * dist_err, -self.MAX_LINEAR, self.MAX_LINEAR))
-            # lateral + yaw 동시 보정.
-            # KP_ANGULAR: 좌우 편차(lateral) 보정 — 마커를 이미지 중앙으로 정렬.
-            # KP_YAW    : 수직 편차(yaw) 보정   — 마커가 직사각형으로 보이도록 정렬.
-            # 둘 다 전진(linear.x > 0) 중에 각속도로만 수정하므로 제자리 회전이 아님.
+            # Pure Pursuit: φ(bearing angle) → 0 유지하며 전진.
+            # φ = atan2(tvec[0], tvec[2]): 카메라에서 마커 중심까지의 수평 bearing 각도.
+            # tvec[0](거리 단위) 대신 φ(각도 단위)를 사용하면 거리에 무관하게 일정한
+            # 각도 오차로 보정 → 마커를 향한 직선 경로(pure pursuit) 유지.
+            # 결과: 2m 시작 기준 30cm 도착 시 lateral ≈ 2.25cm 수렴 (LAT_TOL 3cm 이내).
+            # yaw(θ) 보정은 Phase 1.5에서 전담 — 여기서 제거해 φ 제어와 충돌 방지.
+            phi = math.atan2(lat_err, tvec[2])
             ang = float(np.clip(
-                -self.KP_ANGULAR * lat_err - self.KP_YAW * yaw_err,
+                -self.KP_PHI * phi,
                 -self.MAX_ANGULAR, self.MAX_ANGULAR
             ))
             twist = Twist()
@@ -301,6 +304,52 @@ class ArucoLocalizer(Node):
             self._stop()
             res.success = False
             res.message = f'Phase 1 타임아웃 ({self.TIMEOUT_SEC}s) — 접근/정렬 실패'
+            self.get_logger().warn(res.message)
+            return res
+
+        # ══════════════════════════════════════════════════════════════
+        # Phase 1.5 — 제자리 yaw 보정
+        # ══════════════════════════════════════════════════════════════
+        # [설계 원칙] 30cm 거리에서 in-place 회전으로 yaw만 수렴.
+        #   - Phase 1에서 dist + lateral이 수렴된 상태로 진입.
+        #   - 30cm 근접 시 마커가 화면을 크게 차지 → 소폭 회전으로 FOV 이탈 없음.
+        #   - linear.x = 0, angular만 제어하여 위치 변화 최소화.
+        self.get_logger().info('Phase 1.5 시작: 제자리 yaw 보정')
+        phase15_done = False
+
+        while time.time() - start < self.TIMEOUT_SEC:
+            result = self._detect()
+
+            if result is None:
+                self._stop()
+                time.sleep(interval)
+                continue
+
+            tvec, rvec = result
+            yaw_err = self._yaw_err(rvec)
+
+            if abs(yaw_err) < self.YAW_TOL:
+                self._stop()
+                self.get_logger().info(
+                    f'Phase 1.5 완료 (yaw_err={yaw_err:.3f}rad)'
+                )
+                phase15_done = True
+                break
+
+            ang = float(np.clip(
+                -self.KP_YAW * yaw_err,
+                -self.MAX_ANGULAR, self.MAX_ANGULAR
+            ))
+            twist = Twist()
+            twist.linear.x = 0.0
+            twist.angular.z = ang
+            self._cmd_pub.publish(twist)
+            time.sleep(interval)
+
+        if not phase15_done:
+            self._stop()
+            res.success = False
+            res.message = f'Phase 1.5 타임아웃 ({self.TIMEOUT_SEC}s) — yaw 보정 실패'
             self.get_logger().warn(res.message)
             return res
 

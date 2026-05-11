@@ -3,6 +3,7 @@ import threading
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import QoSProfile, DurabilityPolicy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
@@ -24,13 +25,23 @@ class BehaviourNode(Node):
         self.home_key: str = self.get_parameter('home_key').get_parameter_value().string_value
         self.on_duty: bool = False
         self.pending_destination: str | None = None
+        self.latest_amcl_pose: PoseWithCovarianceStamped | None = None  # [DEBUG]
 
         self._status_pub = self.create_publisher(String, '/robot_status', 10)
+        self._speak_pub = self.create_publisher(String, '/speak_text', 10)
+
+        # TRANSIENT_LOCAL(latched) QoS: waitUntilNav2Active() 이전에 미리 발행해도
+        # AMCL이 subscribe하는 순간 메시지를 즉시 수신할 수 있도록 보장.
+        # 일반 volatile QoS를 쓰면 AMCL subscribe 전에 발행된 메시지가 소실되어
+        # AMCL이 0,0,0 기본값으로 파티클을 초기화하고 global costmap을 오염시킴.
+        _latched_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._initialpose_pub = self.create_publisher(
-            PoseWithCovarianceStamped, '/initialpose', 10
+            PoseWithCovarianceStamped, '/initialpose', _latched_qos
         )
         self.create_subscription(Bool, '/on_duty', self._on_duty_cb, 10)
         self.create_subscription(String, '/goal_destination', self._dest_cb, 10)
+        self.create_subscription(  # [DEBUG]
+            PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 1)  # [DEBUG]
 
     def publish_initial_pose(self) -> None:
         home = self.waypoints[self.home_key]
@@ -47,6 +58,9 @@ class BehaviourNode(Node):
             f'초기 포즈 발행: {home["label"]} (x={home["x"]}, y={home["y"]}, yaw={yaw:.3f})'
         )
 
+    def _amcl_cb(self, msg: PoseWithCovarianceStamped) -> None:  # [DEBUG]
+        self.latest_amcl_pose = msg  # [DEBUG]
+
     def _on_duty_cb(self, msg: Bool) -> None:
         self.on_duty = msg.data
 
@@ -60,7 +74,11 @@ class BehaviourNode(Node):
         msg = String()
         msg.data = status
         self._status_pub.publish(msg)
-
+        
+    def speak_text(self, text: str) -> None:                                        
+        msg = String()                      
+        msg.data = text                                                             
+        self._speak_pub.publish(msg)
 
 def main():
     rclpy.init()
@@ -70,11 +88,14 @@ def main():
         waypoints = yaml.safe_load(f)['waypoints']
 
     node = BehaviourNode(waypoints)
-    navigator = BasicNavigator()
 
-    navigator.waitUntilNav2Active()
-
+    # waitUntilNav2Active() 이전에 초기 포즈를 먼저 발행.
+    # AMCL이 active되는 순간 latched 메시지를 즉시 수신하므로
+    # 0,0,0 기본값으로 파티클이 초기화되는 타이밍 자체가 없어짐.
     node.publish_initial_pose()
+
+    navigator = BasicNavigator()
+    navigator.waitUntilNav2Active()
 
     # BehaviourNode를 별도 executor로 분리 — BasicNavigator 내부 global executor와 충돌 방지
     executor = MultiThreadedExecutor()

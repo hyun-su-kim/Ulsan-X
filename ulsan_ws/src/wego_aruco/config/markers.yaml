@@ -1,20 +1,24 @@
-# ArUco DICT_4X4_50 마커 — 홈 위치 전용
-# size: 마커 한 변 길이 (m)
-# target_dist: 마커 정면에서 정차할 거리 (m) — 실기기 조정 필요
+# ArUco DICT_4X4_50 마커 설정
+# size        : 마커 한 변 길이 (m)
+# target_dist : visual servoing 정차 거리 (m)
+# cam_offset  : base_link → camera_link 전방 거리 (m)
+# calibrated  : true이면 passive corrector가 map 좌표 사용. false이면 건너뜀.
+# map_x/y/yaw : 마커 중심의 map 좌표 (calibrated=true일 때만 유효)
 markers:
-  0:                  # 로봇1 홈 마커
+  0:                  # 로봇1 홈 마커 (passive corrector용)
     size: 0.20
-    target_dist: 2.007  # 실측 (2026-05-04, 최종 주차 위치 기준)
-    # 참고: 0.699m = Phase1 중간 정렬 거리가 아닌, 예전 근접 주차 측정값
+    target_dist: 0.946  # visual servoing용 실측값 (2026-05-08)
     cam_offset: 0.23
-    map_x: 12.712  # home_robot1(12.498,-3.619,yaw=1.475) + total_dist(2.237)*cos(1.475)
-    map_y: -1.393  # home_robot1(-3.619) + total_dist(2.237)*sin(1.475)
-    map_yaw: -1.667  # home_robot1 yaw(1.475) - π
-  1:                  # 로봇2 홈 마커
+    calibrated: true
+    map_x: 0.001        # home1(0.0, 0.98) yaw=-π/2, depth=0.506 lateral=0.001 실측 (2026-05-08)
+    map_y: 0.474        # 0.98 - 0.506
+    map_yaw: 1.5708     # π/2 (마커가 +y 방향, 로봇을 향함)
+  1:                  # 로봇2 홈 마커 (passive corrector용) — 실측 미완료
     size: 0.20
-    target_dist: 0.30
+    target_dist: 0.50   # 실측 후 갱신 필요
     cam_offset: 0.23
-    map_x: 0.0        # 미측정
+    calibrated: false   # 실측 완료 후 true로 변경
+    map_x: 0.0          # home2(0.0221, 0.2414)에서 실측 후 갱신 필요
     map_y: 0.0
     map_yaw: 0.0
 

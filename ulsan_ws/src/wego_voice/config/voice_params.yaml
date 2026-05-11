@@ -1,0 +1,8 @@
+voice_node:
+  ros__parameters:
+    wakeword_model: "hey_jarvis"      # 커스텀 모델 필요 시 이 값만 교체
+    wakeword_threshold: 0.15           # 감지 민감도 (낮을수록 민감, 오감지 증가)
+    vad_aggressiveness: 2             # 0(관대) ~ 3(엄격)
+    whisper_model_size: "small"       # tiny / base / small / medium
+    whisper_compute_type: "int8"  # Orin Nano 최적 타입
+    tts_voice: "ko-KR-SunHiNeural"       # Microsoft Neural 한국어 여성 음성

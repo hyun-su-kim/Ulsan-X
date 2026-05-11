@@ -39,7 +39,7 @@ def generate_launch_description():
             PythonLaunchDescriptionSource([
                 PathJoinSubstitution([
                     FindPackageShare('wego'),
-                    'launch', 
+                    'launch',
                     'camera_tilt_launch.py'
                     ])
             ]),
@@ -51,7 +51,15 @@ def generate_launch_description():
             PathJoinSubstitution([FindPackageShare('limo_base'), 'launch', 'limo_base.launch.py'])
         ),
         IncludeLaunchDescription(
-            PathJoinSubstitution([FindPackageShare('orbbec_camera'), 'launch', 'astra_stereo_u3.launch.py'])
+            PathJoinSubstitution([FindPackageShare('orbbec_camera'), 'launch', 'dabai_dcw.launch.py']),
+            launch_arguments={
+                'depth_width':  '640',
+                'depth_height': '400',
+                'depth_fps':    '30',
+                'color_width':  '640',
+                'color_height': '480',
+                'color_fps':    '30',
+            }.items()
         ),
         IncludeLaunchDescription(
             PathJoinSubstitution([FindPackageShare('ydlidar_ros2_driver'), 'launch', 'ydlidar.launch.py'])

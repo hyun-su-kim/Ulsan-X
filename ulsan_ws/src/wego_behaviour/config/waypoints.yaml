@@ -1,71 +1,71 @@
 waypoints:
   classroom_1:
     label: 1강의실
-    x: 6.8485
-    y: -3.6873
-    yaw: 0.4123
+    x: 0.15
+    y: 5.4
+    yaw: -1.5708
   classroom_2:
     label: 2강의실
-    x: 0.8751
-    y: -3.7055
-    yaw: 0.3299
+    x: -0.4945
+    y: 11.5831
+    yaw: -1.0432
   classroom_3:
     label: 3강의실
-    x: -5.2893
-    y: -3.7109
-    yaw: 0.3712
+    x: -0.6911
+    y: 17.3775
+    yaw: -0.9752
   classroom_4:
     label: 4강의실
-    x: -10.6177
-    y: -3.7103
-    yaw: 0.3977
+    x: -0.9164
+    y: 23.5651
+    yaw: -0.8866
   classroom_5:
     label: 5강의실
-    x: -6.055
-    y: -2.1284
-    yaw: -0.2498
+    x: 0.5596
+    y: 20.6608
+    yaw: -2.0854
   counseling_1:
     label: 상담실1
-    x: 6.2903
-    y: 4.4278
-    yaw: -1.3889
+    x: 7.7922
+    y: 6.6732
+    yaw: -2.201
   counseling_2:
     label: 상담실2
-    x: 8.3634
-    y: 4.4103
-    yaw: -1.5808
+    x: 7.8918
+    y: 4.9177
+    yaw: -3.0637
   counter:
     label: 카운터
-    x: 9.7218
-    y: 0.9151
-    yaw: 2.9943
+    x: 4.6206
+    y: 2.8277
+    yaw: -3.0682
   home_robot1:
     label: 로봇1 홈
-    x: 12.498   # 2m 주차 위치 (Phase2 target_dist=1.990m 기준)
-    y: -3.619   # 이전 근접값: x=12.487, y=-3.459, yaw=1.421 (0.699m 위치)
-    yaw: 1.475
+    x: 0.0
+    y: 0.98
+    yaw: -1.5708
   home_robot2:
     label: 로봇2 홈
-    x: 12.04
-    y: -3.6279
-    yaw: 1.5
+    x: 0.0221
+    y: 0.2414
+    yaw: -0.0556
   intensive_counseling_1:
     label: 집중상담실1
-    x: 3.9723
-    y: 3.191
-    yaw: -1.1722
+    x: 6.6684
+    y: 8.5656
+    yaw: -3.111
   intensive_counseling_2:
     label: 집중상담실2
-    x: 9.9871
-    y: 3.2842
-    yaw: -2.4806
+    x: 6.598
+    y: 2.8539
+    yaw: 2.8927
   multi:
     label: 멀티룸
-    x: -0.6257
-    y: 1.3398
-    yaw: -0.2044
+    x: 4.99
+    y: 13.5636
+    yaw: -1.4761
   vice_principal:
     label: 회의실
-    x: 1.6336
-    y: 3.4363
-    yaw: -1.0229
+    x: 6.4243
+    y: 10.3973
+    yaw: -2.6607

@@ -4,7 +4,6 @@ import time
 from yasmin import State
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
-from std_srvs.srv import Trigger
 
 
 def _make_pose(wp: dict) -> PoseStamped:
@@ -65,6 +64,21 @@ class GuidingState(State):
         result = self._navigator.getResult()
         if result == TaskResult.SUCCEEDED:
             self._node.get_logger().info('목적지 도착')
+            # [DEBUG] goal 도착 시 AMCL pose 출력
+            p = self._node.latest_amcl_pose
+            if p:
+                pos = p.pose.pose.position
+                q = p.pose.pose.orientation
+                yaw = math.atan2(
+                    2.0 * (q.w * q.z + q.x * q.y),
+                    1.0 - 2.0 * (q.y ** 2 + q.z ** 2)
+                )
+                self._node.get_logger().info(
+                    f'[DEBUG] AMCL pose at goal: '
+                    f'x={pos.x:.3f} y={pos.y:.3f} yaw={math.degrees(yaw):.1f}°'
+                )
+            # [DEBUG] end
+            self._node.speak_text('목적지에 도착했습니다.')
             return 'succeeded'
 
         self._node.get_logger().warn(f'목적지 이동 실패: {result}')
@@ -72,44 +86,25 @@ class GuidingState(State):
 
 
 class ReturningState(State):
-    """복귀 상태: Nav2 홈 이동 → ArUco visual servoing 정밀 정차 → AMCL 리셋."""
+    """복귀 상태: Nav2로 홈 이동. AMCL 보정은 aruco_pose_corrector가 passive하게 수행."""
 
     def __init__(self, node, navigator: BasicNavigator):
         super().__init__(outcomes=['succeeded', 'failed'])
         self._node = node
         self._navigator = navigator
-        self._aruco_client = node.create_client(Trigger, '/aruco_correct')
-
-    def _nav_to(self, home: dict) -> bool:
-        self._navigator.goToPose(_make_pose(home))
-        while not self._navigator.isTaskComplete():
-            time.sleep(0.1)
-        return self._navigator.getResult() == TaskResult.SUCCEEDED
 
     def execute(self, blackboard):
         self._node.publish_status('RETURNING')
         home = self._node.waypoints[self._node.home_key]
 
-        # Step 1: Nav2로 홈 근처 이동
         self._node.get_logger().info('RETURNING: 홈으로 이동 중')
-        if not self._nav_to(home):
-            self._node.get_logger().warn('홈 이동 실패')
-            return 'failed'
+        self._navigator.goToPose(_make_pose(home))
+        while not self._navigator.isTaskComplete():
+            time.sleep(0.1)
 
-        # Step 2: ArUco visual servoing → 정밀 정차
-        if not self._aruco_client.wait_for_service(timeout_sec=2.0):
-            self._node.get_logger().warn('aruco_localizer 없음 — 정밀 정차 생략')
+        if self._navigator.getResult() == TaskResult.SUCCEEDED:
+            self._node.get_logger().info('홈 복귀 완료')
             return 'succeeded'
 
-        future = self._aruco_client.call_async(Trigger.Request())
-        while not future.done():
-            time.sleep(0.05)
-        resp = future.result()
-
-        if not resp.success:
-            self._node.get_logger().warn(f'ArUco 정밀 정차 실패: {resp.message}')
-            return 'succeeded'
-
-        # /initialpose는 aruco_localizer가 정차 완료 시 직접 발행
-        self._node.get_logger().info(f'정밀 정차 완료: {resp.message}')
-        return 'succeeded'
+        self._node.get_logger().warn('홈 이동 실패')
+        return 'failed'
