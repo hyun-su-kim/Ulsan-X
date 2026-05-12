@@ -41,39 +41,46 @@ ulsan_ws/src/
 
 ## 소스코드 현황 (2026-05-11 기준)
 
-### 아키텍처 — 기기별 역할 (DEC-021, 2026-05-12 업데이트)
+### 아키텍처 — 기기별 역할 (2026-05-12 확정)
 
 | 기기 | 도메인 | 실행 내용 |
 |------|--------|-----------|
-| LIMO 1 | 5 | 드라이버: limo_base, ydlidar, orbbec, robot_state_publisher, EKF + **wego_touch_ui** |
-| LIMO 2 | 6 | 드라이버: limo_base, ydlidar, orbbec, robot_state_publisher, EKF + **wego_touch_ui** |
-| 서버 노트북 | 5 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice (LIMO 1 담당) |
-| 서버 노트북 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice (LIMO 2 담당) |
-| 서버 노트북 | 7 | **wego_traffic** (두 로봇 amcl_pose 구독 → pause/resume 발행) |
-| 관제 UI 노트북 | 7 | wego_ui, wego_bridge (amcl_pose 5,6→7 + pause/resume 7→5,6 양방향) |
+| 관제 노트북 | 5 | wego_ui, wego_bridge |
+| LIMO 1 | 6 | 드라이버(limo_base, ydlidar, orbbec, EKF) + wego_touch_ui |
+| LIMO 2 | 7 | 드라이버(limo_base, ydlidar, orbbec, EKF) + wego_touch_ui |
+| 서버 노트북 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice (LIMO 1 담당) |
+| 서버 노트북 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice (LIMO 2 담당) |
+| 서버 노트북 | 5 | wego_traffic |
 
 ```bash
-# LIMO 1, 2 — 드라이버 + 터치 UI
+# LIMO 1 (domain 6) — 드라이버 + 터치 UI
+export ROS_DOMAIN_ID=6
 ros2 launch wego teleop_launch.py
 ros2 launch wego_touch_ui touch_ui_launch.py
 
-# 서버 노트북 — LIMO 1 담당 터미널
-export ROS_DOMAIN_ID=5
-ros2 launch wego_2d_nav navigation_launch.py
-ros2 launch wego_behaviour behaviour_launch.py
+# LIMO 2 (domain 7) — 드라이버 + 터치 UI
+export ROS_DOMAIN_ID=7
+ros2 launch wego teleop_launch.py
+ros2 launch wego_touch_ui touch_ui_launch.py
 
-# 서버 노트북 — LIMO 2 담당 터미널
+# 서버 노트북 — LIMO 1 담당 터미널 (domain 6)
 export ROS_DOMAIN_ID=6
 ros2 launch wego_2d_nav navigation_launch.py
 ros2 launch wego_behaviour behaviour_launch.py
 
-# 서버 노트북 — wego_traffic 터미널
+# 서버 노트북 — LIMO 2 담당 터미널 (domain 7)
 export ROS_DOMAIN_ID=7
+ros2 launch wego_2d_nav navigation_launch.py
+ros2 launch wego_behaviour behaviour_launch.py
+
+# 서버 노트북 — wego_traffic 터미널 (domain 5)
+export ROS_DOMAIN_ID=5
 ros2 launch wego_traffic traffic_launch.py
 
-# 관제 UI 노트북 (domain 7)
+# 관제 노트북 (domain 5)
+export ROS_DOMAIN_ID=5
 ros2 launch wego_ui gui_launch.py
-ros2 launch wego_bridge bridge_launch.py  # amcl_pose 5,6→7 / pause_resume 7→5,6
+ros2 launch wego_bridge bridge_launch.py  # amcl_pose 6,7→5 / pause_resume 5→6,7
 ```
 
 ### 존재하는 패키지
