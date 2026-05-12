@@ -1,6 +1,0 @@
-topics:
-  /amcl_pose:
-    type: geometry_msgs/msg/PoseWithCovarianceStamped
-    from_domain: ROBOT_DOMAIN
-    to_domain: DEST_DOMAIN
-    remap: /ROBOT_NAME/amcl_pose
