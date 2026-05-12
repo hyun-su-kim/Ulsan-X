@@ -27,10 +27,8 @@ class IdleState(State):
         self._node.publish_status('IDLE')
         self._node.get_logger().info('IDLE: 방문자 대기 중')
 
-        # on_duty이면서 목적지가 설정될 때까지 대기
-        # (wego_voice → /goal_destination 토픽으로 목적지 키 수신)
         while True:
-            if self._node.on_duty and self._node.pending_destination:
+            if self._node.pending_destination:
                 dest_key = self._node.pending_destination
                 self._node.pending_destination = None
                 blackboard['destination'] = self._node.waypoints[dest_key]

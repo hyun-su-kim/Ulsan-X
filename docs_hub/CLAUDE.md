@@ -39,44 +39,55 @@ ulsan_ws/src/
 
 ---
 
-## 소스코드 현황 (2026-04-17 기준)
+## 소스코드 현황 (2026-05-11 기준)
+
+### 아키텍처 — 기기별 역할 (DEC-021, 2026-05-11 확정)
+
+| 기기 | 도메인 | 실행 내용 |
+|------|--------|-----------|
+| LIMO 1 | 5 | 드라이버만: limo_base, ydlidar, orbbec, robot_state_publisher, EKF |
+| LIMO 2 | 6 | 드라이버만: limo_base, ydlidar, orbbec, robot_state_publisher, EKF |
+| 중간 노트북 | 5 + 6 (터미널 분리) | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_traffic |
+| 관제 UI 노트북 | 7 | wego_ui, wego_bridge (amcl_pose domain 5,6 → 7 브릿징) |
+
+```bash
+# LIMO 1, 2 — 드라이버만
+ros2 launch wego teleop_launch.py
+
+# 중간 노트북 — LIMO 1 담당 터미널
+export ROS_DOMAIN_ID=5
+ros2 launch wego_2d_nav navigation_launch.py
+ros2 launch wego_behaviour behaviour_launch.py
+
+# 중간 노트북 — LIMO 2 담당 터미널
+export ROS_DOMAIN_ID=6
+ros2 launch wego_2d_nav navigation_launch.py
+ros2 launch wego_behaviour behaviour_launch.py
+
+# 관제 UI 노트북 (domain 7)
+ros2 launch wego_ui gui_launch.py
+ros2 launch wego_bridge bridge_launch.py  # amcl_pose 5,6 → 7
+```
 
 ### 존재하는 패키지
 | 패키지 | 핵심 파일 | 상태 |
 |--------|-----------|------|
-| `wego` | teleop_launch.py, navigation_diff_launch.py | 단일 로봇 표준 구성 (robot_name 인자 없음) |
-| `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | 단일 로봇 표준 구성 |
-| `wego_msgs` | srv/Chalkak.srv | 기본 서비스만 존재 |
-| `wego_bridge` | domain_bridge_robot.yaml, robot_bridge_launch.py | **domain bridge 구현 완료 (2026-04-22), 검증 완료. 디렉토리 rename 예정** |
+| `wego` | teleop_launch.py, navigation_diff_launch.py | LIMO 드라이버 전용으로 축소 예정 |
+| `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | 중간 노트북에서 실행 |
+| `wego_msgs` | srv/Chalkak.srv | 기본 서비스 |
+| `wego_bridge` | domain_bridge_robot.yaml, robot_bridge_launch.py | 관제 UI 노트북에서 실행 (amcl_pose 브릿징) |
+| `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — WAITING 상태 추가 예정 (DEC-022) |
+| `wego_aruco` | aruco_localizer.py, pose_corrector.py | passive corrector 실기기 검증 완료 |
+| `wego_voice` | voice_node.py, vad/wakeword/tts | NLU 모듈 제거 예정 (DEC-024). VAD+wakeword+TTS만 유지 |
+| `ulsan_obstacle_layer` | PeerObstacleLayer | **폐기 (DEC-022)**: 우선순위 FSM pause 방식으로 대체 |
+| `wego_touch_ui` | — | **신규**: LIMO 터치 디스플레이 UI. 예약 조회 + 체크인 + TTS 연동 |
+| `wego_traffic` | — | **신규** (관제 노트북): 충돌 회피 pause/resume 전담. on_duty 개념 폐기(DEC-015) |
+| `reservation_web` | — | **신규** (웹 서비스): 상담 예약 CRUD. 평일 09~17시, 1시간 단위, 상담실 4개 자동 배정 |
 
-### 멀티로봇 설계 방향 (2026-04-21 확정, DEC-011, DEC-012)
-- **TF frame prefix 방식 폐기**: 각 로봇은 표준 TF 프레임 유지 (`base_link`, `odom`, `map`)
-- **amcl_pose 공유 방식 채택**: 위치 정보만 domain bridge로 전달
-- **맵 파일 사전 배포**: SLAM 후 scp로 배포. 각 기기가 로컬 map_server 실행. domain bridge로 /map 스트리밍 없음.
-
-```bash
-# LIMO 1, 2 (domain 6, 7) — 동일한 명령
-ros2 launch wego teleop_launch.py
-ros2 launch wego navigation_diff_launch.py
-ros2 launch wego_bridge robot_bridge_launch.py  # ROS_DOMAIN_ID 읽어 자동 설정
-
-# 노트북 (domain 5) — apt 패키지만으로 실행
-ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=~/maps/map.yaml
-# + ros2 launch wego_ui gui_launch.py  (추후 구현)
-```
-
-### 미생성/재작성 패키지 (신규 구현 대상)
-- `wego_bridge` — **LIMO 전용** (Python, ament_python): domain bridge (amcl_pose 브릿지). 노트북에는 불필요.
-- `ulsan_obstacle_layer` — **LIMO 전용** (C++, ament_cmake): 상대 로봇 amcl_pose → global costmap LETHAL_OBSTACLE 주입. `PeerObstacleLayer` 플러그인 구현 완료.
-- `wego_behaviour` — 최상단 미션 제어: **Yasmin FSM** (대기→호출→안내→복귀) + Nav2 BT 커스텀 노드 (DEC-014)
-- `wego_voice` — 음성 파이프라인 (VAD→Wake→STT→NLU→TTS)
-- `wego_ui` — **노트북 전용**: Qt 관제 GUI (map_server 기동 + amcl_pose 기반 위치 마커 시각화). laptop_ws에만 존재.
-
-### 즉시 해야 할 작업 (P0)
-1. **실기기 Domain Bridge 통신 검증** — AMCL 기동 후 `/robot1/amcl_pose` 노트북 수신 확인
-2. Cartographer SLAM으로 학원 지도 작성 (LIMO 1)
-3. 맵 파일 scp로 LIMO 2 및 노트북에 배포
-4. **`ulsan_obstacle_layer` 빌드 및 Nav2 연동 확인** — PeerObstacleLayer colcon build + 실기기 검증
+### 멀티로봇 충돌 회피 (DEC-022, 2026-05-11 확정)
+- **PeerObstacleLayer 폐기**: global costmap 기반 동적 회피의 구조적 한계 확인
+- **우선순위 기반 FSM pause/resume 채택**: GUIDING > RETURNING, 동순위 시 LIMO 1 우선
+- **구현**: wego_traffic 거리 감지 → pause/resume 토픽 → wego_behaviour WAITING 상태
 
 ---
 

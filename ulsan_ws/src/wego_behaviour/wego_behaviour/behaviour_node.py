@@ -7,7 +7,7 @@ from rclpy.qos import QoSProfile, DurabilityPolicy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
-from std_msgs.msg import Bool, String
+from std_msgs.msg import String
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from yasmin import StateMachine, Blackboard
 
@@ -23,7 +23,6 @@ class BehaviourNode(Node):
 
         self.waypoints = waypoints
         self.home_key: str = self.get_parameter('home_key').get_parameter_value().string_value
-        self.on_duty: bool = False
         self.pending_destination: str | None = None
         self.latest_amcl_pose: PoseWithCovarianceStamped | None = None  # [DEBUG]
 
@@ -38,7 +37,6 @@ class BehaviourNode(Node):
         self._initialpose_pub = self.create_publisher(
             PoseWithCovarianceStamped, '/initialpose', _latched_qos
         )
-        self.create_subscription(Bool, '/on_duty', self._on_duty_cb, 10)
         self.create_subscription(String, '/goal_destination', self._dest_cb, 10)
         self.create_subscription(  # [DEBUG]
             PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 1)  # [DEBUG]
@@ -60,9 +58,6 @@ class BehaviourNode(Node):
 
     def _amcl_cb(self, msg: PoseWithCovarianceStamped) -> None:  # [DEBUG]
         self.latest_amcl_pose = msg  # [DEBUG]
-
-    def _on_duty_cb(self, msg: Bool) -> None:
-        self.on_duty = msg.data
 
     def _dest_cb(self, msg: String) -> None:
         if msg.data in self.waypoints:

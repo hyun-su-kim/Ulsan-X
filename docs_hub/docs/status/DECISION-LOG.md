@@ -4,6 +4,116 @@
 
 ---
 
+### DEC-024: NLU 방식 변경 — LLM API 폐기, 터치 UI + DB 조회로 대체
+- **Context**: 기존 음성 파이프라인에서 발화("1강의실 안내해줘") → LLM API → waypoint 매핑 방식으로 목적지를 결정했으나, 예약 기반 안내 시스템 도입으로 목적지가 DB에서 결정됨.
+- **Decision**: **LLM API 기반 NLU 폐기 → 터치 UI + DB 조회로 완전 대체**
+  - 방문자가 LIMO 터치 화면에서 이름 + 생년월일 또는 전화번호 끝자리 입력
+  - DB 조회 → 오늘 날짜 + 현재 시간대 예약 확인 → 배정 상담실 반환
+  - TTS: "{이름}님 {시간}시 상담 예약으로 {상담실}로 안내합니다."
+  - Nav2 goal 전달 → 안내 시작
+- **Rationale**:
+  - 목적지가 예약 DB에서 결정되므로 NLU 불필요
+  - LLM API 응답 지연(DEC-004) 문제 원천 해소
+  - 음성 인식 오류(발화 인식 실패, 목적지 매핑 오류) 없이 정확한 목적지 안내
+  - wego_voice 패키지에서 NLU 모듈 제거, STT/wakeword도 터치 UI 방식에서는 불필요
+  - 면접 어필: "음성 NLU의 불확실성을 예약 시스템 도입으로 구조적으로 제거. 목적지 결정을 DB 조회로 확정하여 안내 정확도 100% 보장."
+- **Date**: 2026-05-11
+
+---
+
+### DEC-023: 예약 기반 안내 시스템 도입
+- **Context**: 기존 설계는 방문자가 현장에서 음성으로 목적지를 말하면 로봇이 안내하는 방식. 학원 상담 예약 서비스와 연동하여 사전 예약자를 정확하게 안내하는 시스템으로 변경.
+- **Decision**: **웹 예약 서비스 + LIMO 터치 UI + 공유 DB** 구조 채택
+- **예약 서비스 스펙**:
+  - 예약 기간: 당일 ~ 최대 2주 이내, 평일 09:00~17:00, 1시간 단위
+  - 예약 정보: 이름 + 전화번호
+  - 상담실 4개(counseling_1~2, intensive_counseling_1~2) → 동일 시간대 최대 4명 예약 가능
+  - 상담실 자동 배정 (예약자가 선택 불필요)
+  - 중복 예약 방지 (4개 상담실 모두 차면 해당 시간대 예약 불가)
+- **예약 DB 상태 관리**:
+  - `PENDING`: 예약됨, 미방문
+  - `IN_PROGRESS`: LIMO 안내 시작 시 전환
+  - `COMPLETED`: LIMO 홈 복귀 시 전환
+  - 안내 시작 시 즉시 IN_PROGRESS로 업데이트 → 중복 체크인 방지
+- **LIMO 터치 UI 흐름**:
+  1. 방문자가 홈에 있는 LIMO 터치 화면에서 예약 서비스 선택
+  2. 이름 + 생년월일 또는 전화번호 끝자리 입력
+  3. DB 조회 → 오늘 날짜 + 현재 시간대 예약 확인
+  4. TTS: "{이름}님 {시간}시 상담 예약으로 {상담실}로 안내합니다."
+  5. Nav2 goal 전달 → 안내 시작 → DB IN_PROGRESS
+- **임무 할당**: 별도 로직 불필요. 안내 중인 LIMO는 물리적으로 홈에 없으므로 방문자가 자연스럽게 홈에 있는 LIMO 사용
+- **미결정**:
+  - 워크인 방문자(예약 없이 방문) 처리 방식
+  - DB 위치 (클라우드 vs 서버 노트북 로컬)
+  - 웹 서비스 호스팅 위치
+- **Rationale**:
+  - 목적지 결정의 불확실성 제거 (음성 → DB 조회로 확정)
+  - 학원 상담 예약이라는 실제 서비스 시나리오와 일치
+  - 면접 어필: "실제 서비스 요구사항(예약 시스템)과 로봇 안내를 통합한 end-to-end 시스템 설계."
+- **Date**: 2026-05-11
+
+---
+
+### DEC-022: 멀티로봇 충돌 회피 방식 — 우선순위 기반 FSM pause/resume
+- **Context**: 기존 `ulsan_obstacle_layer`(PeerObstacleLayer)는 상대 amcl_pose를 global costmap에 LETHAL 장애물로 주입하는 방식. global costmap은 planner가 경로 계획 시에만 참고하므로, 경로 계획 후 이동 중 상대 로봇이 움직여도 controller는 이를 인식하지 못해 실질적 충돌 회피 불가.
+- **문제 분석**:
+  - global costmap 반영 주기 + planner 재계획 지연 → 충돌 직전에도 반응 불가
+  - "경로는 피해서 계획했으나 실행 중에 만나면 충돌"하는 구조적 한계
+  - local costmap에 반영해도 Wi-Fi 지연으로 amcl_pose 업데이트가 느려 실시간 회피 불충분
+- **Decision**: **우선순위 기반 FSM pause/resume**
+  - GUIDING 상태가 RETURNING 상태보다 높은 우선순위
+  - 두 로봇이 일정 거리 이내 진입 시 낮은 우선순위 로봇이 Nav2 goal cancel → WAITING 상태 진입
+  - 높은 우선순위 로봇이 통과(거리 벌어짐) 후 WAITING 로봇이 goal 재제출 → 주행 재개
+- **우선순위 규칙**:
+  | LIMO 1 | LIMO 2 | 정지 대상 |
+  |--------|--------|-----------|
+  | GUIDING | RETURNING | LIMO 2 |
+  | RETURNING | GUIDING | LIMO 1 |
+  | RETURNING | RETURNING | LIMO 2 (LIMO 1 기본 우선순위) |
+- **구현 위치**: `wego_traffic` (중간 노트북)
+  - 두 amcl_pose 구독 → 거리 계산 → threshold 이하 시 우선순위 판정
+  - `/limo_N/pause`, `/limo_N/resume` 토픽 발행
+  - `wego_behaviour` FSM에 `WAITING` 상태 추가: pause 수신 → goal cancel, resume 수신 → goal 재제출
+- **Rationale**:
+  - 한 로봇이 물리적으로 멈추므로 충돌이 구조적으로 불가능
+  - 네트워크 지연 영향 최소화: pause/resume은 단순 토픽 신호로 충분
+  - Nav2 lifecycle manager pause는 AMCL까지 멈추는 부작용 → FSM goal cancel 방식 채택
+  - 기존 `ulsan_obstacle_layer` (PeerObstacleLayer) 폐기
+  - 면접 어필: "동적 장애물에 대한 costmap 기반 회피의 한계를 실기기에서 확인하고, 상태 기반 우선순위 제어로 전환. 충돌 회피를 확률적 회피가 아닌 결정론적 방식으로 보장."
+- **Date**: 2026-05-11
+
+---
+
+### DEC-021: 연산 오프로딩 아키텍처 — LIMO 드라이버 전용, 중간 노트북이 Nav2/상위 로직 담당
+- **Context**: Jetson Orin Nano의 부하가 과중하여 Nav2 주행 중 control loop missed 경고 및 주행 불안정 발생. LIMO에서 Nav2, AMCL, behaviour, aruco, voice를 모두 실행하는 현재 구조에서는 실용적 운용 불가.
+- **Decision**: **LIMO는 하드웨어 드라이버만, 중간 노트북이 모든 연산 담당**
+  - LIMO: `limo_base`, `ydlidar`, `orbbec`, `robot_state_publisher`, EKF
+  - 중간 노트북: Nav2(AMCL + planner + controller), `wego_behaviour`, `wego_aruco`, `wego_voice`, `wego_traffic`
+  - 관제 UI 노트북: `wego_ui`
+- **Domain 재할당**:
+  | 기기 | 도메인 |
+  |------|--------|
+  | LIMO 1 | 5 |
+  | LIMO 2 | 6 |
+  | 중간 노트북 | 5 + 6 (터미널 분리) |
+  | 관제 UI 노트북 | 7 |
+  - 중간 노트북은 별도 domain 불필요: 터미널마다 `ROS_DOMAIN_ID=5` / `ROS_DOMAIN_ID=6` 설정으로 각 LIMO domain에 직접 참여
+  - LIMO와 중간 노트북이 같은 domain → domain bridge 없이 `/scan`, `/odom`, `/tf` 공유
+  - 관제 UI 노트북(domain 7)은 기존 wego_bridge로 amcl_pose 수신
+- **Rationale**:
+  - LIMO는 드라이버만 실행 → CPU/GPU 부하 최소화, 주행 안정성 확보
+  - 중간 노트북의 강력한 CPU로 Nav2, STT, NLU 등 연산 집약적 작업 처리
+  - 같은 domain에서 DDS로 토픽 자동 공유 → 추가 브릿지 불필요
+  - cmd_vel은 중간 노트북 controller_server → LIMO로 직접 전달 (같은 domain)
+  - 면접 어필: "Jetson 부하 문제를 실기기에서 확인하고, ROS2 DDS domain 공유 특성을 활용해 별도 브릿지 없이 연산을 노트북으로 오프로딩하는 아키텍처를 설계."
+- **기존 구조 대비 변경점**:
+  - 기존: 노트북=5, LIMO1=6, LIMO2=7 → 신규: LIMO1=5, LIMO2=6, 중간 노트북=5+6, UI 노트북=7
+  - wego_bridge: LIMO에서 실행 → 중간 노트북에서 실행 (amcl_pose를 domain 5,6 → domain 7 브릿징)
+  - ulsan_obstacle_layer: 폐기 (DEC-022로 대체)
+- **Date**: 2026-05-11
+
+---
+
 ### DEC-020: 복도 AMCL drift 해결 방식 — passive ArUco pose corrector
 - **Context**: 복도 주행 중 AMCL이 y 방향으로 ~0.29m drift 발생. Nav2 goal checker는 TF(`map→base_link`) 기반 판정 = AMCL 추정값 기반이므로, drift된 상태에서 실제 홈에 도착하기 전에 goal 판정이 내려지는 문제 발생. 복도(긴 직선, 특징점 없음)에서 AMCL symmetric ambiguity로 위치가 당겨지는 현상.
 - **문제 분석**:
@@ -91,12 +201,9 @@
 
 ---
 
-### DEC-017: wego_voice on_duty 게이팅 위치 — 웨이크워드 단계에서 차단
-- **Context**: LIMO 2대가 모두 IDLE 상태일 때, 현재 설계에서는 두 로봇이 동시에 웨이크워드 감지 → STT → NLU → /goal_destination 발행까지 수행하고, on_duty 체크는 behaviour_node의 IDLE 상태에서만 이루어짐.
-- **문제**: 두 로봇이 동시에 방문자에게 말을 걸고, GPU 자원(STT + NLU)도 두 대가 중복 소모.
-- **Decision**: `wego_voice`에서 `/on_duty` 토픽을 구독하여 **웨이크워드 감지 단계에서 게이팅** — `on_duty=False`인 로봇은 웨이크워드를 무시하고 마이크를 비활성화.
-- **구현 시점**: `wego_voice` 패키지 설계 시 반영.
-- **Date**: 2026-04-30
+### ~~DEC-017: wego_voice on_duty 게이팅 위치~~ — **폐기 (2026-05-11)**
+- **폐기 이유**: DEC-024로 wakeword/STT/NLU가 제거되고 터치 UI + DB 조회 방식으로 전환됨. on_duty 개념 자체가 불필요해져 게이팅 로직도 함께 폐기.
+- **Date**: 2026-04-30 → 폐기 2026-05-11
 
 ---
 
@@ -136,29 +243,10 @@
 
 ---
 
-### DEC-015: 멀티로봇 임무 할당 방식 — 분산 FSM vs 중앙 코디네이터
-- **Context**: LIMO 1이 임무 중일 때 새 방문자가 오면 누가 응대하는가. 각 로봇이 상대 상태를 보고 스스로 판단(분산)할지, 노트북 코디네이터가 결정(중앙화)할지 선택 필요.
-- **Options**:
-  - A) 분산 FSM: 각 로봇이 상대 robot_status 구독 → 스스로 수락/거절 판단
-  - B) 중앙 코디네이터 (노트북): 각 로봇 상태 구독 → on_duty 로봇 지정
-- **Decision**: **B — 중앙 코디네이터**
-- **Rationale**:
-  - 분산 방식은 로봇 추가 시 모든 FSM 로직을 수정해야 함 (하드코딩된 peer 관계). 확장성 없음.
-  - 중앙 코디네이터는 로봇 수에 무관하게 on_duty 결정 로직이 동일. 로봇 추가 시 status 토픽만 추가.
-  - Open-RMF(ROS2 공식 멀티로봇 표준)의 Dispatcher 패턴과 동일한 원칙. 단, Open-RMF는 bidding 방식이고 우리는 2대 고정이므로 코디네이터가 직접 결정하는 단순화 버전.
-  - 면접 어필: "Open-RMF의 dispatcher 패턴과 동일한 원칙이며, 2대 규모에서 bidding을 단순화한 트레이드오프를 인지하고 선택했다"고 설명 가능.
-- **on_duty 결정 규칙**:
-  | LIMO 1 | LIMO 2 | on_duty |
-  |--------|--------|---------|
-  | IDLE | IDLE | LIMO 1 |
-  | BUSY | IDLE | LIMO 2 |
-  | IDLE | BUSY | LIMO 1 |
-  | BUSY | BUSY | 없음 |
-- **on_duty 로봇 역할**: 사람 감지 → "어서오세요" → 음성 대화(STT/NLU) → 목적지 확정 → navigate_to_pose 호출까지 전체 파이프라인 자율 수행
-- **토픽 구조**:
-  - `/limo_N/robot_status` (로봇 → 코디네이터): IDLE / BUSY / RETURNING
-  - `/limo_N/on_duty` (코디네이터 → 로봇): true / false
-- **Date**: 2026-04-27
+### ~~DEC-015: 멀티로봇 임무 할당 — on_duty 코디네이터~~ — **폐기 (2026-05-11)**
+- **폐기 이유**: DEC-023으로 터치 UI 방식 도입. 방문자가 물리적으로 홈에 있는 LIMO를 직접 선택하므로 on_duty 개념이 불필요. 안내 중인 LIMO는 홈에 없어 자연스럽게 분리됨.
+- **wego_traffic 역할 재정의**: on_duty 결정 제거 → **충돌 회피(pause/resume)만 담당** (DEC-022)
+- **Date**: 2026-04-27 → 폐기 2026-05-11
 
 ---
 
@@ -173,8 +261,8 @@
   - Yasmin: ROS2 전용 경량 Python FSM 라이브러리. SMACH 후계. 상태 전환이 코드로 명확히 표현됨.
   - 하이브리드 구조(고수준 FSM + 실행 레이어 BT)가 실제 서비스 로봇 업계 트렌드.
 - **Nav2 BT 커스텀 노드 후보**:
-  - `VoiceTriggerCondition`: 웨이크워드 감지 여부 → BT 컨디션 노드
-  - `PeerRobotBusyCondition`: 상대 로봇 임무 중 여부 → BT 컨디션 노드
+  - ~~`VoiceTriggerCondition`~~: **폐기** — 웨이크워드 제거(DEC-024)로 불필요
+  - ~~`PeerRobotBusyCondition`~~: **폐기** — on_duty 개념 제거(DEC-015 폐기)로 불필요
 - **Date**: 2026-04-27
 
 ---

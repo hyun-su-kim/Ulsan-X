@@ -1,8 +1,8 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 3 — ArUco AMCL 보정 + FSM 주행 통합 검증 완료**
-passive ArUco pose corrector 실기기 검증 완료 (2026-05-08). classroom_1 → home1 왕복 FSM 주행 중 마커 감지 → AMCL 자동 보정 확인. home1 Nav2 goal 성공. 다음: 음성 파이프라인 구현.
+**Phase 3 — 아키텍처 재설계 (2026-05-11)**
+연산 오프로딩(DEC-021), 충돌 회피 재설계(DEC-022), 예약 기반 안내 시스템 도입(DEC-023), NLU 방식 변경(DEC-024) 확정. 기존 구현 일부 재작성 필요.
 
 ---
 
@@ -10,18 +10,19 @@ passive ArUco pose corrector 실기기 검증 완료 (2026-05-08). classroom_1 �
 
 | 트랙 | 상태 | 담당 패키지 |
 |------|------|------------|
-| 시스템 아키텍처 설계 | **완료** | — |
-| 통신 환경 구성 (CycloneDDS + Domain Bridge) | **완료** | wego_bridge |
-| 관제 UI 임시 테스트용 (RViz 위치 시각화) | **완료** | wego_ui |
-| SLAM 지도 작성 | **진행 중** | wego (slam_toolbox) |
+| 시스템 아키텍처 설계 | **재설계** | — (DEC-021~024) |
+| 통신 환경 구성 (CycloneDDS + Domain Bridge) | **재설계** | wego_bridge |
+| SLAM 지도 작성 | **완료** | wego |
 | Nav2 경로 계획 & AMCL | **완료** | wego_2d_nav |
-| Fleet 충돌 회피 (PeerObstacleLayer) | **완료** | ulsan_obstacle_layer |
+| Fleet 충돌 회피 (우선순위 기반 pause/resume) | **재설계** | wego_traffic + wego_behaviour |
 | waypoints.yaml 목적지 좌표 작성 | **완료** | wego_behaviour/config |
-| 행동 트리 최상단 관리 (FSM + BT 커스텀) | **진행 중** | wego_behaviour |
-| 음성 파이프라인 (VAD→Wake→STT→NLU→TTS) | planned | wego_voice (신규) |
-| 멀티로봇 on_duty 코디네이터 | planned | wego_coordinator (신규, 노트북) |
-| ArUco 마커 홈 정차 보정 | planned | wego_aruco (신규) |
-| 데모용 Qt 관제 UI | planned | wego_ui (재구현) |
+| 행동 트리 최상단 관리 (FSM — WAITING 상태 추가) | **재설계** | wego_behaviour |
+| ArUco 마커 홈 정차 보정 | **완료** | wego_aruco |
+| 음성 파이프라인 (VAD→Wake→TTS) | **재설계** | wego_voice (NLU 제거) |
+| 예약 웹 서비스 | planned | 신규 (웹 서비스) |
+| LIMO 터치 UI | planned | wego_touch_ui (신규) |
+| 멀티로봇 코디네이터 (충돌 회피 pause/resume) | planned | wego_traffic (신규) |
+| 관제 UI (관리자 대시보드) | planned | wego_ui (재구현) |
 
 ---
 
@@ -45,7 +46,7 @@ passive ArUco pose corrector 실기기 검증 완료 (2026-05-08). classroom_1 �
 
 > LIMO 1대가 학원을 완벽하게 자율주행하는 것이 목표
 
-- [x] `ulsan_obstacle_layer` 빌드 — LIMO ulsan_ws 전체 빌드 완료. `peer_valid_` 플래그로 상대 amcl_pose 수신 전까지 완전 no-op — 단독 주행에 영향 없음.
+- [x] `ulsan_obstacle_layer` 빌드 완료 — **폐기 결정 (DEC-022)**: global costmap 기반 동적 충돌 회피 한계 확인. 우선순위 기반 FSM pause/resume 방식으로 대체.
 - [x] Nav2 전체 스택 실기기 테스트 — 목적지·홈 구간 정상 주행 확인 (2026-04-29)
 - [x] AMCL 파라미터 튜닝 — `do_beamskip: true` 단일 수정. 파티클 수렴 정상 확인 (2026-04-29)
 - [x] **유리 구간 유령 장애물** — Keepout Filter + DenoiseLayer 적용 완료 (2026-04-29)
@@ -66,7 +67,7 @@ passive ArUco pose corrector 실기기 검증 완료 (2026-05-08). classroom_1 �
 
 > LIMO 2대가 서로를 인식하고 회피하며 독립적으로 주행
 
-- [x] `ulsan_obstacle_layer` 실기기 검증 — 각 로봇 global costmap에 상대 amcl_pose LETHAL 원형 반영 확인 (2026-04-29)
+- [x] `ulsan_obstacle_layer` 실기기 검증 완료 (2026-04-29) — **폐기 (DEC-022)**: 동적 충돌 회피 구조적 한계 확인
 - [x] `wego_bridge` 실운용 — 두 로봇 amcl_pose 노트북(domain 5) 수신 확인 (2026-04-29)
 - [x] `wego_ui` 관제 GUI — 노트북 domain 5에서 지도 + 두 로봇 실시간 위치 마커 정상 시각화 (2026-04-29)
 
@@ -93,7 +94,7 @@ passive ArUco pose corrector 실기기 검증 완료 (2026-05-08). classroom_1 �
 - [ ] 음성 파이프라인 → FSM 연결 (`/goal_destination` 발행)
 
 #### 멀티로봇 코디네이터
-- [ ] `wego_coordinator` 패키지 (노트북 전용): robot_status 구독 → on_duty 결정 — DEC-015
+- [ ] `wego_traffic` 패키지 (노트북 전용): robot_status 구독 → on_duty 결정 — DEC-015
 - [ ] `/limo_N/robot_status` 구독 + `/limo_N/on_duty` 발행
 - [ ] wego_behaviour FSM과 on_duty 연동 확인
 
@@ -125,10 +126,9 @@ passive ArUco pose corrector 실기기 검증 완료 (2026-05-08). classroom_1 �
   - home1 바닥 마커(ID 0) 방향 캘리브레이션 완료 (시계방향 90° 회전으로 map_yaw=π/2 확정)
   - classroom_1 → home1 왕복 주행 중 AMCL 보정 확인 (10초 cooldown 간격 정상 동작)
   - 보정값 수렴: x≈0.15, y≈1.22, yaw≈-1.52 (home1 기준 ~0.25m 오차, Nav2 goal 성공)
-- [ ] **`_publish_initialpose` 부호 버그 수정** — 확인 완료, 수정 대기
-  - 버그: `robot_x = map_x - total_dist × cos(map_yaw)` → 수정: `+`
-  - 수정 후 `/initialpose` 주석 해제 예정
-- [ ] markers.yaml ID 1 (LIMO2) map 좌표 측정 및 입력
+- [x] `aruco_localizer.py` 삭제 — visual servoing 폐기 (정밀 주차 불필요, 2026-05-11)
+- [ ] markers.yaml ID 0, ID 1 map 좌표 재측정 — 마커 위치 변경으로 전체 재측정 필요
+- [ ] **passive corrector 실기기 재검증** — 새 아키텍처(서버 노트북 Nav2) 기준으로 재검증 필요
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI
