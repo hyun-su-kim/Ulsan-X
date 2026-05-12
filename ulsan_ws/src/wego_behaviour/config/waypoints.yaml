@@ -42,7 +42,7 @@ waypoints:
   home_robot1:
     label: 로봇1 홈
     x: 0.0
-    y: 0.98
+    y: 0.95
     yaw: -1.5708
   home_robot2:
     label: 로봇2 홈

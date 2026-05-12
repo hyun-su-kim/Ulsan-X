@@ -5,15 +5,16 @@ Normal mode (기본):
   변환 체인: T_map_base = T_map_marker × inv(T_cam_marker) × inv(T_base_cam)
 
 Calibration mode (calibration_mode:=true):
-  로봇이 알려진 map 위치에 정지한 상태에서 마커의 map 좌표를 측정한다.
+  로봇이 알려진 map 위치에 정지한 상태에서 마커의 map pose를 측정한다.
   변환 체인: T_map_marker = T_map_base × T_base_cam × T_cam_marker
   calib_samples 프레임 평균 후 markers.yaml 입력값을 출력.
+  마커 pose는 xyz + quaternion (6DOF) 으로 저장 — 2D 투영 손실 없음.
 
   실행 예:
     ros2 run wego_aruco aruco_pose_corrector --ros-args \\
       -p calibration_mode:=true \\
       -p calib_marker_id:=0 \\
-      -p calib_x:=0.0 -p calib_y:=0.98 -p calib_yaw:=-1.5708
+      -p calib_x:=0.0 -p calib_y:=0.95 -p calib_yaw:=-1.5708
 """
 
 import math
@@ -32,13 +33,12 @@ from tf2_ros import Buffer, TransformListener
 
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-ARUCO_PARAMS = cv2.aruco.DetectorParameters()
+ARUCO_PARAMS = cv2.aruco.DetectorParameters_create()
 ARUCO_PARAMS.adaptiveThreshWinSizeMin = 3
 ARUCO_PARAMS.adaptiveThreshWinSizeMax = 53
 ARUCO_PARAMS.adaptiveThreshWinSizeStep = 5
 ARUCO_PARAMS.minMarkerPerimeterRate = 0.02
 ARUCO_PARAMS.errorCorrectionRate = 0.8
-DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
 
 class ArucoPoseCorrector(Node):
@@ -81,10 +81,14 @@ class ArucoPoseCorrector(Node):
                     self.get_logger().info(f'마커 {mid}: calibrated=false — 건너뜀')
                     continue
                 self._markers[mid_int] = {
-                    'size':    float(info['size']),
-                    'map_x':   float(info['map_x']),
-                    'map_y':   float(info['map_y']),
-                    'map_yaw': float(info['map_yaw']),
+                    'size':   float(info['size']),
+                    'map_x':  float(info['map_x']),
+                    'map_y':  float(info['map_y']),
+                    'map_z':  float(info['map_z']),
+                    'map_qx': float(info['map_qx']),
+                    'map_qy': float(info['map_qy']),
+                    'map_qz': float(info['map_qz']),
+                    'map_qw': float(info['map_qw']),
                 }
 
         if self._calib_mode:
@@ -96,7 +100,7 @@ class ArucoPoseCorrector(Node):
                 f'  목표 샘플 : {self._calib_n}프레임\n'
                 f'========================='
             )
-            self._calib_results: list[tuple[float, float, float]] = []
+            self._calib_results: list = []
             self._calib_done = False
         else:
             self.get_logger().info(
@@ -156,7 +160,7 @@ class ArucoPoseCorrector(Node):
             return
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = DETECTOR.detectMarkers(gray)
+        corners, ids, _ = cv2.aruco.detectMarkers(gray, ARUCO_DICT, parameters=ARUCO_PARAMS)
         detected = set(ids.flatten().tolist()) if ids is not None else set()
 
         for mid in list(self._counts.keys()):
@@ -204,7 +208,7 @@ class ArucoPoseCorrector(Node):
 
     # ──────────────────────────────────────────────────────────────────
     def _accumulate_calibration(self, rvec: np.ndarray, tvec: np.ndarray) -> None:
-        """캘리브레이션: T_map_marker = T_map_base × T_base_cam × T_cam_marker"""
+        """캘리브레이션: T_map_marker = T_map_base × T_base_cam × T_cam_marker (full 3D)"""
         try:
             tf = self._tf_buffer.lookup_transform(
                 'base_link', self._cam_frame, rclpy.time.Time()
@@ -224,14 +228,17 @@ class ArucoPoseCorrector(Node):
         T_map_base   = self._yaw_to_matrix(self._calib_x, self._calib_y, self._calib_yaw)
         T_map_marker = T_map_base @ T_base_cam @ T_cam_marker
 
-        mx   = T_map_marker[0, 3]
-        my   = T_map_marker[1, 3]
+        mx = T_map_marker[0, 3]
+        my = T_map_marker[1, 3]
+        mz = T_map_marker[2, 3]
+        qw, qx, qy, qz = self._rotation_to_quaternion(T_map_marker[:3, :3])
         myaw = math.atan2(T_map_marker[1, 0], T_map_marker[0, 0])
 
-        self._calib_results.append((mx, my, myaw))
+        self._calib_results.append((mx, my, mz, qx, qy, qz, qw))
         n = len(self._calib_results)
         self.get_logger().info(
-            f'샘플 {n}/{self._calib_n}  x={mx:.4f}  y={my:.4f}  yaw={math.degrees(myaw):.2f}°'
+            f'샘플 {n}/{self._calib_n}  x={mx:.4f}  y={my:.4f}  z={mz:.4f}'
+            f'  yaw={math.degrees(myaw):.2f}°'
         )
 
         if n >= self._calib_n:
@@ -239,32 +246,51 @@ class ArucoPoseCorrector(Node):
             self._print_calibration_result()
 
     def _print_calibration_result(self) -> None:
-        xs, ys, yaws = zip(*self._calib_results)
+        xs, ys, zs, qxs, qys, qzs, qws = zip(*self._calib_results)
 
-        mean_x   = sum(xs) / len(xs)
-        mean_y   = sum(ys) / len(ys)
-        mean_yaw = math.atan2(
-            sum(math.sin(y) for y in yaws) / len(yaws),
-            sum(math.cos(y) for y in yaws) / len(yaws),
+        mean_x  = sum(xs) / len(xs)
+        mean_y  = sum(ys) / len(ys)
+        mean_z  = sum(zs) / len(zs)
+        std_x   = (sum((x - mean_x) ** 2 for x in xs) / len(xs)) ** 0.5
+        std_y   = (sum((y - mean_y) ** 2 for y in ys) / len(ys)) ** 0.5
+
+        # quaternion 평균 후 정규화
+        mean_qx = sum(qxs) / len(qxs)
+        mean_qy = sum(qys) / len(qys)
+        mean_qz = sum(qzs) / len(qzs)
+        mean_qw = sum(qws) / len(qws)
+        norm = math.sqrt(mean_qx**2 + mean_qy**2 + mean_qz**2 + mean_qw**2)
+        mean_qx /= norm; mean_qy /= norm; mean_qz /= norm; mean_qw /= norm
+
+        myaw = math.atan2(
+            2.0 * (mean_qw * mean_qz + mean_qx * mean_qy),
+            1.0 - 2.0 * (mean_qy**2 + mean_qz**2),
         )
-        std_x = (sum((x - mean_x) ** 2 for x in xs) / len(xs)) ** 0.5
-        std_y = (sum((y - mean_y) ** 2 for y in ys) / len(ys)) ** 0.5
 
-        size  = self._markers[self._calib_mid]['size']
+        size = self._markers[self._calib_mid]['size']
         self.get_logger().info(
             f'\n'
             f'======== 캘리브레이션 결과 (ID={self._calib_mid}) ========\n'
-            f'  map_x   : {mean_x:.4f}  (std {std_x:.4f})\n'
-            f'  map_y   : {mean_y:.4f}  (std {std_y:.4f})\n'
-            f'  map_yaw : {mean_yaw:.4f}  ({math.degrees(mean_yaw):.2f}°)\n'
+            f'  map_x  : {mean_x:.4f}  (std {std_x:.4f})\n'
+            f'  map_y  : {mean_y:.4f}  (std {std_y:.4f})\n'
+            f'  map_z  : {mean_z:.4f}\n'
+            f'  map_qx : {mean_qx:.4f}\n'
+            f'  map_qy : {mean_qy:.4f}\n'
+            f'  map_qz : {mean_qz:.4f}\n'
+            f'  map_qw : {mean_qw:.4f}\n'
+            f'  (yaw   : {math.degrees(myaw):.2f}°)\n'
             f'\n'
             f'markers.yaml 에 아래 내용을 입력하세요:\n'
             f'  {self._calib_mid}:\n'
             f'    size: {size:.2f}\n'
             f'    calibrated: true\n'
-            f'    map_x:   {mean_x:.4f}\n'
-            f'    map_y:   {mean_y:.4f}\n'
-            f'    map_yaw: {mean_yaw:.4f}\n'
+            f'    map_x:  {mean_x:.4f}\n'
+            f'    map_y:  {mean_y:.4f}\n'
+            f'    map_z:  {mean_z:.4f}\n'
+            f'    map_qx: {mean_qx:.4f}\n'
+            f'    map_qy: {mean_qy:.4f}\n'
+            f'    map_qz: {mean_qz:.4f}\n'
+            f'    map_qw: {mean_qw:.4f}\n'
             f'========================================================='
         )
 
@@ -290,8 +316,11 @@ class ArucoPoseCorrector(Node):
         t, q = tf.transform.translation, tf.transform.rotation
         T_base_cam = self._tf_to_matrix(t.x, t.y, t.z, q.x, q.y, q.z, q.w)
 
-        T_map_marker = self._yaw_to_matrix(info['map_x'], info['map_y'], info['map_yaw'])
-        T_map_base   = T_map_marker @ np.linalg.inv(T_cam_marker) @ np.linalg.inv(T_base_cam)
+        T_map_marker = self._tf_to_matrix(
+            info['map_x'], info['map_y'], info['map_z'],
+            info['map_qx'], info['map_qy'], info['map_qz'], info['map_qw'],
+        )
+        T_map_base = T_map_marker @ np.linalg.inv(T_cam_marker) @ np.linalg.inv(T_base_cam)
 
         robot_x   = T_map_base[0, 3]
         robot_y   = T_map_base[1, 3]
@@ -315,6 +344,35 @@ class ArucoPoseCorrector(Node):
         )
 
     # ──────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _rotation_to_quaternion(R: np.ndarray):
+        trace = R[0, 0] + R[1, 1] + R[2, 2]
+        if trace > 0:
+            s = 2.0 * math.sqrt(trace + 1.0)
+            qw = 0.25 * s
+            qx = (R[2, 1] - R[1, 2]) / s
+            qy = (R[0, 2] - R[2, 0]) / s
+            qz = (R[1, 0] - R[0, 1]) / s
+        elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+            s = 2.0 * math.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2])
+            qw = (R[2, 1] - R[1, 2]) / s
+            qx = 0.25 * s
+            qy = (R[0, 1] + R[1, 0]) / s
+            qz = (R[0, 2] + R[2, 0]) / s
+        elif R[1, 1] > R[2, 2]:
+            s = 2.0 * math.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2])
+            qw = (R[0, 2] - R[2, 0]) / s
+            qx = (R[0, 1] + R[1, 0]) / s
+            qy = 0.25 * s
+            qz = (R[1, 2] + R[2, 1]) / s
+        else:
+            s = 2.0 * math.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1])
+            qw = (R[1, 0] - R[0, 1]) / s
+            qx = (R[0, 2] + R[2, 0]) / s
+            qy = (R[1, 2] + R[2, 1]) / s
+            qz = 0.25 * s
+        return qw, qx, qy, qz
+
     @staticmethod
     def _tf_to_matrix(tx, ty, tz, qx, qy, qz, qw) -> np.ndarray:
         R = np.array([

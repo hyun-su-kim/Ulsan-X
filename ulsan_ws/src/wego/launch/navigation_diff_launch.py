@@ -35,8 +35,8 @@ def generate_launch_description():
         name='nav2_container',
         package='rclcpp_components',
         executable='component_container_isolated',
-        parameters=[ParameterFile(parameter_file_path), {'autostart': True}],
-        arguments=['--ros-args', '--log-level', 'info'],
+        parameters=[ParameterFile(parameter_file_path)],
+        ros_arguments=['--log-level', 'info'],
         remappings=remappings,
         output='screen',
     )
