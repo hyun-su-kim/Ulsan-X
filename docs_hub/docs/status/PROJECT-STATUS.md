@@ -19,7 +19,8 @@
 | 행동 트리 최상단 관리 (FSM — WAITING 상태 추가) | **재설계** | wego_behaviour |
 | ArUco 마커 홈 정차 보정 | **완료** | wego_aruco |
 | 음성 파이프라인 (TTS 안내 멘트) | **구현 중** | wego_voice (TTS only — DEC-024) |
-| 예약 웹 서비스 | planned | 신규 (웹 서비스) |
+| 예약 백엔드 (FastAPI + MySQL) | **완료** | ulsan_reservation |
+| 웹 예약 UI (React) | **완료** | ulsan-web-ui |
 | LIMO 터치 UI | planned | wego_touch_ui (신규) |
 | 멀티로봇 코디네이터 (충돌 회피 pause/resume) | planned | wego_traffic (신규) |
 | 관제 UI (관리자 대시보드) | planned | wego_ui (재구현) |
@@ -94,10 +95,22 @@
 
 > STT/Wake-up/NLU/LLM 기반 자유 대화 안내는 추후 개발 사항 — VOICE-PIPELINE.md 참고
 
+#### 예약 시스템 (DEC-023, DEC-024)
+- [x] `ulsan_reservation` FastAPI 서버 구현 — done (2026-05-12)
+  - FastAPI + MySQL + SQLAlchemy, 관제 노트북(192.168.0.115:8000) 실행
+  - 엔드포인트: 예약 생성/조회/변경/취소/상태변경/만석조회
+  - 상담실 자동 배정: counseling_1 → counseling_2 → intensive_1 → intensive_2
+  - CORS 미들웨어 적용 (React ↔ FastAPI 크로스오리진 허용)
+- [x] `ulsan-web-ui` React 웹 예약 UI 구현 — done (2026-05-12)
+  - 예약 폼: 이름/전화번호/날짜(react-datepicker)/시간 선택
+  - 만석 시간대 자동 회색 비활성화 + "(마감)" 표시
+  - 내 예약 조회/취소/변경 (이름 + 전화번호 끝 4자리 인증)
+  - 예약 완료 확인 페이지 (배정 상담실/시간 표시)
+
 #### 멀티로봇 코디네이터
-- [ ] `wego_traffic` 패키지 (노트북 전용): robot_status 구독 → on_duty 결정 — DEC-015
-- [ ] `/limo_N/robot_status` 구독 + `/limo_N/on_duty` 발행
-- [ ] wego_behaviour FSM과 on_duty 연동 확인
+- [ ] `wego_traffic` 패키지 (서버 노트북): 두 로봇 거리 감지 → pause/resume 발행 (DEC-022)
+- [ ] `/limo_N/pause`, `/limo_N/resume` 토픽 발행
+- [ ] wego_behaviour WAITING 상태 추가 및 연동
 
 #### ArUco 보정
 - [x] `wego_aruco` 패키지 구현 — done (2026-05-01)

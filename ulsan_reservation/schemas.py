@@ -43,6 +43,25 @@ class ReservationCreate(BaseModel):
         return v
 
 
+class ReservationUpdate(BaseModel):
+    """
+    예약 변경 요청 스키마 (웹 예약 UI → PUT /reservations/{id})
+
+    날짜와 시간대만 변경 가능하다
+    이름/전화번호는 본인 확인 용도라 변경 불가
+    변경 시 새 날짜+시간대에 빈 상담실이 없으면 400 에러 반환
+    """
+    date:      date
+    time_slot: int
+
+    @field_validator("time_slot")
+    @classmethod
+    def validate_time_slot(cls, v):
+        if v < 9 or v > 16:
+            raise ValueError("time_slot은 9~16 사이여야 합니다.")
+        return v
+
+
 class ReservationResponse(BaseModel):
     """
     예약 조회/생성 응답 스키마

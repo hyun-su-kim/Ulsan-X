@@ -4,6 +4,40 @@
 
 ---
 
+### DEC-026: UI 기술 스택 선택 — PyQt(관제) / React+rosbridge(터치) / React(웹 예약)
+- **Context**: 3개의 UI가 필요. 각 UI의 핵심 요구사항이 달라 기술 스택을 별도로 결정해야 했음.
+- **Decision**:
+  | UI | 스택 | 실행 위치 |
+  |----|------|-----------|
+  | 관제 GUI | PyQt + rclpy | 관제 노트북 (domain 5) |
+  | 터치 UI | React + rosbridge | Jetson Orin Nano (Chromium 키오스크) |
+  | 웹 예약 UI | React | 관제 노트북 (포트포워딩으로 외부 접근) |
+- **Rationale**:
+  - **RQt 제외**: RQt는 PyQt 코드를 플러그인 호스트에 등록하는 구조. 여러 플러그인을 탈부착·재사용하는 개발/디버깅 목적에 적합. 고정 목적 운용 UI에는 플러그인 호스트 구조가 불필요한 복잡성을 추가. 현업에서도 운용 UI는 PyQt 직접 작성이 표준.
+  - **관제 GUI = PyQt**: amcl_pose, robot_status 실시간 ROS 토픽이 핵심. rclpy + QThread 직접 연결이 가장 안정적. DB 조회(오늘 예약)는 부수적 → QThread + requests로 충분.
+  - **터치 UI = React + rosbridge**: 예약 DB 조회가 핵심, rosbridge로 goal 발행 1회. 웹 예약 UI와 컴포넌트 재사용 가능. rosbridge를 Jetson 로컬에서 실행하므로 네트워크 홉 없음. 포트폴리오 가치: React(범용) > Qt QML(임베디드 한정).
+  - **웹 예약 UI = React**: 외부(학부모/학생) 접근 필요 → 웹 기반 필수. 터치 UI와 React 컴포넌트 재사용.
+- **면접 어필**: "UI 목적(ROS 실시간 vs DB 조회 vs 외부 접근)에 따라 기술 스택을 달리 선택. RQt와 PyQt의 차이를 구조적으로 이해하고, 고정 운용 UI에 RQt 플러그인 호스트가 불필요함을 판단."
+- **Date**: 2026-05-12
+
+---
+
+### DEC-025: 예약 백엔드 스택 및 서버 위치 — FastAPI + MySQL + SQLAlchemy, 관제 노트북
+- **Context**: 예약 시스템 백엔드 기술 스택과 서버 실행 위치 결정. 다중 클라이언트(웹 예약 UI, LIMO 터치 UI 2대, 관제 GUI) 동시 접근이 필요.
+- **Decision**: **FastAPI + MySQL + SQLAlchemy ORM, 관제 노트북(192.168.0.115)에서 실행**
+- **Rationale**:
+  - **FastAPI**: Python 기반으로 ROS2 코드와 언어 통일. 자동 Swagger 문서(/docs). 비동기 지원. SQLite 대비 다중 클라이언트 동시 접근에 안정적.
+  - **MySQL vs PostgreSQL**: 국내 기업 표준이 MySQL. 이 규모(상담 예약 수백 건)에서 두 DB의 실질적 차이 없음. MySQL 선택.
+  - **SQLAlchemy ORM**: DB 추상화 → MySQL/PostgreSQL 전환 시 .env DATABASE_URL 한 줄만 변경. 쿼리를 Python으로 표현하여 SQL injection 방지.
+  - **관제 노트북 선택**: 서버 노트북은 Nav2 × 2, wego_behaviour × 2 등 ROS 연산 부하가 이미 큼. 관제 노트북은 wego_ui, wego_bridge만 실행 → 여유 있음. 예약 서버(FastAPI)는 ROS와 무관하므로 ulsan_ws 외부에 독립 배치.
+  - **포트**: FastAPI 8000, MySQL 3306 (로컬). 외부 클라이언트는 http://192.168.0.115:8000 으로 접근.
+  - **CORS**: React(3000) → FastAPI(8000) 크로스오리진 요청을 위해 CORSMiddleware allow_origins=["*"] 설정.
+- **패키지 위치**: `/home/yechan/Ulsan-X/ulsan_reservation/` (ulsan_ws 외부)
+- **면접 어필**: "FastAPI + SQLAlchemy 조합은 Python 생태계 표준 스택. ORM 추상화로 DB 교체 비용을 최소화하고, ROS 연산 부하를 고려해 서버 위치를 관제 노트북으로 결정."
+- **Date**: 2026-05-12
+
+---
+
 ### DEC-024: NLU 방식 변경 — LLM API 폐기, 터치 UI + DB 조회로 대체
 - **Context**: 기존 음성 파이프라인에서 발화("1강의실 안내해줘") → LLM API → waypoint 매핑 방식으로 목적지를 결정했으나, 예약 기반 안내 시스템 도입으로 목적지가 DB에서 결정됨.
 - **Decision**: **LLM API 기반 NLU 폐기 → 터치 UI + DB 조회로 완전 대체**
