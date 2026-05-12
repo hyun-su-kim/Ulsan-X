@@ -6,6 +6,11 @@ topics:
     from_domain: 7
     to_domain: 5
     remap: /limo2/amcl_pose
+  /robot_status:
+    type: std_msgs/msg/String
+    from_domain: 7
+    to_domain: 5
+    remap: /limo2/robot_status
   /limo2/pause:
     type: std_msgs/msg/Empty
     from_domain: 5
