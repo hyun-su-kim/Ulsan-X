@@ -41,32 +41,39 @@ ulsan_ws/src/
 
 ## 소스코드 현황 (2026-05-11 기준)
 
-### 아키텍처 — 기기별 역할 (DEC-021, 2026-05-11 확정)
+### 아키텍처 — 기기별 역할 (DEC-021, 2026-05-12 업데이트)
 
 | 기기 | 도메인 | 실행 내용 |
 |------|--------|-----------|
-| LIMO 1 | 5 | 드라이버만: limo_base, ydlidar, orbbec, robot_state_publisher, EKF |
-| LIMO 2 | 6 | 드라이버만: limo_base, ydlidar, orbbec, robot_state_publisher, EKF |
-| 중간 노트북 | 5 + 6 (터미널 분리) | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_traffic |
-| 관제 UI 노트북 | 7 | wego_ui, wego_bridge (amcl_pose domain 5,6 → 7 브릿징) |
+| LIMO 1 | 5 | 드라이버: limo_base, ydlidar, orbbec, robot_state_publisher, EKF + **wego_touch_ui** |
+| LIMO 2 | 6 | 드라이버: limo_base, ydlidar, orbbec, robot_state_publisher, EKF + **wego_touch_ui** |
+| 서버 노트북 | 5 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice (LIMO 1 담당) |
+| 서버 노트북 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice (LIMO 2 담당) |
+| 서버 노트북 | 7 | **wego_traffic** (두 로봇 amcl_pose 구독 → pause/resume 발행) |
+| 관제 UI 노트북 | 7 | wego_ui, wego_bridge (amcl_pose 5,6→7 + pause/resume 7→5,6 양방향) |
 
 ```bash
-# LIMO 1, 2 — 드라이버만
+# LIMO 1, 2 — 드라이버 + 터치 UI
 ros2 launch wego teleop_launch.py
+ros2 launch wego_touch_ui touch_ui_launch.py
 
-# 중간 노트북 — LIMO 1 담당 터미널
+# 서버 노트북 — LIMO 1 담당 터미널
 export ROS_DOMAIN_ID=5
 ros2 launch wego_2d_nav navigation_launch.py
 ros2 launch wego_behaviour behaviour_launch.py
 
-# 중간 노트북 — LIMO 2 담당 터미널
+# 서버 노트북 — LIMO 2 담당 터미널
 export ROS_DOMAIN_ID=6
 ros2 launch wego_2d_nav navigation_launch.py
 ros2 launch wego_behaviour behaviour_launch.py
 
+# 서버 노트북 — wego_traffic 터미널
+export ROS_DOMAIN_ID=7
+ros2 launch wego_traffic traffic_launch.py
+
 # 관제 UI 노트북 (domain 7)
 ros2 launch wego_ui gui_launch.py
-ros2 launch wego_bridge bridge_launch.py  # amcl_pose 5,6 → 7
+ros2 launch wego_bridge bridge_launch.py  # amcl_pose 5,6→7 / pause_resume 7→5,6
 ```
 
 ### 존재하는 패키지
@@ -75,13 +82,13 @@ ros2 launch wego_bridge bridge_launch.py  # amcl_pose 5,6 → 7
 | `wego` | teleop_launch.py, navigation_diff_launch.py | LIMO 드라이버 전용으로 축소 예정 |
 | `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | 중간 노트북에서 실행 |
 | `wego_msgs` | srv/Chalkak.srv | 기본 서비스 |
-| `wego_bridge` | domain_bridge_robot.yaml, robot_bridge_launch.py | 관제 UI 노트북에서 실행 (amcl_pose 브릿징) |
+| `wego_bridge` | domain_bridge_robot.yaml, robot_bridge_launch.py | 관제 UI 노트북에서 실행. amcl_pose(5,6→7) + pause/resume(7→5,6) 양방향 |
 | `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — WAITING 상태 추가 예정 (DEC-022) |
-| `wego_aruco` | aruco_localizer.py, pose_corrector.py | passive corrector 실기기 검증 완료 |
-| `wego_voice` | voice_node.py, vad/wakeword/tts | NLU 모듈 제거 예정 (DEC-024). VAD+wakeword+TTS만 유지 |
+| `wego_aruco` | pose_corrector.py | passive corrector + calibration_mode 구현 완료 |
+| `wego_voice` | voice_node.py, tts | NLU 제거 (DEC-024). TTS만 유지 |
 | `ulsan_obstacle_layer` | PeerObstacleLayer | **폐기 (DEC-022)**: 우선순위 FSM pause 방식으로 대체 |
-| `wego_touch_ui` | — | **신규**: LIMO 터치 디스플레이 UI. 예약 조회 + 체크인 + TTS 연동 |
-| `wego_traffic` | — | **신규** (관제 노트북): 충돌 회피 pause/resume 전담. on_duty 개념 폐기(DEC-015) |
+| `wego_touch_ui` | — | **신규** (LIMO): 터치 디스플레이 UI. 예약 조회 + 체크인 + /goal_destination 발행 |
+| `wego_traffic` | — | **신규** (서버 노트북 domain 7): 두 로봇 거리 감지 → pause/resume 발행 |
 | `reservation_web` | — | **신규** (웹 서비스): 상담 예약 CRUD. 평일 09~17시, 1시간 단위, 상담실 4개 자동 배정 |
 
 ### 멀티로봇 충돌 회피 (DEC-022, 2026-05-11 확정)
