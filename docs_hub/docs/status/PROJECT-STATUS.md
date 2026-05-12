@@ -18,7 +18,7 @@
 | waypoints.yaml 목적지 좌표 작성 | **완료** | wego_behaviour/config |
 | 행동 트리 최상단 관리 (FSM — WAITING 상태 추가) | **재설계** | wego_behaviour |
 | ArUco 마커 홈 정차 보정 | **완료** | wego_aruco |
-| 음성 파이프라인 (VAD→Wake→TTS) | **재설계** | wego_voice (NLU 제거) |
+| 음성 파이프라인 (TTS 안내 멘트) | **구현 중** | wego_voice (TTS only — DEC-024) |
 | 예약 웹 서비스 | planned | 신규 (웹 서비스) |
 | LIMO 터치 UI | planned | wego_touch_ui (신규) |
 | 멀티로봇 코디네이터 (충돌 회피 pause/resume) | planned | wego_traffic (신규) |
@@ -87,11 +87,12 @@
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
 
 #### 음성 파이프라인
-- [ ] `wego_voice` 패키지: VAD + openWakeWord + faster-whisper (STT)
-  - **설계 원칙 (DEC-017)**: `/on_duty` 구독 → `on_duty=False`이면 웨이크워드 감지 비활성화. GPU 중복 소모 및 두 로봇 동시 응대 방지.
-- [ ] NLU: 발화 키워드 → `waypoints.yaml` 목적지 매핑
-- [ ] TTS (Piper)
-- [ ] 음성 파이프라인 → FSM 연결 (`/goal_destination` 발행)
+- [ ] `wego_voice` 패키지: TTS 안내 멘트 출력 (edge-tts, DEC-024)
+  - 체크인 완료 시 "{이름}님 {시간}시 상담 예약으로 {상담실}로 안내합니다." 발화
+  - `/speak_text` 구독 → TTS 출력 (wego_touch_ui 또는 wego_behaviour에서 발행)
+- [ ] wego_voice → FSM 연결 확인 (`/goal_destination` 발행 흐름)
+
+> STT/Wake-up/NLU/LLM 기반 자유 대화 안내는 추후 개발 사항 — VOICE-PIPELINE.md 참고
 
 #### 멀티로봇 코디네이터
 - [ ] `wego_traffic` 패키지 (노트북 전용): robot_status 구독 → on_duty 결정 — DEC-015
