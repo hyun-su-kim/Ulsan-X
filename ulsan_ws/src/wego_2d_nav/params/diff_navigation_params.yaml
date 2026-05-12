@@ -185,12 +185,8 @@ global_costmap:
       robot_radius: 0.2
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer", "obstacle_layer", "ulsan_obstacle_layer", "denoise_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "denoise_layer", "inflation_layer"]
       filters: ["keepout_filter"]
-      ulsan_obstacle_layer:
-        plugin: "ulsan_obstacle_layer/PeerObstacleLayer"
-        peer_pose_topic: ""   # 비워두면 ROS_DOMAIN_ID로 자동 결정 (6→limo_2, 7→limo_1)
-        obstacle_radius: 0.35
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
