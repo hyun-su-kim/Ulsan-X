@@ -7,11 +7,11 @@ from rclpy.qos import QoSProfile, DurabilityPolicy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Empty
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from yasmin import StateMachine, Blackboard
 
-from wego_behaviour.states import GuidingState, IdleState, ReturningState
+from wego_behaviour.states import GuidingState, IdleState, ReturningState, WaitingState
 from nav2_simple_commander.robot_navigator import BasicNavigator
 
 
@@ -25,6 +25,8 @@ class BehaviourNode(Node):
         self.home_key: str = self.get_parameter('home_key').get_parameter_value().string_value
         self.pending_destination: str | None = None
         self.latest_amcl_pose: PoseWithCovarianceStamped | None = None  # [DEBUG]
+        self._pause_flag  = False
+        self._resume_flag = False
 
         self._status_pub = self.create_publisher(String, '/robot_status', 10)
         self._speak_pub = self.create_publisher(String, '/speak_text', 10)
@@ -38,6 +40,8 @@ class BehaviourNode(Node):
             PoseWithCovarianceStamped, '/initialpose', _latched_qos
         )
         self.create_subscription(String, '/goal_destination', self._dest_cb, 10)
+        self.create_subscription(Empty, '/pause',  self._pause_cb,  10)
+        self.create_subscription(Empty, '/resume', self._resume_cb, 10)
         self.create_subscription(  # [DEBUG]
             PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 1)  # [DEBUG]
 
@@ -55,6 +59,16 @@ class BehaviourNode(Node):
         self.get_logger().info(
             f'초기 포즈 발행: {home["label"]} (x={home["x"]}, y={home["y"]}, yaw={yaw:.3f})'
         )
+
+    def _pause_cb(self, _: Empty) -> None:
+        self._pause_flag  = True
+        self._resume_flag = False
+        self.get_logger().info('pause 수신')
+
+    def _resume_cb(self, _: Empty) -> None:
+        self._resume_flag = True
+        self._pause_flag  = False
+        self.get_logger().info('resume 수신')
 
     def _amcl_cb(self, msg: PoseWithCovarianceStamped) -> None:  # [DEBUG]
         self.latest_amcl_pose = msg  # [DEBUG]
@@ -99,9 +113,10 @@ def main():
     spin_thread.start()
 
     sm = StateMachine(outcomes=['finished'])
-    sm.add_state('IDLE',      IdleState(node),                      transitions={'goto_destination': 'GUIDING'})
-    sm.add_state('GUIDING',   GuidingState(node, navigator),        transitions={'succeeded': 'RETURNING', 'failed': 'IDLE'})
-    sm.add_state('RETURNING', ReturningState(node, navigator),      transitions={'succeeded': 'IDLE',      'failed': 'IDLE'})
+    sm.add_state('IDLE',      IdleState(node),               transitions={'goto_destination': 'GUIDING'})
+    sm.add_state('GUIDING',   GuidingState(node, navigator), transitions={'succeeded': 'RETURNING', 'failed': 'IDLE', 'paused': 'WAITING'})
+    sm.add_state('RETURNING', ReturningState(node, navigator),transitions={'succeeded': 'IDLE',      'failed': 'IDLE', 'paused': 'WAITING'})
+    sm.add_state('WAITING',   WaitingState(node),            transitions={'resume_guiding': 'GUIDING', 'resume_returning': 'RETURNING'})
 
 
     try:

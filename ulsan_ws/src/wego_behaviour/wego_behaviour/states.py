@@ -43,7 +43,7 @@ class GuidingState(State):
     """안내 상태: 목적지까지 navigate_to_pose 실행."""
 
     def __init__(self, node, navigator: BasicNavigator):
-        super().__init__(outcomes=['succeeded', 'failed'])
+        super().__init__(outcomes=['succeeded', 'failed', 'paused'])
         self._node = node
         self._navigator = navigator
 
@@ -57,6 +57,10 @@ class GuidingState(State):
         self._navigator.goToPose(_make_pose(destination))
 
         while not self._navigator.isTaskComplete():
+            if self._node._pause_flag:
+                self._navigator.cancelTask()
+                blackboard['return_to'] = 'GUIDING'
+                return 'paused'
             time.sleep(0.1)
 
         result = self._navigator.getResult()
@@ -83,11 +87,32 @@ class GuidingState(State):
         return 'failed'
 
 
+class WaitingState(State):
+    """대기 상태: wego_traffic의 pause 수신 시 진입. resume 수신 시 이전 상태로 복귀."""
+
+    def __init__(self, node):
+        super().__init__(outcomes=['resume_guiding', 'resume_returning'])
+        self._node = node
+
+    def execute(self, blackboard):
+        self._node._pause_flag = False  # 진입 시 리셋 (중복 pause 방지)
+        self._node.publish_status('WAITING')
+        self._node.get_logger().info('WAITING: 상대 로봇 통과 대기 중')
+
+        while not self._node._resume_flag:
+            time.sleep(0.1)
+
+        self._node._resume_flag = False
+        return_to = blackboard.get('return_to', 'RETURNING')
+        self._node.get_logger().info(f'WAITING: resume → {return_to}')
+        return 'resume_guiding' if return_to == 'GUIDING' else 'resume_returning'
+
+
 class ReturningState(State):
     """복귀 상태: Nav2로 홈 이동. AMCL 보정은 aruco_pose_corrector가 passive하게 수행."""
 
     def __init__(self, node, navigator: BasicNavigator):
-        super().__init__(outcomes=['succeeded', 'failed'])
+        super().__init__(outcomes=['succeeded', 'failed', 'paused'])
         self._node = node
         self._navigator = navigator
 
@@ -98,6 +123,10 @@ class ReturningState(State):
         self._node.get_logger().info('RETURNING: 홈으로 이동 중')
         self._navigator.goToPose(_make_pose(home))
         while not self._navigator.isTaskComplete():
+            if self._node._pause_flag:
+                self._navigator.cancelTask()
+                blackboard['return_to'] = 'RETURNING'
+                return 'paused'
             time.sleep(0.1)
 
         if self._navigator.getResult() == TaskResult.SUCCEEDED:
