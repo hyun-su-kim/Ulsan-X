@@ -7,7 +7,8 @@
 # - 요청 데이터의 타입 검증, 직렬화/역직렬화를 Pydantic이 자동 처리
 
 from pydantic import BaseModel, field_validator
-from datetime import date
+from datetime import date, datetime
+from typing import Optional
 from enum import Enum
 
 
@@ -89,3 +90,64 @@ class StatusUpdate(BaseModel):
     LIMO 홈 복귀 완료 시: IN_PROGRESS → COMPLETED
     """
     status: ReservationStatus
+
+
+# ── 미션 스키마 ─────────────────────────────────────────────────────────────
+
+class MissionStatus(str, Enum):
+    PENDING   = "PENDING"
+    ACTIVE    = "ACTIVE"
+    COMPLETED = "COMPLETED"
+
+
+class MissionCreate(BaseModel):
+    """POST /assign, /walkin/assign, /assign/classroom에서 서버 내부적으로 사용"""
+    reservation_id: Optional[int] = None
+    destination:    str
+    tts_text:       str
+
+
+class MissionResponse(BaseModel):
+    """wego_dispatcher 폴링 응답 및 배정 결과 반환"""
+    id:             int
+    reservation_id: Optional[int]
+    destination:    str
+    tts_text:       str
+    status:         MissionStatus
+    robot_assigned: Optional[str]
+    created_at:     datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AssignResponse(BaseModel):
+    """POST /assign 성공 응답 — 태블릿 UI가 받는 형식"""
+    mission_id: int
+    robot:      str   # "limo1" | "limo2" — GuidingPage 폴링에 필요
+
+
+class RobotStatusUpdate(BaseModel):
+    """POST /robots/{id}/status — wego_dispatcher가 상태 변경 시 전송"""
+    status: str   # "IDLE" | "BUSY" | "RETURNING" | "WAITING"
+
+
+# ── 로그 스키마 ─────────────────────────────────────────────────────────────
+
+class LogResponse(BaseModel):
+    id:         int
+    type:       str
+    message:    str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── 현장 방문 스키마 ─────────────────────────────────────────────────────────
+
+class WalkinAssignResponse(BaseModel):
+    """POST /walkin/assign 성공 응답"""
+    mission_id: int
+    robot:      str
+    room:       str   # 배정된 상담실 키 (예: counseling_1)

@@ -4,21 +4,44 @@
 
 ---
 
-### DEC-026: UI 기술 스택 선택 — PyQt(관제) / React+rosbridge(터치) / React(웹 예약)
-- **Context**: 3개의 UI가 필요. 각 UI의 핵심 요구사항이 달라 기술 스택을 별도로 결정해야 했음.
+### DEC-027: 방문자 UI 아키텍처 — 태블릿 웹앱 + wego_dispatcher (rosbridge 제거)
+- **Context**: 기존 DEC-026에서 결정한 "LIMO 탑재 터치 UI + rosbridge" 방식의 두 가지 문제 발견.
+  1. **UX 문제**: LIMO가 낮아(바닥에서 약 30cm) 방문자가 숙여서 입력해야 함.
+  2. **설계 문제**: rosbridge를 통해 태블릿 JS가 직접 `/goal_destination`을 발행하는 구조 → 로봇 제어 로직이 브라우저에 있는 잘못된 설계.
+- **Decision**: **태블릿(눈높이) 웹앱 + HTTP only + wego_dispatcher(rclpy 노드)**
+  | UI | 스택 | 실행 위치 |
+  |----|------|-----------|
+  | 관제 GUI | PyQt + rclpy | 관제 노트북 (domain 5) |
+  | 방문자 UI | React (HTTP only) | 태블릿 브라우저 → `http://192.168.0.115:3000` |
+  | 웹 예약 UI | React | 관제 노트북 (포트 3001) |
+  - `wego_dispatcher` (rclpy 노드, domain 5): FastAPI 폴링 → 로봇에 goal/speak 발행
+  - 태블릿은 FastAPI HTTP만 사용. rosbridge 완전 제거.
+- **Rationale**:
+  - **rosbridge 제거**: 로봇 제어 로직(어느 로봇에 배정할지, goal 발행)이 ROS 노드(wego_dispatcher) 안에 있어야 함. 브라우저 JS에서 ROS 토픽을 직접 발행하는 것은 책임 분리 원칙 위반.
+  - **태블릿**: 눈높이에서 사용 → UX 문제 해소. 같은 네트워크의 브라우저면 되므로 별도 HW 불필요.
+  - **wego_dispatcher polling 방식**: 태블릿이 FastAPI에 HTTP POST → missions 테이블 PENDING 삽입 → wego_dispatcher가 0.5초 폴링으로 수락. 브라우저와 ROS 사이에 FastAPI가 버퍼 역할 → 네트워크 단절에도 안전.
+  - **임무 할당 규칙**: limo1 우선, 둘 다 IDLE이면 limo1, 둘 다 BUSY면 503 반환.
+  - **포트폴리오 가치**: "브라우저가 아닌 ROS 노드가 로봇을 제어한다"는 설계 원칙을 면접에서 설명 가능.
+- **면접 어필**: "rosbridge 방식은 로봇 제어 로직이 브라우저에 있는 설계 결함. 태블릿은 UI만 담당하고, 임무 할당과 ROS 토픽 발행은 wego_dispatcher(rclpy 노드)가 전담하도록 책임을 분리했습니다."
+- **Date**: 2026-05-13
+
+---
+
+### DEC-026: UI 기술 스택 선택 — PyQt(관제) / React(방문자/예약)
+- **Context**: 3개의 UI가 필요. 각 UI의 핵심 요구사항이 달라 기술 스택을 별도로 결정.
 - **Decision**:
   | UI | 스택 | 실행 위치 |
   |----|------|-----------|
   | 관제 GUI | PyQt + rclpy | 관제 노트북 (domain 5) |
-  | 터치 UI | React + rosbridge | Jetson Orin Nano (Chromium 키오스크) |
-  | 웹 예약 UI | React | 관제 노트북 (포트포워딩으로 외부 접근) |
+  | 방문자 UI | React (HTTP only) | 태블릿 브라우저 (DEC-027로 최종 확정) |
+  | 웹 예약 UI | React | 관제 노트북 (포트 3001) |
 - **Rationale**:
-  - **RQt 제외**: RQt는 PyQt 코드를 플러그인 호스트에 등록하는 구조. 여러 플러그인을 탈부착·재사용하는 개발/디버깅 목적에 적합. 고정 목적 운용 UI에는 플러그인 호스트 구조가 불필요한 복잡성을 추가. 현업에서도 운용 UI는 PyQt 직접 작성이 표준.
-  - **관제 GUI = PyQt**: amcl_pose, robot_status 실시간 ROS 토픽이 핵심. rclpy + QThread 직접 연결이 가장 안정적. DB 조회(오늘 예약)는 부수적 → QThread + requests로 충분.
-  - **터치 UI = React + rosbridge**: 예약 DB 조회가 핵심, rosbridge로 goal 발행 1회. 웹 예약 UI와 컴포넌트 재사용 가능. rosbridge를 Jetson 로컬에서 실행하므로 네트워크 홉 없음. 포트폴리오 가치: React(범용) > Qt QML(임베디드 한정).
-  - **웹 예약 UI = React**: 외부(학부모/학생) 접근 필요 → 웹 기반 필수. 터치 UI와 React 컴포넌트 재사용.
-- **면접 어필**: "UI 목적(ROS 실시간 vs DB 조회 vs 외부 접근)에 따라 기술 스택을 달리 선택. RQt와 PyQt의 차이를 구조적으로 이해하고, 고정 운용 UI에 RQt 플러그인 호스트가 불필요함을 판단."
-- **Date**: 2026-05-12
+  - **RQt 제외**: 고정 목적 운용 UI에 플러그인 호스트 구조는 불필요한 복잡성. 현업에서도 운용 UI는 PyQt 직접 작성이 표준.
+  - **관제 GUI = PyQt**: amcl_pose, robot_status 실시간 ROS 토픽이 핵심. rclpy + QThread 직접 연결이 가장 안정적.
+  - **방문자 UI = React (HTTP only)**: DEC-027에서 rosbridge 제거 결정. 태블릿 브라우저에서 FastAPI HTTP만 사용.
+  - **웹 예약 UI = React**: 외부(학부모/학생) 접근 필요 → 웹 기반 필수.
+- **면접 어필**: "UI 목적(ROS 실시간 vs DB 조회 vs 외부 접근)에 따라 기술 스택을 달리 선택."
+- **Date**: 2026-05-12 (DEC-027로 터치 UI 방식 최종 확정: 2026-05-13)
 
 ---
 

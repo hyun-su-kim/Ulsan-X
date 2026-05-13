@@ -1,0 +1,15 @@
+/* 로딩 스피너 애니메이션 — GuidingPage에서 로봇 이동 중 표시 */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 80px;
+  height: 80px;
+  border: 8px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 32px auto;
+}

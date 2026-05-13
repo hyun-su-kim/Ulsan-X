@@ -21,3 +21,13 @@ topics:
     from_domain: 5
     to_domain: 6
     remap: /resume
+  /limo1/goal_destination:
+    type: std_msgs/msg/String
+    from_domain: 5
+    to_domain: 6
+    remap: /goal_destination
+  /limo1/speak_text:
+    type: std_msgs/msg/String
+    from_domain: 5
+    to_domain: 6
+    remap: /speak_text

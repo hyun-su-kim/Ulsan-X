@@ -1,8 +1,8 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 3 — 아키텍처 재설계 (2026-05-11)**
-연산 오프로딩(DEC-021), 충돌 회피 재설계(DEC-022), 예약 기반 안내 시스템 도입(DEC-023), NLU 방식 변경(DEC-024) 확정. 기존 구현 일부 재작성 필요.
+**Phase 3 — 핵심 기능 구현 (2026-05-13)**
+태블릿 방문자 UI + wego_dispatcher 아키텍처(DEC-027) 확정. 방문자 UI, FastAPI 전체 엔드포인트, wego_dispatcher 구현 완료. 통합 테스트 단계 진입.
 
 ---
 
@@ -10,19 +10,19 @@
 
 | 트랙 | 상태 | 담당 패키지 |
 |------|------|------------|
-| 시스템 아키텍처 설계 | **재설계** | — (DEC-021~024) |
-| 통신 환경 구성 (CycloneDDS + Domain Bridge) | **재설계** | wego_bridge |
+| 시스템 아키텍처 설계 | **완료** | — (DEC-021~027) |
+| 통신 환경 구성 (CycloneDDS + Domain Bridge) | **완료** | wego_bridge |
 | SLAM 지도 작성 | **완료** | wego |
 | Nav2 경로 계획 & AMCL | **완료** | wego_2d_nav |
-| Fleet 충돌 회피 (우선순위 기반 pause/resume) | **재설계** | wego_traffic + wego_behaviour |
+| Fleet 충돌 회피 (우선순위 기반 pause/resume) | **완료** | wego_traffic + wego_behaviour |
 | waypoints.yaml 목적지 좌표 작성 | **완료** | wego_behaviour/config |
-| 행동 트리 최상단 관리 (FSM — WAITING 상태 추가) | **재설계** | wego_behaviour |
+| 행동 트리 최상단 관리 (FSM — WAITING 상태 포함) | **완료** | wego_behaviour |
 | ArUco 마커 홈 정차 보정 | **완료** | wego_aruco |
-| 음성 파이프라인 (TTS 안내 멘트) | **구현 중** | wego_voice (TTS only — DEC-024) |
-| 예약 백엔드 (FastAPI + MySQL) | **완료** | ulsan_reservation |
+| 음성 파이프라인 (TTS only, DEC-024) | **완료** | wego_voice |
+| 예약 백엔드 (FastAPI + MySQL + APScheduler) | **완료** | ulsan_reservation |
 | 웹 예약 UI (React) | **완료** | ulsan-web-ui |
-| LIMO 터치 UI | planned | wego_touch_ui (신규) |
-| 멀티로봇 코디네이터 (충돌 회피 pause/resume) | planned | wego_traffic (신규) |
+| 태블릿 방문자 UI (React, HTTP only) | **완료** | ulsan-visitor-ui (DEC-027) |
+| 로봇 임무 중계 (wego_dispatcher) | **완료** | wego_dispatcher (DEC-027) |
 | 관제 UI (관리자 대시보드) | planned | wego_ui (재구현) |
 
 ---
@@ -88,29 +88,48 @@
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
 
 #### 음성 파이프라인
-- [ ] `wego_voice` 패키지: TTS 안내 멘트 출력 (edge-tts, DEC-024)
-  - 체크인 완료 시 "{이름}님 {시간}시 상담 예약으로 {상담실}로 안내합니다." 발화
-  - `/speak_text` 구독 → TTS 출력 (wego_touch_ui 또는 wego_behaviour에서 발행)
-- [ ] wego_voice → FSM 연결 확인 (`/goal_destination` 발행 흐름)
+- [x] `wego_voice` 패키지: TTS 전용으로 단순화 — done (2026-05-13)
+  - wakeword / VAD / STT / NLU 파이프라인 전체 제거 (DEC-024)
+  - `/speak_text` 구독 → edge-tts + mpg123으로 출력
+  - wego_dispatcher가 발행, wego_bridge가 domain 5→6/7 브릿징
 
-> STT/Wake-up/NLU/LLM 기반 자유 대화 안내는 추후 개발 사항 — VOICE-PIPELINE.md 참고
-
-#### 예약 시스템 (DEC-023, DEC-024)
+#### 예약 시스템 (DEC-023, DEC-024, DEC-027)
 - [x] `ulsan_reservation` FastAPI 서버 구현 — done (2026-05-12)
   - FastAPI + MySQL + SQLAlchemy, 관제 노트북(192.168.0.115:8000) 실행
   - 엔드포인트: 예약 생성/조회/변경/취소/상태변경/만석조회
   - 상담실 자동 배정: counseling_1 → counseling_2 → intensive_1 → intensive_2
-  - CORS 미들웨어 적용 (React ↔ FastAPI 크로스오리진 허용)
+  - CORS 미들웨어 적용
+- [x] `ulsan_reservation` 신규 엔드포인트 추가 — done (2026-05-13)
+  - `GET /walkin/rooms/available` — 현재 시간대 빈 상담실 조회
+  - `POST /walkin/assign` — 현장방문 배정 + walk-in DB 삽입
+  - `POST /assign` — 예약 체크인 로봇 임무 배정
+  - `POST /assign/classroom` — 강의실 안내 배정 (DB 기록 없음)
+  - `GET /assign/pending` — wego_dispatcher 폴링용
+  - `PATCH /assign/{id}/start`, `PATCH /assign/{id}/complete`
+  - `POST /robots/{id}/status`, `GET /robots/status`
+  - `GET /logs` — 관제 GUI 알림 로그
+  - APScheduler: 매시 10분 노쇼(No-show) 감지 → logs 테이블 삽입
 - [x] `ulsan-web-ui` React 웹 예약 UI 구현 — done (2026-05-12)
   - 예약 폼: 이름/전화번호/날짜(react-datepicker)/시간 선택
   - 만석 시간대 자동 회색 비활성화 + "(마감)" 표시
   - 내 예약 조회/취소/변경 (이름 + 전화번호 끝 4자리 인증)
   - 예약 완료 확인 페이지 (배정 상담실/시간 표시)
+- [x] `ulsan-visitor-ui` 태블릿 방문자 React UI — done (2026-05-13)
+  - 예약 조회: 이름 + 전화번호 끝 4자리 → 예약 확인 → [안내 시작]
+  - 현장방문: 빈 상담실 자동 표시 → [안내 시작] / 강의실 버튼 선택
+  - GuidingPage: GET /robots/status 폴링 → 로봇 귀환 감지 → 완료 화면
+  - rosbridge 없음. HTTP only. (DEC-027)
 
 #### 멀티로봇 코디네이터
-- [ ] `wego_traffic` 패키지 (서버 노트북): 두 로봇 거리 감지 → pause/resume 발행 (DEC-022)
-- [ ] `/limo_N/pause`, `/limo_N/resume` 토픽 발행
-- [ ] wego_behaviour WAITING 상태 추가 및 연동
+- [x] `wego_traffic` 패키지: 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) — done
+- [x] `wego_behaviour` WAITING 상태 추가 및 연동 — done
+- [x] `wego_bridge` goal_destination + speak_text 브릿지 추가 — done (2026-05-13)
+  - `/limo1/goal_destination` (domain 5→6), `/limo1/speak_text` (domain 5→6)
+  - `/limo2/goal_destination` (domain 5→7), `/limo2/speak_text` (domain 5→7)
+- [x] `wego_dispatcher` 신규 패키지 — done (2026-05-13)
+  - domain 5에서 실행. /limo1(2)/robot_status 구독 → FastAPI 상태 동기화
+  - GET /assign/pending 0.5초 폴링 → IDLE 로봇에 goal/speak 발행
+  - 로봇 귀환 감지(IDLE 복귀) → PATCH /assign/{id}/complete
 
 #### ArUco 보정
 - [x] `wego_aruco` 패키지 구현 — done (2026-05-01)

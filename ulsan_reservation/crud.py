@@ -238,3 +238,126 @@ def update_status(db: Session, reservation_id: int, status: schemas.ReservationS
     db.commit()
     db.refresh(reservation)
     return reservation
+
+
+# ── 현장방문 쿼리 ────────────────────────────────────────────────────────────
+
+def get_available_room_today(db: Session, time_slot: int):
+    """
+    오늘 + 현재 시간대에 예약 행이 없는 상담실 중 첫 번째 반환.
+
+    status 무관 — 예약 행 자체가 없어야 빈 상담실이다.
+    walk-in 행(name="현장방문")이 삽입된 상담실도 이미 점유로 간주된다.
+    """
+    from datetime import date as date_type
+    today = date_type.today()
+    taken = [
+        row[0]
+        for row in db.query(models.Reservation.room).filter(
+            and_(
+                models.Reservation.date == today,
+                models.Reservation.time_slot == time_slot,
+            )
+        ).all()
+    ]
+    available = [r for r in ROOMS if r not in taken]
+    return available[0] if available else None
+
+
+def create_walkin_reservation(db: Session, room: str, time_slot: int):
+    """
+    현장 방문 상담 배정 시 reservations 테이블에 walk-in 행 삽입.
+
+    이 행이 있어야 두 번째 현장 방문자가 같은 상담실로 중복 배정되지 않는다.
+    """
+    from datetime import date as date_type
+    reservation = models.Reservation(
+        name="현장방문",
+        phone="",
+        date=date_type.today(),
+        time_slot=time_slot,
+        room=room,
+        status=models.ReservationStatus.IN_PROGRESS,
+    )
+    db.add(reservation)
+    db.commit()
+    db.refresh(reservation)
+    return reservation
+
+
+# ── 미션 CRUD ────────────────────────────────────────────────────────────────
+
+def create_mission(db: Session, data: schemas.MissionCreate):
+    """새 미션 생성 (PENDING 상태). 방문자 UI [안내 시작] 클릭 시 호출."""
+    mission = models.Mission(
+        reservation_id=data.reservation_id,
+        destination=data.destination,
+        tts_text=data.tts_text,
+    )
+    db.add(mission)
+    db.commit()
+    db.refresh(mission)
+    return mission
+
+
+def get_pending_missions(db: Session):
+    """PENDING 상태 미션 전체 조회 — wego_dispatcher 폴링용."""
+    return (
+        db.query(models.Mission)
+        .filter(models.Mission.status == models.MissionStatus.PENDING)
+        .order_by(models.Mission.created_at)
+        .all()
+    )
+
+
+def start_mission(db: Session, mission_id: int, robot: str):
+    """PENDING → ACTIVE. wego_dispatcher가 로봇에 goal 발행 완료 후 호출."""
+    mission = db.query(models.Mission).filter(models.Mission.id == mission_id).first()
+    if not mission:
+        return None
+    mission.status = models.MissionStatus.ACTIVE
+    mission.robot_assigned = robot
+    db.commit()
+    db.refresh(mission)
+    return mission
+
+
+def complete_mission(db: Session, mission_id: int):
+    """ACTIVE → COMPLETED. 로봇 홈 복귀 감지 후 wego_dispatcher가 호출."""
+    mission = db.query(models.Mission).filter(models.Mission.id == mission_id).first()
+    if not mission:
+        return None
+    mission.status = models.MissionStatus.COMPLETED
+    # 연결된 예약이 있으면 함께 COMPLETED 처리
+    if mission.reservation_id:
+        reservation = (
+            db.query(models.Reservation)
+            .filter(models.Reservation.id == mission.reservation_id)
+            .first()
+        )
+        if reservation:
+            reservation.status = models.ReservationStatus.COMPLETED
+    db.commit()
+    db.refresh(mission)
+    return mission
+
+
+# ── 로그 CRUD ────────────────────────────────────────────────────────────────
+
+def create_log(db: Session, log_type: str, message: str):
+    """관제 GUI 알림 로그 생성 (현재: 노쇼 알림)."""
+    log = models.Log(type=log_type, message=message)
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
+
+
+def get_logs(db: Session, limit: int = 100):
+    """최근 로그 조회 (최신순)."""
+    return (
+        db.query(models.Log)
+        .order_by(models.Log.created_at.desc())
+        .limit(limit)
+        .all()
+    )
