@@ -98,13 +98,12 @@ def main():
 
     node = BehaviourNode(waypoints)
 
-    # waitUntilNav2Active() 이전에 초기 포즈를 먼저 발행.
-    # AMCL이 active되는 순간 latched 메시지를 즉시 수신하므로
-    # 0,0,0 기본값으로 파티클이 초기화되는 타이밍 자체가 없어짐.
-    node.publish_initial_pose()
-
     navigator = BasicNavigator()
     navigator.waitUntilNav2Active()
+    # BasicNavigator 내부 setInitialPose(0,0,0) 이후에 덮어써야 home 위치로 확정됨
+    node.publish_initial_pose()
+    # home 위치 확정 후 0,0,0 기준 LiDAR 스캔이 반영된 costmap 초기화
+    navigator.clearAllCostmaps()
 
     # BehaviourNode를 별도 executor로 분리 — BasicNavigator 내부 global executor와 충돌 방지
     executor = MultiThreadedExecutor()
