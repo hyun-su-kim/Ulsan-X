@@ -161,6 +161,7 @@
   - 보정값 수렴: x≈0.15, y≈1.22, yaw≈-1.52 (home1 기준 ~0.25m 오차, Nav2 goal 성공)
 - [x] `aruco_localizer.py` 삭제 — visual servoing 폐기 (정밀 주차 불필요, 2026-05-11)
 - [ ] markers.yaml ID 0, ID 1 map 좌표 재측정 — 마커 위치 변경으로 전체 재측정 필요
+- [ ] **camera TF 실측값 반영으로 ArUco 재측정 필요** — camera_tilt_launch.py 수정(2026-05-13): x 0.2→0.1, y 0.1→0.0, camera_link y -0.05→-0.01
 - [ ] **passive corrector 실기기 재검증** — 새 아키텍처(서버 노트북 Nav2) 기준으로 재검증 필요
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
