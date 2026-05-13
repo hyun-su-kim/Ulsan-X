@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         _check_noshow,
         trigger="cron",
-        hour="9-16",
+        hour="9-17",
         minute=10,
     )
     scheduler.start()

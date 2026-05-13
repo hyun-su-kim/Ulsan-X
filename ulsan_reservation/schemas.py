@@ -33,14 +33,14 @@ class ReservationCreate(BaseModel):
     name:      str   # 예약자 이름
     phone:     str   # 전화번호 전체 (저장 후 끝 4자리로 조회에 사용)
     date:      date  # 예약 날짜 (YYYY-MM-DD 형식으로 자동 파싱)
-    time_slot: int   # 예약 시간대 (9~16)
+    time_slot: int   # 예약 시간대 (9~17)
 
     @field_validator("time_slot")
     @classmethod
     def validate_time_slot(cls, v):
-        # 운영 시간(09~16시) 외 요청은 즉시 400 에러 반환
-        if v < 9 or v > 16:
-            raise ValueError("time_slot은 9~16 사이여야 합니다.")
+        # 운영 시간(09~17시) 외 요청은 즉시 400 에러 반환
+        if v < 9 or v > 17:
+            raise ValueError("time_slot은 9~17 사이여야 합니다.")
         return v
 
 
@@ -58,8 +58,8 @@ class ReservationUpdate(BaseModel):
     @field_validator("time_slot")
     @classmethod
     def validate_time_slot(cls, v):
-        if v < 9 or v > 16:
-            raise ValueError("time_slot은 9~16 사이여야 합니다.")
+        if v < 9 or v > 17:
+            raise ValueError("time_slot은 9~17 사이여야 합니다.")
         return v
 
 
