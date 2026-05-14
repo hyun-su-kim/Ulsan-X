@@ -1,9 +1,9 @@
 waypoints:
   classroom_1:
     label: 1강의실
-    x: -0.2714
-    y: 5.4
-    yaw: -1.5708
+    x: -0.2369
+    y: 5.347
+    yaw: -0.9193
   classroom_2:
     label: 2강의실
     x: -0.4945
@@ -41,8 +41,8 @@ waypoints:
     yaw: -3.0682
   home_robot1:
     label: 로봇1 홈
-    x: -0.2714
-    y: 0.9835
+    x: 0.0
+    y: 0.0
     yaw: 0.0
   home_robot2:
     label: 로봇2 홈

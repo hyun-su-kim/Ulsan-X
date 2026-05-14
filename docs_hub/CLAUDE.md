@@ -39,65 +39,75 @@ ulsan_ws/src/
 
 ---
 
-## 소스코드 현황 (2026-05-11 기준)
+## 소스코드 현황 (2026-05-14 기준)
 
-### 아키텍처 — 기기별 역할 (2026-05-12 확정)
+### 아키텍처 — 기기별 역할 (2026-05-14 확정)
 
 | 기기 | 도메인 | 실행 내용 |
 |------|--------|-----------|
-| 관제 노트북 | 5 | wego_ui, wego_bridge |
-| LIMO 1 | 6 | 드라이버(limo_base, ydlidar, orbbec, EKF) + wego_touch_ui |
-| LIMO 2 | 7 | 드라이버(limo_base, ydlidar, orbbec, EKF) + wego_touch_ui |
-| 서버 노트북 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice (LIMO 1 담당) |
-| 서버 노트북 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice (LIMO 2 담당) |
-| 서버 노트북 | 5 | wego_traffic |
+| LIMO 1 | 6 | 드라이버(limo_base, ydlidar, orbbec, EKF) |
+| LIMO 2 | 7 | 드라이버(limo_base, ydlidar, orbbec, EKF) |
+| 서버 노트북 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_bridge (LIMO 1 담당) |
+| 서버 노트북 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_bridge (LIMO 2 담당) |
+| 서버 노트북 | 5 | wego_traffic, wego_dispatcher |
+| 관제 노트북 | 5 | wego_ui, ulsan_reservation(FastAPI) |
+| 태블릿 PC | — | ulsan-visitor-ui (브라우저, HTTP only, ROS 없음) |
 
 ```bash
-# LIMO 1 (domain 6) — 드라이버 + 터치 UI
+# LIMO 1 (domain 6) — 드라이버만
 export ROS_DOMAIN_ID=6
 ros2 launch wego teleop_launch.py
-ros2 launch wego_touch_ui touch_ui_launch.py
 
-# LIMO 2 (domain 7) — 드라이버 + 터치 UI
+# LIMO 2 (domain 7) — 드라이버만
 export ROS_DOMAIN_ID=7
 ros2 launch wego teleop_launch.py
-ros2 launch wego_touch_ui touch_ui_launch.py
 
 # 서버 노트북 — LIMO 1 담당 터미널 (domain 6)
 export ROS_DOMAIN_ID=6
-ros2 launch wego_2d_nav navigation_launch.py
+ros2 launch wego navigation_diff_launch.py use_rviz:=false   # Nav2 전체 (localization + navigation)
 ros2 launch wego_behaviour behaviour_launch.py
-ros2 launch wego_bridge bridge_launch.py   # bridge_robot.yaml 템플릿 → domain 6↔5 브릿지
+ros2 launch wego_bridge bridge_launch.py                     # bridge_robot.yaml 템플릿 → domain 6↔5 브릿지
+ros2 launch wego_aruco aruco_corrector_launch.py
+ros2 launch wego_voice voice_launch.py
 
 # 서버 노트북 — LIMO 2 담당 터미널 (domain 7)
 export ROS_DOMAIN_ID=7
-ros2 launch wego_2d_nav navigation_launch.py
+ros2 launch wego navigation_diff_launch.py use_rviz:=false
 ros2 launch wego_behaviour behaviour_launch.py
-ros2 launch wego_bridge bridge_launch.py   # bridge_robot.yaml 템플릿 → domain 7↔5 브릿지
+ros2 launch wego_bridge bridge_launch.py                     # bridge_robot.yaml 템플릿 → domain 7↔5 브릿지
+ros2 launch wego_aruco aruco_corrector_launch.py
+ros2 launch wego_voice voice_launch.py
 
-# 서버 노트북 — wego_traffic 터미널 (domain 5)
+# 서버 노트북 — domain 5 터미널
 export ROS_DOMAIN_ID=5
 ros2 launch wego_traffic traffic_launch.py
+ros2 launch wego_dispatcher dispatcher_launch.py
 
 # 관제 노트북 (domain 5)
 export ROS_DOMAIN_ID=5
 ros2 launch wego_ui gui_launch.py
+uvicorn ulsan_reservation.main:app --host 0.0.0.0 --port 8000
+
+# 태블릿 PC — 브라우저에서 ulsan-visitor-ui 접속 (ROS 불필요)
+# http://192.168.0.115:3000  (또는 배포된 포트)
 ```
 
 ### 존재하는 패키지
 | 패키지 | 핵심 파일 | 상태 |
 |--------|-----------|------|
-| `wego` | teleop_launch.py, navigation_diff_launch.py | LIMO 드라이버 전용으로 축소 예정 |
-| `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | 중간 노트북에서 실행 |
+| `wego` | teleop_launch.py, navigation_diff_launch.py | LIMO 드라이버 + Nav2 통합 런치 |
+| `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | navigation_diff_launch.py에서 include |
 | `wego_msgs` | srv/Chalkak.srv | 기본 서비스 |
 | `wego_bridge` | bridge_robot.yaml(템플릿), bridge_launch.py | 서버 노트북 LIMO 도메인 터미널에서 실행. ROS_DOMAIN_ID로 자동 결정. amcl_pose/robot_status(6,7→5) + pause/resume/goal/speak(5→6,7) |
-| `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — WAITING 상태 추가 예정 (DEC-022) |
-| `wego_aruco` | pose_corrector.py | passive corrector + calibration_mode 구현 완료 |
-| `wego_voice` | voice_node.py, tts | NLU 제거 (DEC-024). TTS만 유지 |
+| `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — IDLE/GUIDING/RETURNING/WAITING |
+| `wego_aruco` | pose_corrector.py | passive corrector. 주행 중 마커 감지 → /initialpose 자동 발행 |
+| `wego_voice` | voice_node.py, tts | TTS only (DEC-024). /speak_text 구독 → edge-tts + mpg123 |
+| `wego_traffic` | traffic_node.py | 서버 노트북 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
+| `wego_dispatcher` | dispatcher_node.py | 서버 노트북 domain 5. FastAPI 폴링 → IDLE 로봇에 goal/speak 배정 (DEC-027) |
 | `ulsan_obstacle_layer` | PeerObstacleLayer | **폐기 (DEC-022)**: 우선순위 FSM pause 방식으로 대체 |
-| `wego_touch_ui` | — | **신규** (LIMO): 터치 디스플레이 UI. 예약 조회 + 체크인 + /goal_destination 발행 |
-| `wego_traffic` | — | **신규** (서버 노트북 domain 7): 두 로봇 거리 감지 → pause/resume 발행 |
-| `reservation_web` | — | **신규** (웹 서비스): 상담 예약 CRUD. 평일 09~17시, 1시간 단위, 상담실 4개 자동 배정 |
+| `ulsan_reservation` | main.py (FastAPI) | 관제 노트북. 예약 CRUD + 로봇 임무 배정 API. MySQL + APScheduler |
+| `ulsan-web-ui` | React | 외부 방문자용 예약 웹 UI |
+| `ulsan-visitor-ui` | React (HTTP only) | **태블릿 PC** 방문자 UI. 예약 조회/현장방문 → /assign → wego_dispatcher 폴링. rosbridge 없음 (DEC-027) |
 
 ### 멀티로봇 충돌 회피 (DEC-022, 2026-05-11 확정)
 - **PeerObstacleLayer 폐기**: global costmap 기반 동적 회피의 구조적 한계 확인

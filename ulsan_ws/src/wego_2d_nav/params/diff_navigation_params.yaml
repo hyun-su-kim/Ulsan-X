@@ -166,10 +166,10 @@ controller_server:
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
       BaseObstacle.scale: 0.02
       PathAlign.scale: 32.0
-      PathAlign.forward_point_distance: 0.1
+      PathAlign.forward_point_distance: 0.5  # [수정] 0.1 → 0.5 : 경로 방향 정렬 기준점 거리 — 10cm 앞만 보면 작은 경로 편차에 과민 반응해 좌우 지그재그 유발. 0.5m 앞을 봐야 부드럽게 추종
       GoalAlign.scale: 24.0
-      GoalAlign.forward_point_distance: 0.1
-      PathDist.scale: 32.0
+      GoalAlign.forward_point_distance: 0.5  # [수정] 0.1 → 0.5 : 목표 방향 정렬 기준점 거리 — PathAlign과 동일한 이유로 수정
+      PathDist.scale: 32.0                   # 경로 이탈 거리 패널티 — PathAlign과 함께 높으면 오버슈트 발생 가능
       GoalDist.scale: 24.0
       RotateToGoal.scale: 32.0
       RotateToGoal.slowing_factor: 5.0
