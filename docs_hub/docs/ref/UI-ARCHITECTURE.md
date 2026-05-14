@@ -193,11 +193,11 @@ APScheduler (FastAPI 내장) — 매시 10분 1회 실행:
 
 ```bash
 # 관제 노트북 — FastAPI
-cd /home/yechan/Ulsan-X/ulsan_reservation
+cd /home/yechan/Ulsan-X/ulsan_ui/ulsan_reservation
 uvicorn main:app --host 0.0.0.0 --port 8000
 
 # 관제 노트북 — 방문자 UI (개발/데모)
-cd /home/yechan/Ulsan-X/ulsan-visitor-ui
+cd /home/yechan/Ulsan-X/ulsan_ui/ulsan-visitor-ui
 npm start   # http://192.168.0.115:3000
 
 # 관제 노트북 — 방문자 UI (운용)

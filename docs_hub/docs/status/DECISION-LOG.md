@@ -55,7 +55,7 @@
   - **관제 노트북 선택**: 서버 노트북은 Nav2 × 2, wego_behaviour × 2 등 ROS 연산 부하가 이미 큼. 관제 노트북은 wego_ui, wego_bridge만 실행 → 여유 있음. 예약 서버(FastAPI)는 ROS와 무관하므로 ulsan_ws 외부에 독립 배치.
   - **포트**: FastAPI 8000, MySQL 3306 (로컬). 외부 클라이언트는 http://192.168.0.115:8000 으로 접근.
   - **CORS**: React(3000) → FastAPI(8000) 크로스오리진 요청을 위해 CORSMiddleware allow_origins=["*"] 설정.
-- **패키지 위치**: `/home/yechan/Ulsan-X/ulsan_reservation/` (ulsan_ws 외부)
+- **패키지 위치**: `/home/yechan/Ulsan-X/ulsan_ui/ulsan_reservation/` (ulsan_ws 외부)
 - **면접 어필**: "FastAPI + SQLAlchemy 조합은 Python 생태계 표준 스택. ORM 추상화로 DB 교체 비용을 최소화하고, ROS 연산 부하를 고려해 서버 위치를 관제 노트북으로 결정."
 - **Date**: 2026-05-12
 
