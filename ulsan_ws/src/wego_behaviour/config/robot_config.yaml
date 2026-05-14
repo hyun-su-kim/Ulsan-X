@@ -1,0 +1,5 @@
+# 도메인 ID → 홈 웨이포인트 키 매핑
+# 로봇 추가 시 이 파일과 waypoints.yaml에만 항목 추가
+domain_robot_map:
+  '6': home_robot1
+  '7': home_robot2

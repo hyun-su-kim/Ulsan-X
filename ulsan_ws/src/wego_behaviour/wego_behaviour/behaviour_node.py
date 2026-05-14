@@ -1,9 +1,8 @@
-import math
+import os
 import threading
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, DurabilityPolicy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
@@ -14,15 +13,17 @@ from yasmin import StateMachine, Blackboard
 from wego_behaviour.states import GuidingState, IdleState, ReturningState, WaitingState
 from nav2_simple_commander.robot_navigator import BasicNavigator
 
-
 class BehaviourNode(Node):
-    def __init__(self, waypoints: dict):
+    def __init__(self, waypoints: dict, domain_robot_map: dict):
         super().__init__('wego_behaviour')
 
-        self.declare_parameter('home_key', 'home_robot1')
-
         self.waypoints = waypoints
-        self.home_key: str = self.get_parameter('home_key').get_parameter_value().string_value
+
+        # ROS_DOMAIN_ID로 복귀 홈 위치 결정 — 매핑은 robot_config.yaml, 좌표는 waypoints.yaml 참조
+        domain_id = os.environ.get('ROS_DOMAIN_ID', '6')
+        self.home_key: str = domain_robot_map.get(domain_id, 'home_robot1')
+        self.get_logger().info(f'home_key: {self.home_key} (DOMAIN_ID={domain_id})')
+
         self.pending_destination: str | None = None
         self.latest_amcl_pose: PoseWithCovarianceStamped | None = None  # [DEBUG]
         self._pause_flag  = False
@@ -31,34 +32,11 @@ class BehaviourNode(Node):
         self._status_pub = self.create_publisher(String, '/robot_status', 10)
         self._speak_pub = self.create_publisher(String, '/speak_text', 10)
 
-        # TRANSIENT_LOCAL(latched) QoS: waitUntilNav2Active() 이전에 미리 발행해도
-        # AMCL이 subscribe하는 순간 메시지를 즉시 수신할 수 있도록 보장.
-        # 일반 volatile QoS를 쓰면 AMCL subscribe 전에 발행된 메시지가 소실되어
-        # AMCL이 0,0,0 기본값으로 파티클을 초기화하고 global costmap을 오염시킴.
-        _latched_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self._initialpose_pub = self.create_publisher(
-            PoseWithCovarianceStamped, '/initialpose', _latched_qos
-        )
         self.create_subscription(String, '/goal_destination', self._dest_cb, 10)
         self.create_subscription(Empty, '/pause',  self._pause_cb,  10)
         self.create_subscription(Empty, '/resume', self._resume_cb, 10)
         self.create_subscription(  # [DEBUG]
             PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 1)  # [DEBUG]
-
-    def publish_initial_pose(self) -> None:
-        home = self.waypoints[self.home_key]
-        msg = PoseWithCovarianceStamped()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'map'
-        msg.pose.pose.position.x = float(home['x'])
-        msg.pose.pose.position.y = float(home['y'])
-        yaw = float(home['yaw'])
-        msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
-        msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
-        self._initialpose_pub.publish(msg)
-        self.get_logger().info(
-            f'초기 포즈 발행: {home["label"]} (x={home["x"]}, y={home["y"]}, yaw={yaw:.3f})'
-        )
 
     def _pause_cb(self, _: Empty) -> None:
         self._pause_flag  = True
@@ -93,17 +71,18 @@ def main():
     rclpy.init()
 
     pkg_share = get_package_share_directory('wego_behaviour')
+
     with open(f'{pkg_share}/config/waypoints.yaml') as f:
         waypoints = yaml.safe_load(f)['waypoints']
 
-    node = BehaviourNode(waypoints)
+    # 도메인 → home_key 매핑 (로봇 추가 시 robot_config.yaml만 수정)
+    with open(f'{pkg_share}/config/robot_config.yaml') as f:
+        domain_robot_map = yaml.safe_load(f)['domain_robot_map']
+
+    node = BehaviourNode(waypoints, domain_robot_map)
 
     navigator = BasicNavigator()
     navigator.waitUntilNav2Active()
-    # BasicNavigator 내부 setInitialPose(0,0,0) 이후에 덮어써야 home 위치로 확정됨
-    node.publish_initial_pose()
-    # home 위치 확정 후 0,0,0 기준 LiDAR 스캔이 반영된 costmap 초기화
-    navigator.clearAllCostmaps()
 
     # BehaviourNode를 별도 executor로 분리 — BasicNavigator 내부 global executor와 충돌 방지
     executor = MultiThreadedExecutor()

@@ -1,4 +1,5 @@
 import os
+import yaml
 from launch import LaunchDescription
 from launch.actions import GroupAction, DeclareLaunchArgument
 from launch_ros.actions import Node, LoadComposableNodes
@@ -9,6 +10,27 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     wego_share_dir = get_package_share_directory('wego_2d_nav')
+
+    # robot_config.yaml에서 도메인 → home_key 매핑 읽기 (로봇 추가 시 yaml만 수정)
+    behaviour_share_dir = get_package_share_directory('wego_behaviour')
+    with open(os.path.join(behaviour_share_dir, 'config', 'robot_config.yaml')) as f:
+        domain_robot_map = yaml.safe_load(f)['domain_robot_map']
+
+    # waypoints.yaml에서 홈 좌표 참조 — 좌표 정본은 wego_behaviour/config/waypoints.yaml 한 곳
+    with open(os.path.join(behaviour_share_dir, 'config', 'waypoints.yaml')) as f:
+        waypoints = yaml.safe_load(f)['waypoints']
+
+    # ROS_DOMAIN_ID로 home_key 결정 → AMCL 초기 파티클 위치 설정
+    # AMCL이 처음부터 올바른 홈 위치에서 시작해야 (0,0,0) 기준 라이다 스캔이 costmap에 오염되지 않음
+    domain_id = os.environ.get('ROS_DOMAIN_ID', '6')
+    home_key = domain_robot_map.get(domain_id, 'home_robot1')
+    home = waypoints[home_key]
+    initial_pose_params = {
+        'set_initial_pose': True,
+        'initial_pose.x':   float(home['x']),
+        'initial_pose.y':   float(home['y']),
+        'initial_pose.yaw': float(home['yaw']),
+    }
 
     # setting for map and parameter
     map_yaml_file = LaunchConfiguration('map')
@@ -45,7 +67,8 @@ def generate_launch_description():
                         package='nav2_amcl',
                         plugin='nav2_amcl::AmclNode',
                         name='amcl',
-                        parameters=[ParameterFile(params_file)],
+                        # ParameterFile 뒤에 dict를 추가하면 ROS2가 병합하여 초기 위치를 덮어씀
+                        parameters=[ParameterFile(params_file), initial_pose_params],
                     ),
                     ComposableNode( # For lifecycle
                         package='nav2_lifecycle_manager',

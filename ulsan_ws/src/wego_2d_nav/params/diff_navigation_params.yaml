@@ -37,7 +37,8 @@ amcl:
     z_rand: 0.2          # [수정] 0.5 → 0.2 : 랜덤 노이즈 비중 축소 — 유리 난반사 등 이상 빔 영향 감소, z_hit + z_rand + z_short + z_max = 1.0 유지
     z_short: 0.05
     scan_topic: scan
-    
+    # initial_pose는 localization_launch.py에서 ROS_DOMAIN_ID 기반으로 주입 (waypoints.yaml 참조)
+
 bt_navigator:
   ros__parameters:
     global_frame: map
