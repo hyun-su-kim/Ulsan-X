@@ -61,7 +61,7 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
     tts_text = f"{reservation.name}님 {reservation.time_slot}시 상담 예약으로 {label}로 안내합니다."
 
     mission = crud.create_mission(db, schemas.MissionCreate(
-        reservation_id=reservation_id,
+        reservation_id=body.reservation_id,
         destination=reservation.room,
         tts_text=tts_text,
     ))
