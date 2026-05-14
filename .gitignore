@@ -15,3 +15,12 @@ ulsan_ws/Log/
 
 # 압축 원본
 *.tar.gz
+
+# Node.js
+**/node_modules/
+**/build/
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+**/npm-debug.log*
