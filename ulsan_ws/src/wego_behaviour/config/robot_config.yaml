@@ -1,5 +1,13 @@
-# 도메인 ID → 홈 웨이포인트 키 매핑
-# 로봇 추가 시 이 파일과 waypoints.yaml에만 항목 추가
+# 도메인 ID → 로봇 이름 매핑 (브릿지 + dispatcher 토픽 prefix)
+# wego_bridge: ROBOT_NAME 치환 → /limo1/goal_destination 등
+# wego_dispatcher: ROBOTS 튜플과 반드시 일치해야 함
+# 로봇 추가 시 두 매핑 모두 추가
 domain_robot_map:
+  '6': limo1
+  '7': limo2
+
+# 도메인 ID → 홈 웨이포인트 키 매핑 (wego_behaviour 복귀 목적지)
+# waypoints.yaml의 키와 반드시 일치해야 함
+domain_home_map:
   '6': home_robot1
   '7': home_robot2

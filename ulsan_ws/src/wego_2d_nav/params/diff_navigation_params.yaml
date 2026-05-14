@@ -223,7 +223,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.09 # 변경
+        inflation_radius: 0.15  # [수정] 0.09 → 0.15 : 로봇 반폭(11cm) 고려 — 벽 충돌 방지 여유 확보
       always_send_full_costmap: True
 
 local_costmap:
@@ -244,7 +244,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.13
+        inflation_radius: 0.15  # [수정] 0.13 → 0.15 : global costmap과 동일하게 맞춤
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True

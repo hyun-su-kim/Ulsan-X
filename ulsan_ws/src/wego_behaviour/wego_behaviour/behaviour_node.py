@@ -14,14 +14,14 @@ from wego_behaviour.states import GuidingState, IdleState, ReturningState, Waiti
 from nav2_simple_commander.robot_navigator import BasicNavigator
 
 class BehaviourNode(Node):
-    def __init__(self, waypoints: dict, domain_robot_map: dict):
+    def __init__(self, waypoints: dict, domain_home_map: dict):
         super().__init__('wego_behaviour')
 
         self.waypoints = waypoints
 
-        # ROS_DOMAIN_ID로 복귀 홈 위치 결정 — 매핑은 robot_config.yaml, 좌표는 waypoints.yaml 참조
+        # ROS_DOMAIN_ID로 복귀 홈 위치 결정 — 매핑은 robot_config.yaml의 domain_home_map, 좌표는 waypoints.yaml 참조
         domain_id = os.environ.get('ROS_DOMAIN_ID', '6')
-        self.home_key: str = domain_robot_map.get(domain_id, 'home_robot1')
+        self.home_key: str = domain_home_map.get(domain_id, 'home_robot1')
         self.get_logger().info(f'home_key: {self.home_key} (DOMAIN_ID={domain_id})')
 
         self.pending_destination: str | None = None
@@ -75,11 +75,12 @@ def main():
     with open(f'{pkg_share}/config/waypoints.yaml') as f:
         waypoints = yaml.safe_load(f)['waypoints']
 
-    # 도메인 → home_key 매핑 (로봇 추가 시 robot_config.yaml만 수정)
+    # 도메인 → home_key 매핑 — domain_home_map 사용 (domain_robot_map은 브릿지/dispatcher용)
     with open(f'{pkg_share}/config/robot_config.yaml') as f:
-        domain_robot_map = yaml.safe_load(f)['domain_robot_map']
+        config = yaml.safe_load(f)
+        domain_home_map = config['domain_home_map']
 
-    node = BehaviourNode(waypoints, domain_robot_map)
+    node = BehaviourNode(waypoints, domain_home_map)
 
     navigator = BasicNavigator()
     navigator.waitUntilNav2Active()
