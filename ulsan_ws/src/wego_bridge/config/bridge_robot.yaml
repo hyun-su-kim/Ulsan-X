@@ -1,0 +1,49 @@
+# 단일 브릿지 템플릿 — LIMO 1, 2 공통 사용
+# bridge_launch.py가 ROS_DOMAIN_ID를 읽어 ROBOT_DOMAIN / ROBOT_NAME을 치환 후 실행
+#
+# 치환 대상:
+#   ROBOT_DOMAIN → 6 (LIMO 1) or 7 (LIMO 2)   : 해당 LIMO의 ROS 도메인
+#   ROBOT_NAME   → limo1 or limo2               : domain 5 토픽 prefix 및 remap 기준
+#
+# 브릿지 방향:
+#   LIMO 도메인 → domain 5 : 로봇 위치·상태를 관제·트래픽 노드로 전달
+#   domain 5 → LIMO 도메인 : 관제에서 로봇으로 제어 명령 전달
+
+topics:
+  # ── LIMO 도메인 → domain 5 ──────────────────────────────────────────
+  /amcl_pose:
+    type: geometry_msgs/msg/PoseWithCovarianceStamped
+    from_domain: ROBOT_DOMAIN
+    to_domain: 5
+    remap: /ROBOT_NAME/amcl_pose      # wego_traffic, wego_ui가 구독
+
+  /robot_status:
+    type: std_msgs/msg/String
+    from_domain: ROBOT_DOMAIN
+    to_domain: 5
+    remap: /ROBOT_NAME/robot_status   # wego_traffic, wego_dispatcher가 구독
+
+  # ── domain 5 → LIMO 도메인 ──────────────────────────────────────────
+  /ROBOT_NAME/pause:
+    type: std_msgs/msg/Empty
+    from_domain: 5
+    to_domain: ROBOT_DOMAIN
+    remap: /pause                     # wego_traffic → wego_behaviour
+
+  /ROBOT_NAME/resume:
+    type: std_msgs/msg/Empty
+    from_domain: 5
+    to_domain: ROBOT_DOMAIN
+    remap: /resume                    # wego_traffic → wego_behaviour
+
+  /ROBOT_NAME/goal_destination:
+    type: std_msgs/msg/String
+    from_domain: 5
+    to_domain: ROBOT_DOMAIN
+    remap: /goal_destination          # wego_dispatcher → wego_behaviour
+
+  /ROBOT_NAME/speak_text:
+    type: std_msgs/msg/String
+    from_domain: 5
+    to_domain: ROBOT_DOMAIN
+    remap: /speak_text                # wego_dispatcher → wego_voice

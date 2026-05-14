@@ -67,11 +67,13 @@ ros2 launch wego_touch_ui touch_ui_launch.py
 export ROS_DOMAIN_ID=6
 ros2 launch wego_2d_nav navigation_launch.py
 ros2 launch wego_behaviour behaviour_launch.py
+ros2 launch wego_bridge bridge_launch.py   # bridge_robot.yaml 템플릿 → domain 6↔5 브릿지
 
 # 서버 노트북 — LIMO 2 담당 터미널 (domain 7)
 export ROS_DOMAIN_ID=7
 ros2 launch wego_2d_nav navigation_launch.py
 ros2 launch wego_behaviour behaviour_launch.py
+ros2 launch wego_bridge bridge_launch.py   # bridge_robot.yaml 템플릿 → domain 7↔5 브릿지
 
 # 서버 노트북 — wego_traffic 터미널 (domain 5)
 export ROS_DOMAIN_ID=5
@@ -80,7 +82,6 @@ ros2 launch wego_traffic traffic_launch.py
 # 관제 노트북 (domain 5)
 export ROS_DOMAIN_ID=5
 ros2 launch wego_ui gui_launch.py
-ros2 launch wego_bridge bridge_launch.py  # amcl_pose 6,7→5 / pause_resume 5→6,7
 ```
 
 ### 존재하는 패키지
@@ -89,7 +90,7 @@ ros2 launch wego_bridge bridge_launch.py  # amcl_pose 6,7→5 / pause_resume 5�
 | `wego` | teleop_launch.py, navigation_diff_launch.py | LIMO 드라이버 전용으로 축소 예정 |
 | `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | 중간 노트북에서 실행 |
 | `wego_msgs` | srv/Chalkak.srv | 기본 서비스 |
-| `wego_bridge` | domain_bridge_robot.yaml, robot_bridge_launch.py | 관제 UI 노트북에서 실행. amcl_pose(5,6→7) + pause/resume(7→5,6) 양방향 |
+| `wego_bridge` | bridge_robot.yaml(템플릿), bridge_launch.py | 서버 노트북 LIMO 도메인 터미널에서 실행. ROS_DOMAIN_ID로 자동 결정. amcl_pose/robot_status(6,7→5) + pause/resume/goal/speak(5→6,7) |
 | `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — WAITING 상태 추가 예정 (DEC-022) |
 | `wego_aruco` | pose_corrector.py | passive corrector + calibration_mode 구현 완료 |
 | `wego_voice` | voice_node.py, tts | NLU 제거 (DEC-024). TTS만 유지 |

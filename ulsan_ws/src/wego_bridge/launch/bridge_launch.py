@@ -1,42 +1,69 @@
-# 실행 위치: 관제 노트북 (ROS_DOMAIN_ID=5)
+# wego_bridge 런치 파일
 #
-# 멀티로봇 도메인 격리 구조:
-#   LIMO 1 — domain 6,  LIMO 2 — domain 7,  관제/트래픽 — domain 5
+# 실행 위치: 서버 노트북 — LIMO 도메인 터미널 (ROS_DOMAIN_ID=6 or 7)
 #
-# ROS2 DDS는 같은 domain_id 내에서만 통신하므로
-# domain_bridge 없이는 관제 노트북이 LIMO의 amcl_pose를 수신하거나
-# LIMO에게 pause/resume을 전달할 수 없다.
+# ROS_DOMAIN_ID를 읽어 robot_config.yaml에서 robot_name을 결정하고,
+# bridge_robot.yaml 템플릿의 ROBOT_DOMAIN / ROBOT_NAME을 치환하여
+# domain_bridge 노드에 전달한다.
 #
-# bridge_limo1.yaml: domain 6 ↔ domain 5 양방향
-#   /amcl_pose      (6→5, /limo1/amcl_pose 로 리맵)
-#   /robot_status   (6→5, /limo1/robot_status 로 리맵)
-#   /limo1/pause    (5→6, /pause 로 리맵)
-#   /limo1/resume   (5→6, /resume 로 리맵)
+# 브릿지를 LIMO 도메인에서 실행하는 이유:
+#   - 생명주기 일치: LIMO 시스템이 죽으면 브릿지도 함께 종료
+#     → domain 5에 stale 데이터가 남지 않아 연결 끊김 감지 가능
+#   - LIMO 추가 시 robot_config.yaml과 waypoints.yaml만 수정하면 됨
 #
-# bridge_limo2.yaml: domain 7 ↔ domain 5 양방향 (같은 구조)
+# 실행 예시:
+#   export ROS_DOMAIN_ID=6 && ros2 launch wego_bridge bridge_launch.py  # LIMO 1
+#   export ROS_DOMAIN_ID=7 && ros2 launch wego_bridge bridge_launch.py  # LIMO 2
 
 import os
-from launch import LaunchDescription
-from launch_ros.actions import Node
+import tempfile
+
+import yaml
 from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import OpaqueFunction
+from launch_ros.actions import Node
+
+
+def launch_setup(context):
+    config_dir = os.path.join(get_package_share_directory('wego_bridge'), 'config')
+    behaviour_config_dir = os.path.join(
+        get_package_share_directory('wego_behaviour'), 'config'
+    )
+
+    # robot_config.yaml에서 도메인 → robot_name 매핑 읽기 (로봇 추가 시 yaml만 수정)
+    with open(os.path.join(behaviour_config_dir, 'robot_config.yaml')) as f:
+        domain_robot_map = yaml.safe_load(f)['domain_robot_map']
+
+    # ROS_DOMAIN_ID로 robot_name 결정
+    domain_id = os.environ.get('ROS_DOMAIN_ID', '6')
+    robot_name = domain_robot_map.get(domain_id, 'limo1')
+
+    # bridge_robot.yaml 템플릿 읽기
+    template_path = os.path.join(config_dir, 'bridge_robot.yaml')
+    with open(template_path) as f:
+        template = f.read()
+
+    # ROBOT_DOMAIN, ROBOT_NAME 치환 (DEC-007 OpaqueFunction + tempfile 패턴)
+    filled = template.replace('ROBOT_DOMAIN', domain_id).replace('ROBOT_NAME', robot_name)
+
+    # 치환된 내용을 tempfile에 저장 → domain_bridge에 경로로 전달
+    tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
+    tmp.write(filled)
+    tmp.flush()
+
+    return [
+        Node(
+            package='domain_bridge',
+            executable='domain_bridge',
+            name=f'bridge_{robot_name}',
+            arguments=[tmp.name],
+            output='screen',
+        ),
+    ]
 
 
 def generate_launch_description():
-    config_dir = os.path.join(get_package_share_directory('wego_bridge'), 'config')
-
     return LaunchDescription([
-        Node(
-            package='domain_bridge',
-            executable='domain_bridge',
-            name='bridge_limo1',
-            arguments=[os.path.join(config_dir, 'bridge_limo1.yaml')],
-            output='screen',
-        ),
-        Node(
-            package='domain_bridge',
-            executable='domain_bridge',
-            name='bridge_limo2',
-            arguments=[os.path.join(config_dir, 'bridge_limo2.yaml')],
-            output='screen',
-        ),
+        OpaqueFunction(function=launch_setup),
     ])

@@ -4,6 +4,28 @@
 
 ---
 
+### DEC-028: domain bridge 실행 위치 — LIMO 도메인(6/7)에서 실행, 단일 템플릿 yaml
+- **Context**: 기존 wego_bridge는 관제 노트북(domain 5)에서 bridge_limo1.yaml, bridge_limo2.yaml 2개를 실행하는 구조. 두 가지 문제 확인.
+  1. **생명주기 불일치**: LIMO 시스템이 죽어도 domain 5의 브릿지 프로세스는 살아있어 domain 5에 stale 데이터 잔류 → 연결 끊김 감지 불가
+  2. **yaml 중복**: bridge_limo1.yaml과 bridge_limo2.yaml이 도메인 번호와 토픽 prefix만 다른 중복 구조 → 로봇 추가 시 파일 증가
+- **Decision**: **LIMO 도메인(6/7)에서 실행 + 단일 bridge_robot.yaml 템플릿**
+  - `bridge_robot.yaml`: ROBOT_DOMAIN, ROBOT_NAME 플레이스홀더 템플릿
+  - `bridge_launch.py`: OpaqueFunction으로 ROS_DOMAIN_ID 읽어 치환 후 tempfile 전달 (DEC-007 패턴)
+  - robot_config.yaml에서 도메인→robot_name 매핑 참조 (단일 정본)
+- **실행**:
+  ```bash
+  export ROS_DOMAIN_ID=6 && ros2 launch wego_bridge bridge_launch.py  # LIMO 1
+  export ROS_DOMAIN_ID=7 && ros2 launch wego_bridge bridge_launch.py  # LIMO 2
+  ```
+- **Rationale**:
+  - **생명주기 일치**: LIMO 도메인 시스템 종료 시 브릿지도 함께 종료 → domain 5가 연결 끊김 즉시 감지 (추후 관제 UI 연결 상태 모니터링에 활용 가능)
+  - **단일 템플릿**: yaml 파일 1개로 모든 로봇 적용. 로봇 추가 시 robot_config.yaml + waypoints.yaml만 수정
+  - **일관성**: localization_launch.py, behaviour_node.py와 동일한 ROS_DOMAIN_ID 기반 자동 결정 패턴
+- **면접 어필**: "브릿지 생명주기를 LIMO 도메인과 일치시켜 연결 상태 감지를 구조적으로 보장. 단일 템플릿으로 확장성 확보."
+- **Date**: 2026-05-14
+
+---
+
 ### DEC-027: 방문자 UI 아키텍처 — 태블릿 웹앱 + wego_dispatcher (rosbridge 제거)
 - **Context**: 기존 DEC-026에서 결정한 "LIMO 탑재 터치 UI + rosbridge" 방식의 두 가지 문제 발견.
   1. **UX 문제**: LIMO가 낮아(바닥에서 약 30cm) 방문자가 숙여서 입력해야 함.
