@@ -35,7 +35,7 @@ CLASSROOM_LABELS = {
 
 
 @router.post("", response_model=schemas.AssignResponse)
-def assign_reservation(reservation_id: int, db: Session = Depends(get_db)):
+def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Depends(get_db)):
     """
     예약 체크인 후 로봇 임무 배정.
 
@@ -47,7 +47,7 @@ def assign_reservation(reservation_id: int, db: Session = Depends(get_db)):
 
     reservation = (
         db.query(models.Reservation)
-        .filter(models.Reservation.id == reservation_id)
+        .filter(models.Reservation.id == body.reservation_id)
         .first()
     )
     if not reservation:
@@ -70,7 +70,7 @@ def assign_reservation(reservation_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/classroom", response_model=schemas.AssignResponse)
-def assign_classroom(classroom: str, db: Session = Depends(get_db)):
+def assign_classroom(body: schemas.AssignClassroomRequest, db: Session = Depends(get_db)):
     """
     강의실 안내 배정.
 
@@ -81,19 +81,19 @@ def assign_classroom(classroom: str, db: Session = Depends(get_db)):
     """
     from routers.robots import robot_status
 
-    if classroom not in CLASSROOM_LABELS:
-        raise HTTPException(status_code=400, detail=f"알 수 없는 강의실: {classroom}")
+    if body.classroom not in CLASSROOM_LABELS:
+        raise HTTPException(status_code=400, detail=f"알 수 없는 강의실: {body.classroom}")
 
     robot = _pick_idle_robot(robot_status)
     if not robot:
         raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
 
-    label = CLASSROOM_LABELS[classroom]
+    label = CLASSROOM_LABELS[body.classroom]
     tts_text = f"{label}로 안내해드릴게요."
 
     mission = crud.create_mission(db, schemas.MissionCreate(
         reservation_id=None,
-        destination=classroom,
+        destination=body.classroom,
         tts_text=tts_text,
     ))
 

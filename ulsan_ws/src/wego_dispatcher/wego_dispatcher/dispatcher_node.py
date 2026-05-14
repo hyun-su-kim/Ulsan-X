@@ -53,6 +53,8 @@ class DispatcherNode(Node):
 
         # 현재 처리 중인 ACTIVE 미션 추적 {mission_id: robot}
         self._active_missions: dict[int, str] = {}
+        # 로봇이 non-IDLE로 전환된 것이 확인된 미션 — 출발 전 IDLE을 완료로 오인하는 것을 막음
+        self._departed: set[int] = set()
         self._lock = threading.Lock()
 
         # 상태 구독
@@ -83,6 +85,12 @@ class DispatcherNode(Node):
             if old_status != new_status:
                 self._robot_status[robot] = new_status
                 self.get_logger().info(f'{robot} 상태: {old_status} → {new_status}')
+                # 로봇이 non-IDLE로 전환 → 해당 로봇의 ACTIVE 미션을 출발 확인으로 마킹
+                if new_status != "IDLE":
+                    with self._lock:
+                        for mid, r in self._active_missions.items():
+                            if r == robot:
+                                self._departed.add(mid)
                 # FastAPI in-memory 상태 동기화
                 try:
                     requests.post(
@@ -153,16 +161,18 @@ class DispatcherNode(Node):
             self.get_logger().warn(f'start PATCH 실패: {e}')
 
     def _check_completions(self) -> None:
-        """ACTIVE 미션의 로봇이 IDLE로 복귀했는지 확인한다."""
+        """ACTIVE 미션의 로봇이 IDLE로 복귀했는지 확인한다.
+        출발 확인(non-IDLE 전환)이 없는 미션은 스킵 — 출발 전 IDLE 오인 방지."""
         with self._lock:
             completed = [
                 mid for mid, robot in self._active_missions.items()
-                if self._robot_status.get(robot) == "IDLE"
+                if mid in self._departed and self._robot_status.get(robot) == "IDLE"
             ]
 
         for mission_id in completed:
             with self._lock:
                 robot = self._active_missions.pop(mission_id, None)
+                self._departed.discard(mission_id)
             if robot is None:
                 continue
 

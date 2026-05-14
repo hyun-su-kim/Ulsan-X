@@ -81,7 +81,7 @@ export const assignWalkin = async (room) => {
  * @throws 503: 사용 가능한 로봇 없음
  */
 export const assignClassroom = async (destination) => {
-  const response = await api.post('/assign/classroom', { destination });
+  const response = await api.post('/assign/classroom', { classroom: destination });
   return response.data;
 };
 

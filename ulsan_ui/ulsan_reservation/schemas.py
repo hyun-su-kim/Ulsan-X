@@ -100,6 +100,13 @@ class MissionStatus(str, Enum):
     COMPLETED = "COMPLETED"
 
 
+class AssignReservationRequest(BaseModel):
+    reservation_id: int
+
+class AssignClassroomRequest(BaseModel):
+    classroom: str
+
+
 class MissionCreate(BaseModel):
     """POST /assign, /walkin/assign, /assign/classroom에서 서버 내부적으로 사용"""
     reservation_id: Optional[int] = None
