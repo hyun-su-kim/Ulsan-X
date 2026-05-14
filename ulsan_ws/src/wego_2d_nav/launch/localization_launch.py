@@ -11,10 +11,11 @@ from launch.substitutions import LaunchConfiguration
 def generate_launch_description():
     wego_share_dir = get_package_share_directory('wego_2d_nav')
 
-    # robot_config.yaml에서 도메인 → home_key 매핑 읽기 (로봇 추가 시 yaml만 수정)
+    # robot_config.yaml에서 도메인 → home_key 매핑 읽기
+    # domain_home_map 사용 — domain_robot_map은 브릿지/dispatcher 토픽 prefix용(limo1/limo2)
     behaviour_share_dir = get_package_share_directory('wego_behaviour')
     with open(os.path.join(behaviour_share_dir, 'config', 'robot_config.yaml')) as f:
-        domain_robot_map = yaml.safe_load(f)['domain_robot_map']
+        domain_home_map = yaml.safe_load(f)['domain_home_map']
 
     # waypoints.yaml에서 홈 좌표 참조 — 좌표 정본은 wego_behaviour/config/waypoints.yaml 한 곳
     with open(os.path.join(behaviour_share_dir, 'config', 'waypoints.yaml')) as f:
@@ -23,7 +24,7 @@ def generate_launch_description():
     # ROS_DOMAIN_ID로 home_key 결정 → AMCL 초기 파티클 위치 설정
     # AMCL이 처음부터 올바른 홈 위치에서 시작해야 (0,0,0) 기준 라이다 스캔이 costmap에 오염되지 않음
     domain_id = os.environ.get('ROS_DOMAIN_ID', '6')
-    home_key = domain_robot_map.get(domain_id, 'home_robot1')
+    home_key = domain_home_map.get(domain_id, 'home_robot1')
     home = waypoints[home_key]
     initial_pose_params = {
         'set_initial_pose': True,
