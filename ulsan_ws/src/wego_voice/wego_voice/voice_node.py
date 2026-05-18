@@ -16,8 +16,12 @@ class VoiceNode(Node):
         super().__init__('voice_node')
 
         self.declare_parameter('tts_voice', 'ko-KR-SunHiNeural')
+        self.declare_parameter('audio_device', 'plughw:1,3')
 
-        self._tts = TTS(voice=self.get_parameter('tts_voice').value)
+        self._tts = TTS(
+            voice=self.get_parameter('tts_voice').value,
+            audio_device=self.get_parameter('audio_device').value,
+        )
 
         self.create_subscription(String, '/speak_text', self._speak_cb, 10)
 

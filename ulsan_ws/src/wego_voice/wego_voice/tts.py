@@ -8,6 +8,7 @@ import edge_tts
 # ko-KR-SunHiNeural: Microsoft Neural TTS 한국어 여성 음성
 # 인터넷 연결 필요 — edge-tts가 Microsoft 서버에서 오디오 스트림을 받아옴
 DEFAULT_VOICE = 'ko-KR-SunHiNeural'
+DEFAULT_AUDIO_DEVICE = 'plughw:1,3'  # HDMI 0 (Jetson Orin NX HDA, card 1, device 3)
 
 
 class TTS:
@@ -21,37 +22,32 @@ class TTS:
         - sudo apt install mpg123
     """
 
-    def __init__(self, voice: str = DEFAULT_VOICE):
+    def __init__(self, voice: str = DEFAULT_VOICE, audio_device: str = DEFAULT_AUDIO_DEVICE):
         self._voice = voice
+        self._audio_device = audio_device
 
     def speak(self, text: str) -> None:
-        """텍스트를 음성으로 출력. 재생 완료까지 블로킹.
-
-        asyncio.run()으로 비동기 루틴을 동기 컨텍스트(pipeline 스레드)에서 실행.
-        예외 발생 시 조용히 무시 — TTS 실패가 파이프라인 전체를 중단시키지 않도록.
-        """
+        """텍스트를 음성으로 출력. 재생 완료까지 블로킹."""
         try:
             asyncio.run(self._async_speak(text))
-        except Exception:
-            # 네트워크 단절, mpg123 미설치 등 — 로봇 안내는 계속 진행
-            pass
+        except Exception as e:
+            # 네트워크 단절, mpg123 에러 등 — 로봇 안내는 계속 진행
+            import logging
+            logging.getLogger(__name__).error(f'TTS 실패: {e}')
 
     async def _async_speak(self, text: str) -> None:
         """edge-tts로 MP3 생성 → mpg123으로 재생 → 임시 파일 삭제."""
         tmp_path = None
         try:
-            # 임시 MP3 파일 경로 확보 (delete=False: 직접 관리)
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as f:
                 tmp_path = f.name
 
-            # Microsoft Neural TTS 서버에서 오디오 수신 후 파일로 저장
             communicate = edge_tts.Communicate(text, self._voice)
             await communicate.save(tmp_path)
 
-            # -q: quiet 모드 (mpg123 출력 억제)
-            subprocess.run(['mpg123', '-q', tmp_path], check=True)
+            # -a: ALSA 출력 장치 지정, -q: quiet 모드
+            subprocess.run(['mpg123', '-q', '-a', self._audio_device, tmp_path], check=True)
 
         finally:
-            # 재생 성공/실패 무관하게 임시 파일 정리
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
