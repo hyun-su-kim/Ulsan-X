@@ -11,7 +11,7 @@
 | # | 작업 | 상태 | 비고 |
 |---|------|------|------|
 | 1 | **TTS(wego_voice) 재작업** | `done (2026-05-18)` | mpg123 오디오 장치 미지정 문제. `-a plughw:1,3` (HDMI 0) 고정, `audio_device` 파라미터화 |
-| 2 | **ArUco AMCL 보정 + PID 정밀 도착 조사** | `todo` | 적용 여부 결정 전 현업 사례 조사 필요 |
+| 2 | **마커 기반 홈 정밀 복귀 구현** | `in_progress` | 근본 원인: 복도 AMCL y drift → Nav2 false goal 판정. 벽 마커 + IBVS(선속도+각속도 동시 제어)로 홈 복귀 마지막 구간 정밀 제어. DEC-029 참고 |
 | 3 | **Nav2 BT 커스텀 노드 설계** | `todo` | 취업 어필 포인트. 유리구간 등 커스텀 후보 조사 |
 | 4 | **유리문 구간 중앙 웨이포인트 경유 방식 조사** | `todo` | keepout + local planner 이탈 문제 해결 목적 |
 | 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `todo` | 마지막 순서 |
