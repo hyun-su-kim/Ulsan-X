@@ -318,6 +318,21 @@ phantom 원인 확정 후 아래 방법들을 순서대로 시도·검토.
 
 > **면접 어필 포인트**: "LiDAR의 물리적 한계(유리 투과·난반사)를 소프트웨어만으로 완전 해결할 수 없음을 실기기 검증으로 확인하고, 운용 목적에서 해당 구간을 제외하는 현실적 판단을 내렸다. 목적지 안내 주행이라는 서비스 요구사항 내에서는 완전 동작함."
 
+### 6단계 — Keepout 경계 hugging 문제 해결 (2026-05-19)
+
+Keepout 경계에 붙어 주행하다 일부 진입하는 문제가 추가로 발생. 근본 원인: global planner가 Keepout 경계 바깥 cost가 0에 가까워 경계에 최대한 붙는 최단 경로를 생성.
+
+**해결**: `NavigateThroughPoses` + 통유리 사이 수직 경유 포인트 2개 (`glass_entry`, `glass_exit`) 삽입.
+
+- 두 경유 포인트가 수직 통과선을 정의 → 플래너가 유리 구간 중앙을 통과하는 단일 전역 경로 생성
+- 경유 포인트는 WaypointFollower(순차 정지)와 달리 정지 없이 통과 — 다른 BT XML 사용
+- classroom_1~5는 유리 구간 미통과 → 기존 `goToPose` 유지
+- 나머지 목적지(상담실·카운터·멀티룸·회의실) → `goThroughPoses([glass_entry, glass_exit, 목적지])`
+- 복귀 시 순서 반전: `goThroughPoses([glass_exit, glass_entry, home])`
+- 경유 포인트 yaw: 0.0 (플래너가 위치만으로 방향 결정, goal checker 미적용)
+
+→ DEC-030 참고
+
 ---
 
 ## 목적지 관리 (waypoints.yaml)
@@ -337,11 +352,7 @@ ros2 topic echo /amcl_pose --once
 waypoints:
   home_robot1:   { x: 0.0, y: 0.0, yaw: 0.0, label: "로봇1 홈" }
   home_robot2:   { x: 0.0, y: 0.0, yaw: 0.0, label: "로봇2 홈" }
-  classroom_1:   { x: 0.0, y: 0.0, yaw: 0.0, label: "1강의실" }
-  classroom_2:   { x: 0.0, y: 0.0, yaw: 0.0, label: "2강의실" }
-  classroom_3:   { x: 0.0, y: 0.0, yaw: 0.0, label: "3강의실" }
-  classroom_4:   { x: 0.0, y: 0.0, yaw: 0.0, label: "4강의실" }
-  classroom_5:   { x: 0.0, y: 0.0, yaw: 0.0, label: "5강의실" }
+  classroom_1~5: ...  # 유리 구간 미통과 → goToPose 직행
   counseling_1:  { x: 0.0, y: 0.0, yaw: 0.0, label: "상담실1" }
   counseling_2:  { x: 0.0, y: 0.0, yaw: 0.0, label: "상담실2" }
   intensive_counseling_1: { x: 0.0, y: 0.0, yaw: 0.0, label: "집중상담실1" }
@@ -349,6 +360,9 @@ waypoints:
   vice_principal: { x: 0.0, y: 0.0, yaw: 0.0, label: "부원장실" }
   counter:       { x: 0.0, y: 0.0, yaw: 0.0, label: "카운터" }
   multi:         { x: 0.0, y: 0.0, yaw: 0.0, label: "멀티룸" }
+  # 유리 구간 경유 포인트 (통유리 사이 수직선 양 끝) — 실측 후 기입
+  glass_entry:   { x: 0.0, y: 0.0, yaw: 0.0, label: "유리구간 진입" }
+  glass_exit:    { x: 0.0, y: 0.0, yaw: 0.0, label: "유리구간 탈출" }
 ```
 
 ---
@@ -356,21 +370,23 @@ waypoints:
 ## wego_behaviour FSM 연동
 
 ```
-wego_voice NLU → /goal_destination (String 키, 예: "classroom_1")
+wego_dispatcher → /goal_destination (String 키, 예: "classroom_1")
   → wego_behaviour IDLE 상태 수신
   → waypoints.yaml에서 좌표 조회
-  → GUIDING: navigate_to_pose 액션 전송
+  → GUIDING:
+      classroom_1~5 → navigate_to_pose(목적지)
+      나머지        → navigate_through_poses([glass_entry, glass_exit, 목적지])
     → Nav2 내부 BT (경로 계획 + 장애물 회피 + 복구)
       → 도달 시 RETURNING 전환
-        → navigate_to_pose(home_robotN)
-          → 홈 도착 → wego_aruco 서비스 호출 (ArUco 정밀 보정)
-            → IDLE 복귀
+        → classroom_1~5 → navigate_to_pose(home)
+          나머지        → navigate_through_poses([glass_exit, glass_entry, home])
+          → 홈 도착 → IDLE 복귀
 ```
 
-`home_key` 파라미터로 각 로봇이 자신의 홈 좌표를 사용:
+`home_key`는 `ROS_DOMAIN_ID`로 자동 결정 (robot_config.yaml의 domain_home_map):
 ```bash
-ros2 launch wego_behaviour behaviour_launch.py home_key:=home_robot1  # LIMO 1
-ros2 launch wego_behaviour behaviour_launch.py home_key:=home_robot2  # LIMO 2
+export ROS_DOMAIN_ID=6 && ros2 launch wego_behaviour behaviour_launch.py  # LIMO 1 → home_robot1
+export ROS_DOMAIN_ID=7 && ros2 launch wego_behaviour behaviour_launch.py  # LIMO 2 → home_robot2
 ```
 
 ---

@@ -6,6 +6,17 @@ from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
 
+_GLASS_ROUTE_DESTINATIONS = {
+    'counseling_1', 'counseling_2', 'counter',
+    'intensive_counseling_1', 'intensive_counseling_2',
+    'multi', 'vice_principal',
+}
+
+
+def _needs_glass_via(dest_key: str) -> bool:
+    return dest_key in _GLASS_ROUTE_DESTINATIONS
+
+
 def _make_pose(wp: dict) -> PoseStamped:
     pose = PoseStamped()
     pose.header.frame_id = 'map'
@@ -32,6 +43,7 @@ class IdleState(State):
                 dest_key = self._node.pending_destination
                 self._node.pending_destination = None
                 blackboard['destination'] = self._node.waypoints[dest_key]
+                blackboard['destination_key'] = dest_key
                 self._node.get_logger().info(
                     f'목적지 확정: {blackboard["destination"]["label"]}'
                 )
@@ -54,7 +66,13 @@ class GuidingState(State):
             f'GUIDING: {destination["label"]} 로 이동 중'
         )
 
-        self._navigator.goToPose(_make_pose(destination))
+        dest_key = blackboard.get('destination_key', '')
+        if _needs_glass_via(dest_key):
+            glass_entry = _make_pose(self._node.waypoints['glass_entry'])
+            glass_exit = _make_pose(self._node.waypoints['glass_exit'])
+            self._navigator.goThroughPoses([glass_entry, glass_exit, _make_pose(destination)])
+        else:
+            self._navigator.goToPose(_make_pose(destination))
 
         while not self._navigator.isTaskComplete():
             if self._node._pause_flag:
@@ -121,7 +139,13 @@ class ReturningState(State):
         home = self._node.waypoints[self._node.home_key]
 
         self._node.get_logger().info('RETURNING: 홈으로 이동 중')
-        self._navigator.goToPose(_make_pose(home))
+        dest_key = blackboard.get('destination_key', '')
+        if _needs_glass_via(dest_key):
+            glass_entry = _make_pose(self._node.waypoints['glass_entry'])
+            glass_exit = _make_pose(self._node.waypoints['glass_exit'])
+            self._navigator.goThroughPoses([glass_exit, glass_entry, _make_pose(home)])
+        else:
+            self._navigator.goToPose(_make_pose(home))
         while not self._navigator.isTaskComplete():
             if self._node._pause_flag:
                 self._navigator.cancelTask()

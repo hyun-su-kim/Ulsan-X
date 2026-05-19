@@ -4,6 +4,26 @@
 
 ---
 
+### DEC-030: 유리 구간 keepout 경계 hugging 해결 — NavigateThroughPoses + 경유 포인트 2개
+- **Context**: Keepout Filter 적용 후에도 global planner가 keepout 경계 바깥의 cost가 0에 가까워 경계에 최대한 붙는 최단 경로를 생성. 경계 근처 주행 중 일부 진입하는 문제 발생.
+- **Decision**: **NavigateThroughPoses + glass_entry / glass_exit 경유 포인트 삽입**
+  - 통유리 사이 수직선의 양 끝에 경유 포인트 2개 측정·등록
+  - 유리 구간 통과 목적지(상담실·카운터·멀티룸·회의실): `goThroughPoses([glass_entry, glass_exit, 목적지])`
+  - classroom_1~5: 유리 구간 미통과 → 기존 `goToPose` 유지
+  - 복귀 시 순서 반전: `goThroughPoses([glass_exit, glass_entry, home])`
+  - 경유 포인트 yaw: 0.0 — 경유지는 goal checker 미적용, 위치만으로 방향 제약
+- **NavigateThroughPoses 선택 이유**:
+  - WaypointFollower: 내부적으로 NavigateToPose 반복 → 경유지마다 완전 정지. 유리 구간 한가운데 정지 발생
+  - NavigateThroughPoses: 모든 경유지를 포함한 단일 전역 경로 생성 → 정지 없이 부드럽게 통과
+  - 다른 BT XML(`navigate_through_poses_w_replanning_and_recovery.xml`) 로드
+- **구현 위치**: `wego_behaviour/states.py` — `_needs_glass_via()`, GuidingState, ReturningState
+- **Rationale**: "keepout 경계 hugging은 global planner의 cost 최소화 특성에서 비롯된 구조적 문제. 알려진 위험 구간에 강제 경유 포인트를 삽입해 경로를 명시적으로 제약하는 방식은 현업 AMR 표준 패턴."
+- **면접 어필**: "keepout 경계에 붙어 주행하는 문제를 플래너 cost 구조로 진단하고, NavigateThroughPoses로 유리 구간 중앙 통과를 강제하는 경로 제약을 설계했습니다. WaypointFollower 대비 단일 전역 경로 생성으로 정지 없는 자연스러운 통과를 보장합니다."
+- **미완료**: glass_entry / glass_exit 실측 좌표 입력 필요
+- **Date**: 2026-05-19
+
+---
+
 ### DEC-029: 홈 복귀 정밀 제어 방식 — 벽 마커 + IBVS (staging pose 방식)
 - **Context**: 복도 구간 AMCL y drift로 인해 Nav2가 실제 홈 미도달 위치에서 false goal 판정하는 문제 확인. 로봇이 복도에서 홈 방향으로 주행 시 특징점 없는 복도만을 보고 y좌표를 홈에 도달했다고 추정. x,y가 tolerance(±10cm Euclidean) 안에 들어오면 Nav2가 goal 판정 후 yaw 회전 → 그제야 AMCL이 보정되지만 이미 틀린 위치에서 멈춘 상태.
 - **Decision**: **벽 마커 + IBVS (Image-Based Visual Servoing) — staging pose 전환 방식**
