@@ -7,13 +7,13 @@ markers:
   0:                  # 로봇1 홈 마커
     size: 0.20
     calibrated: true
-    map_x:  0.0464
-    map_y:  0.4014
-    map_z:  0.0514
-    map_qx: 0.7464
-    map_qy: -0.0145
-    map_qz: 0.0010
-    map_qw: 0.6654
+    map_x: -0.0463
+    map_y: -0.4014
+    map_z:  0.0518
+    map_qx: 0.0161
+    map_qy: 0.7426
+    map_qz: 0.6695
+    map_qw: 0.0009
   1:                  # 로봇2 홈 마커
     size: 0.20
     calibrated: false # 미측정

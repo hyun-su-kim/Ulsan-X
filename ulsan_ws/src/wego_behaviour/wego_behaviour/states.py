@@ -66,7 +66,10 @@ class GuidingState(State):
             f'GUIDING: {destination["label"]} 로 이동 중'
         )
 
-        dest_key = blackboard.get('destination_key', '')
+        try:
+            dest_key = blackboard['destination_key']
+        except KeyError:
+            dest_key = ''
         if _needs_glass_via(dest_key):
             glass_entry = _make_pose(self._node.waypoints['glass_entry'])
             glass_exit = _make_pose(self._node.waypoints['glass_exit'])
@@ -121,7 +124,10 @@ class WaitingState(State):
             time.sleep(0.1)
 
         self._node._resume_flag = False
-        return_to = blackboard.get('return_to', 'RETURNING')
+        try:
+            return_to = blackboard['return_to']
+        except KeyError:
+            return_to = 'RETURNING'
         self._node.get_logger().info(f'WAITING: resume → {return_to}')
         return 'resume_guiding' if return_to == 'GUIDING' else 'resume_returning'
 
@@ -139,7 +145,10 @@ class ReturningState(State):
         home = self._node.waypoints[self._node.home_key]
 
         self._node.get_logger().info('RETURNING: 홈으로 이동 중')
-        dest_key = blackboard.get('destination_key', '')
+        try:
+            dest_key = blackboard['destination_key']
+        except KeyError:
+            dest_key = ''
         if _needs_glass_via(dest_key):
             glass_entry = _make_pose(self._node.waypoints['glass_entry'])
             glass_exit = _make_pose(self._node.waypoints['glass_exit'])
