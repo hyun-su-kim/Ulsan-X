@@ -19,7 +19,10 @@ def generate_launch_description():
             executable='aruco_pose_corrector',
             name='aruco_pose_corrector',
             output='screen',
-            parameters=[{'markers_file': markers_file}],
+            parameters=[{
+                'markers_file': markers_file,
+                'max_correction_depth': 0.40,
+            }],
         ),
         Node(
             package='wego_aruco',

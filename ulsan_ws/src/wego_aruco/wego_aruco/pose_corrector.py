@@ -58,6 +58,7 @@ class ArucoPoseCorrector(Node):
         self.declare_parameter('calib_y',      0.0)
         self.declare_parameter('calib_yaw',    0.0)
         self.declare_parameter('calib_samples', 30)
+        self.declare_parameter('max_correction_depth', 0.40)
 
         markers_file      = self.get_parameter('markers_file').get_parameter_value().string_value
         self._calib_mode  = self.get_parameter('calibration_mode').get_parameter_value().bool_value
@@ -66,6 +67,7 @@ class ArucoPoseCorrector(Node):
         self._calib_y     = self.get_parameter('calib_y').get_parameter_value().double_value
         self._calib_yaw   = self.get_parameter('calib_yaw').get_parameter_value().double_value
         self._calib_n     = self.get_parameter('calib_samples').get_parameter_value().integer_value
+        self._max_correction_depth = self.get_parameter('max_correction_depth').get_parameter_value().double_value
 
         with open(markers_file, 'r') as f:
             data = yaml.safe_load(f)
@@ -202,6 +204,12 @@ class ArucoPoseCorrector(Node):
                 self._debug_pub.publish(debug_msg)
                 if self._counts[mid] >= self.MIN_CONSISTENT:
                     self._counts[mid] = 0
+                    depth = tvec[2][0]
+                    if depth > self._max_correction_depth:
+                        self.get_logger().debug(
+                            f'[마커 {mid}] depth={depth:.3f}m > {self._max_correction_depth}m — 보정 건너뜀'
+                        )
+                        break
                     self._last_correction_ns = self.get_clock().now().nanoseconds
                     self._publish_correction(mid, rvec, tvec)
                     break
