@@ -11,7 +11,7 @@
 | # | 작업 | 상태 | 비고 |
 |---|------|------|------|
 | 1 | **TTS(wego_voice) 재작업** | `done (2026-05-18)` | mpg123 오디오 장치 미지정 문제. `-a plughw:1,3` (HDMI 0) 고정, `audio_device` 파라미터화 |
-| 2 | **마커 기반 홈 정밀 복귀 구현** | `in_progress` | aruco_home_dock.py 구현 완료 (2026-05-19). target_dist 실측 및 markers.yaml 재측정 후 실기기 검증 필요. DEC-029 참고 |
+| 2 | **마커 기반 홈 정밀 복귀 구현** | `in_progress` | aruco_home_dock.py 구현 완료. markers.yaml ID 0 재측정 완료 (2026-05-19, calib_yaw=-90°). IBVS 실기기 검증 필요. DEC-029 참고 |
 | 3 | **Nav2 BT 커스텀 노드 설계** | `todo` | 취업 어필 포인트. 유리구간 등 커스텀 후보 조사 |
 | 4 | **유리문 구간 중앙 웨이포인트 경유 방식 조사** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. classroom은 goToPose, 나머지는 goThroughPoses([entry, exit, dest]). 복귀 시 순서 반전. DEC-030 참고 |
 | 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `todo` | 마지막 순서 |
@@ -173,9 +173,14 @@
   - classroom_1 → home1 왕복 주행 중 AMCL 보정 확인 (10초 cooldown 간격 정상 동작)
   - 보정값 수렴: x≈0.15, y≈1.22, yaw≈-1.52 (home1 기준 ~0.25m 오차, Nav2 goal 성공)
 - [x] `aruco_localizer.py` 삭제 — visual servoing 폐기 (정밀 주차 불필요, 2026-05-11)
-- [ ] markers.yaml ID 0, ID 1 map 좌표 재측정 — 마커 위치 변경으로 전체 재측정 필요
-- [ ] **camera TF 실측값 반영으로 ArUco 재측정 필요** — camera_tilt_launch.py 수정(2026-05-13): x 0.2→0.1, y 0.1→0.0, camera_link y -0.05→-0.01
+- [x] markers.yaml ID 0 map 좌표 재측정 완료 (2026-05-19)
+  - home_robot1 yaw +90° → -90° 수정 후 재캘리브레이션
+  - map_x=-0.0463, map_y=-0.4014, map_z=0.0518, qx=0.0161, qy=0.7426, qz=0.6695, qw=0.0009
+- [x] AMCL 보정 거리 임계값 추가 (2026-05-19) — max_correction_depth=0.40m
+  - 주행 중 원거리 마커 감지 오보정 방지. IBVS 도킹 구간(근거리)에서만 보정
+- [ ] markers.yaml ID 1 map 좌표 측정 — LIMO 2 홈 마커 미측정
 - [ ] **passive corrector 실기기 재검증** — 새 아키텍처(서버 노트북 Nav2) 기준으로 재검증 필요
+- [ ] **IBVS 홈 도킹 실기기 검증** — classroom_1 왕복 후 /aruco_home_dock 서비스 호출 → 정밀 정차 확인
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI
@@ -235,6 +240,7 @@
 
 | 이슈 | 심각도 | 상태 |
 |------|--------|------|
+| **홈 출발 시 Failed to make progress** | High | 분석 완료, 미수정. home1에서 목적지 출발 시 180° 회전 중 SimpleProgressChecker(선형 거리만 측정) 10초 만료 → Nav2 recovery 반복. DEC-031 참고 |
 | Orin Nano GPU 메모리: YOLO + faster-whisper 동시 가동 시 OOM 가능성 | High | P2에서 프로파일링 예정 |
 | openWakeWord "헤이 리모" 커스텀 모델 학습 필요 여부 | Medium | 미결정 |
 | 두 로봇이 동시에 호출될 때 충돌 시나리오 | Medium | DEC-017: wego_voice에서 on_duty 게이팅으로 해결 예정 |

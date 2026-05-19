@@ -4,6 +4,38 @@
 
 ---
 
+### DEC-031: 홈 출발 시 Failed to make progress — PoseProgressChecker 교체 (미적용)
+- **Context**: home1에서 classroom 목적지로 출발 시 로봇이 180° 제자리 회전 필요. 이 과정에서 `Failed to make progress` 반복 발생. Nav2가 recovery(ClearEntireCostmap)를 최대 6회 반복하며 각 시도마다 10초씩 소요.
+- **원인 분석**:
+  - `SimpleProgressChecker`는 선형 이동 거리만 측정. 제자리 회전(각도 변화)을 진행으로 인식 안 함
+  - `movement_time_allowance=10s` 안에 `required_movement_radius=0.5m` 미달 → 실패 판정
+  - 타임스탬프 정밀 분석으로 확인: `Received a goal` → `Failed to make progress` 정확히 10.0초
+  - `Passing new path to controller` (1.3초 간격)는 BT `RateController(hz=0.769)`의 주기적 리플랜이며 progress checker 타이머를 리셋하지 않음 (새 action goal 수신 시에만 리셋)
+  - Recovery: `RecoveryNode(number_of_retries=6)` → `RoundRobin` → `ClearEntireCostmap` → 재시도 반복
+- **Nav2 BT 실행 흐름**:
+  ```
+  RecoveryNode (최대 6회 재시도)
+  ├── PipelineSequence (메인 주행)
+  │   ├── RateController(hz=0.769) → ComputePathToPose  ← 1.3초마다 리플랜
+  │   └── FollowPath  ← SimpleProgressChecker 10초 만료 → FAILURE
+  └── RoundRobin (recovery)
+      ├── ClearEntireCostmap (1번째)
+      ├── Spin (2번째)
+      ├── Wait (3번째)
+      └── BackUp (4번째)
+  ```
+- **Decision**: **`PoseProgressChecker`로 교체** (내일 적용 예정)
+  - `required_movement_radius: 0.5` OR `required_movement_angle: 0.5rad(≈28°)` 중 하나 만족 시 진행 인정
+  - 180° 회전 시작 직후 각도 조건 통과 → 실패 없이 주행 시작
+- **Rationale**:
+  - `SimpleProgressChecker`: 직선 주행에 적합. 출발 방향이 goal 방향과 반대인 경우 회전 구간에서 구조적 실패
+  - `PoseProgressChecker`: 위치 + 방향 변화를 모두 측정 → 회전 중에도 진행으로 인정. home1 출발 시나리오에 적합
+  - `movement_time_allowance` 단순 증가는 근본 해결이 아님. 회전이 느린 경우 또는 다른 시나리오에서 동일 문제 재발 가능
+- **면접 어필**: "Nav2 `SimpleProgressChecker`가 선형 이동만 측정하는 설계 특성으로 인해, 출발 방향과 반대 방향으로 향하는 로봇이 회전 구간에서 반복 실패하는 문제를 타임스탬프 분석으로 정확히 진단. BT 구조(RecoveryNode, RateController)와 progress checker의 상호작용을 추적하여 `PoseProgressChecker` 교체로 해결."
+- **Date**: 2026-05-19 (분석 완료, 적용 예정)
+
+---
+
 ### DEC-030: 유리 구간 keepout 경계 hugging 해결 — NavigateThroughPoses + 경유 포인트 2개
 - **Context**: Keepout Filter 적용 후에도 global planner가 keepout 경계 바깥의 cost가 0에 가까워 경계에 최대한 붙는 최단 경로를 생성. 경계 근처 주행 중 일부 진입하는 문제 발생.
 - **Decision**: **NavigateThroughPoses + glass_entry / glass_exit 경유 포인트 삽입**
