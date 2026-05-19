@@ -11,10 +11,7 @@ npm start
 cd /home/yechan/Ulsan-X/ulsan_ui/ulsan-web-ui
 PORT=3001 npm start
 
-# 터미널 4 — domain bridge
-ros2 launch wego_bridge bridge_launch.py
-
-# 터미널 5 — wego_dispatcher
+# 터미널 4 — wego_dispatcher
 ros2 launch wego_dispatcher dispatcher_launch.py
 
 -------------------------------------------------------------
@@ -30,6 +27,8 @@ ros2 launch wego_aruco aruco_corrector_launch.py
 # 터미널 4 — TTS
 ros2 launch wego_voice voice_launch.py
 
+# 터미널 5 — domain bridge
+ros2 launch wego_bridge bridge_launch.py
 -------------------------------------------------------------
 로봇 본체 (domain 6, 7)
 # 터미널 1 - 하드웨어 드라이버

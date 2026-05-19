@@ -47,3 +47,16 @@ topics:
     from_domain: 5
     to_domain: ROBOT_DOMAIN
     remap: /speak_text                # wego_dispatcher → wego_voice
+
+  /ROBOT_NAME/cmd_vel:
+    type: geometry_msgs/msg/Twist
+    from_domain: 5
+    to_domain: ROBOT_DOMAIN
+    remap: /cmd_vel                   # ulsan_gui 텔레옵 → LIMO
+
+  # ── LIMO 도메인 → domain 5 (카메라) ─────────────────────────────────
+  /camera/color/image_raw/compressed:
+    type: sensor_msgs/msg/CompressedImage
+    from_domain: ROBOT_DOMAIN
+    to_domain: 5
+    remap: /ROBOT_NAME/camera/image/compressed   # ulsan_gui 카메라 뷰
