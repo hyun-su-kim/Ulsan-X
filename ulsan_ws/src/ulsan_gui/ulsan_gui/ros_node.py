@@ -1,4 +1,3 @@
-import json
 import math
 import time
 import threading
@@ -6,6 +5,7 @@ import threading
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import String
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from sensor_msgs.msg import CompressedImage
@@ -17,14 +17,24 @@ from wego_msgs.srv import WaypointCRUD
 
 
 class GuiSignals(QObject):
-    """Qt 시그널 전용 객체 — Node와 분리하여 MRO 충돌 방지."""
-    sig_status_1 = pyqtSignal(str)
-    sig_status_2 = pyqtSignal(str)
-    sig_pose_1   = pyqtSignal(object)
-    sig_pose_2   = pyqtSignal(object)
-    sig_map      = pyqtSignal(object)
-    sig_camera_1 = pyqtSignal(bytes, str)
-    sig_camera_2 = pyqtSignal(bytes, str)
+    sig_status_1  = pyqtSignal(str)
+    sig_status_2  = pyqtSignal(str)
+    sig_pose_1    = pyqtSignal(object)
+    sig_pose_2    = pyqtSignal(object)
+    sig_map       = pyqtSignal(object)
+    sig_camera_1  = pyqtSignal(bytes, str)
+    sig_camera_2  = pyqtSignal(bytes, str)
+    sig_dest_1    = pyqtSignal(str)    # 현재 목적지 (limo1)
+    sig_dest_2    = pyqtSignal(str)    # 현재 목적지 (limo2)
+
+
+# /map 토픽은 transient_local (latched)로 발행되므로 구독도 맞춰야 함
+_MAP_QOS = QoSProfile(
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    reliability=ReliabilityPolicy.RELIABLE,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
 
 
 class RosNode(Node):
@@ -33,20 +43,32 @@ class RosNode(Node):
 
         self.signals = GuiSignals()
 
-        # 최신값 캐시
         self.latest_status: dict[str, str]    = {'limo1': 'UNKNOWN', 'limo2': 'UNKNOWN'}
         self.latest_pose:   dict[str, object] = {'limo1': None,      'limo2': None}
+        self.latest_dest:   dict[str, str]    = {'limo1': '',        'limo2': ''}
         self.latest_map:    OccupancyGrid | None = None
         self._last_recv:    dict[str, float]  = {'limo1': 0.0,       'limo2': 0.0}
 
         # 구독
-        self.create_subscription(String, '/limo1/robot_status', lambda m: self._status_cb('limo1', m), 10)
-        self.create_subscription(String, '/limo2/robot_status', lambda m: self._status_cb('limo2', m), 10)
-        self.create_subscription(PoseWithCovarianceStamped, '/limo1/amcl_pose', lambda m: self._pose_cb('limo1', m), 10)
-        self.create_subscription(PoseWithCovarianceStamped, '/limo2/amcl_pose', lambda m: self._pose_cb('limo2', m), 10)
-        self.create_subscription(OccupancyGrid, '/map', self._map_cb, 1)
-        self.create_subscription(CompressedImage, '/limo1/camera/image/compressed', lambda m: self._camera_cb('limo1', m), 10)
-        self.create_subscription(CompressedImage, '/limo2/camera/image/compressed', lambda m: self._camera_cb('limo2', m), 10)
+        self.create_subscription(String, '/limo1/robot_status',
+                                 lambda m: self._status_cb('limo1', m), 10)
+        self.create_subscription(String, '/limo2/robot_status',
+                                 lambda m: self._status_cb('limo2', m), 10)
+        self.create_subscription(PoseWithCovarianceStamped, '/limo1/amcl_pose',
+                                 lambda m: self._pose_cb('limo1', m), 10)
+        self.create_subscription(PoseWithCovarianceStamped, '/limo2/amcl_pose',
+                                 lambda m: self._pose_cb('limo2', m), 10)
+        # transient_local QoS로 맵 구독 (GUI 실행 전 발행된 맵도 수신)
+        self.create_subscription(OccupancyGrid, '/map', self._map_cb, _MAP_QOS)
+        self.create_subscription(CompressedImage, '/limo1/camera/image/compressed',
+                                 lambda m: self._camera_cb('limo1', m), 10)
+        self.create_subscription(CompressedImage, '/limo2/camera/image/compressed',
+                                 lambda m: self._camera_cb('limo2', m), 10)
+        # 목적지 구독 (dispatcher 및 GUI 발행 모두 수신)
+        self.create_subscription(String, '/limo1/goal_destination',
+                                 lambda m: self._dest_cb('limo1', m), 10)
+        self.create_subscription(String, '/limo2/goal_destination',
+                                 lambda m: self._dest_cb('limo2', m), 10)
 
         # 발행
         self._cmd_vel_pubs = {
@@ -58,7 +80,6 @@ class RosNode(Node):
             'limo2': self.create_publisher(String, '/limo2/goal_destination', 10),
         }
 
-        # Waypoint CRUD 서비스 클라이언트
         self._wp_clients = {
             'limo1': self.create_client(WaypointCRUD, '/waypoint_crud'),
             'limo2': self.create_client(WaypointCRUD, '/waypoint_crud'),
@@ -71,28 +92,24 @@ class RosNode(Node):
     def _status_cb(self, robot: str, msg: String) -> None:
         self.latest_status[robot] = msg.data
         self._last_recv[robot] = time.time()
-        if robot == 'limo1':
-            self.signals.sig_status_1.emit(msg.data)
-        else:
-            self.signals.sig_status_2.emit(msg.data)
+        (self.signals.sig_status_1 if robot == 'limo1' else self.signals.sig_status_2).emit(msg.data)
 
     def _pose_cb(self, robot: str, msg: PoseWithCovarianceStamped) -> None:
         self.latest_pose[robot] = msg
         self._last_recv[robot] = time.time()
-        if robot == 'limo1':
-            self.signals.sig_pose_1.emit(msg)
-        else:
-            self.signals.sig_pose_2.emit(msg)
+        (self.signals.sig_pose_1 if robot == 'limo1' else self.signals.sig_pose_2).emit(msg)
 
     def _map_cb(self, msg: OccupancyGrid) -> None:
         self.latest_map = msg
         self.signals.sig_map.emit(msg)
 
     def _camera_cb(self, robot: str, msg: CompressedImage) -> None:
-        if robot == 'limo1':
-            self.signals.sig_camera_1.emit(bytes(msg.data), msg.format)
-        else:
-            self.signals.sig_camera_2.emit(bytes(msg.data), msg.format)
+        sig = self.signals.sig_camera_1 if robot == 'limo1' else self.signals.sig_camera_2
+        sig.emit(bytes(msg.data), msg.format)
+
+    def _dest_cb(self, robot: str, msg: String) -> None:
+        self.latest_dest[robot] = msg.data
+        (self.signals.sig_dest_1 if robot == 'limo1' else self.signals.sig_dest_2).emit(msg.data)
 
     # ── 발행 ─────────────────────────────────────────────────────────
 
@@ -107,7 +124,7 @@ class RosNode(Node):
         msg.data = destination_key
         self._goal_pubs[robot].publish(msg)
 
-    # ── Waypoint CRUD ────────────────────────────────────────────────
+    # ── Waypoint CRUD ─────────────────────────────────────────────────
 
     def call_waypoint_crud(self, action: str, key: str = '', label: str = '',
                            x: float = 0.0, y: float = 0.0, yaw: float = 0.0,

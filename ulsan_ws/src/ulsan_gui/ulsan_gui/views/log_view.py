@@ -14,6 +14,16 @@ from PyQt5.QtGui import QFont, QColor
 
 API_URL = 'http://localhost:8000/logs'
 
+_COMBO_STYLE = (
+    'QComboBox { border:1px solid #d1d5db; border-radius:6px; padding:4px 10px;'
+    '  background:#fff; color:#111827; min-width:90px; }'
+    'QComboBox:hover { border-color:#9ca3af; }'
+    'QComboBox::drop-down { border:none; width:20px; }'
+    'QComboBox QAbstractItemView {'
+    '  background:#fff; color:#111827; border:1px solid #d1d5db;'
+    '  selection-background-color:#eff6ff; selection-color:#1e40af; outline:0; }'
+)
+
 LOG_TYPE_COLOR = {
     'mission_start':    ('#fffbeb', '#d97706'),
     'mission_complete': ('#f0fdf4', '#16a34a'),
@@ -78,17 +88,13 @@ class LogView(QWidget):
 
         self._type_combo = QComboBox()
         self._type_combo.addItems(['전체', '임무시작', '임무완료', '임무실패', '대기', '시스템'])
-        self._type_combo.setStyleSheet(
-            'border:1px solid #d1d5db; border-radius:6px; padding:4px 8px;'
-        )
+        self._type_combo.setStyleSheet(_COMBO_STYLE)
         self._type_combo.currentIndexChanged.connect(self._apply_filter)
         toolbar.addWidget(self._type_combo)
 
         self._robot_combo = QComboBox()
         self._robot_combo.addItems(['전체', 'LIMO 1', 'LIMO 2'])
-        self._robot_combo.setStyleSheet(
-            'border:1px solid #d1d5db; border-radius:6px; padding:4px 8px;'
-        )
+        self._robot_combo.setStyleSheet(_COMBO_STYLE)
         self._robot_combo.currentIndexChanged.connect(self._apply_filter)
         toolbar.addWidget(self._robot_combo)
 
