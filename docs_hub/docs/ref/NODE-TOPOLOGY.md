@@ -40,7 +40,13 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 ### wego_behaviour 패키지 (뼈대 완료)
 | 노드 | 역할 |
 |------|------|
-| `wego_behaviour` | Yasmin FSM 실행 (IDLE / GUIDING / RETURNING), 임무 상태 관리 |
+| `wego_behaviour` | Yasmin FSM 실행 (IDLE / GUIDING / RETURNING / WAITING), 임무 상태 관리 |
+
+### wego_aruco 패키지
+| 노드 | 역할 |
+|------|------|
+| `aruco_pose_corrector` | 주행 중 마커 감지 → `/initialpose` 발행 (passive AMCL 보정) |
+| `aruco_home_dock` | `/aruco_home_dock` 서비스 — IBVS로 홈 정밀 정차 (DEC-029) |
 
 ### wego_coordinator 패키지 (미구현)
 | 노드 | 역할 |

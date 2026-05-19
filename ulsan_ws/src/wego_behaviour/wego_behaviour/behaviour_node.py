@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import threading
 
 import rclpy
@@ -8,6 +9,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from std_msgs.msg import String, Empty
+from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from yasmin import StateMachine, Blackboard
 
@@ -44,6 +46,8 @@ class BehaviourNode(Node):
 
         self.create_service(WaypointCRUD, '/waypoint_crud', self._waypoint_crud_cb)
         self.get_logger().info('/waypoint_crud 서비스 준비 완료')
+
+        self._home_dock_cli = self.create_client(Trigger, '/aruco_home_dock')
 
     # ── 콜백 ──────────────────────────────────────────────────────────
 
@@ -147,6 +151,17 @@ class BehaviourNode(Node):
         msg = String()
         msg.data = text
         self._speak_pub.publish(msg)
+
+    def call_home_dock(self) -> bool:
+        if not self._home_dock_cli.wait_for_service(timeout_sec=2.0):
+            self.get_logger().warn('/aruco_home_dock 서비스 없음 — Nav2 정차 유지')
+            return False
+        future = self._home_dock_cli.call_async(Trigger.Request())
+        while not future.done():
+            time.sleep(0.05)
+        result = future.result()
+        self.get_logger().info(f'aruco_home_dock 결과: {result.message}')
+        return result.success
 
 
 def main():

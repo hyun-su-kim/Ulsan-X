@@ -154,7 +154,8 @@ class ReturningState(State):
             time.sleep(0.1)
 
         if self._navigator.getResult() == TaskResult.SUCCEEDED:
-            self._node.get_logger().info('홈 복귀 완료')
+            self._node.get_logger().info('staging 도착 — IBVS 도킹 시작')
+            self._node.call_home_dock()
             return 'succeeded'
 
         self._node.get_logger().warn('홈 이동 실패')

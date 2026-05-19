@@ -40,6 +40,11 @@
   - 방법 1: Nav2 cancel 타이밍 불안정, 로봇 주행 중 P제어 초기 조건 불안정
   - 방법 2: Nav2 goal 완료 후 정지 상태에서 전환 → 안정적. opennav_docking 표준 패턴과 동일
 - **구현 위치**: `wego_behaviour` ReturningState + 신규 `aruco_home_dock.py` 노드
+- **구현 현황 (2026-05-19)**:
+  - `wego_aruco/aruco_home_dock.py` 신규 작성 — `/aruco_home_dock` (std_srvs/Trigger) 서비스
+  - `wego_behaviour` ReturningState: Nav2 staging 도착 후 `call_home_dock()` 호출
+  - `aruco_corrector_launch.py`: aruco_home_dock 노드 추가
+  - 미완료: target_dist 실측 (로봇을 home에 두고 `/aruco_debug` depth 값 확인), markers.yaml 재측정
 - **Rationale**: "AMCL 기반 goal 판정의 구조적 한계를 실기기에서 확인. 마지막 구간만 절대 기준(마커 비전)으로 제어 전환하는 Coarse-to-Fine 패턴 적용. AMCL 정확도와 무관하게 홈 복귀 보장."
 - **면접 어필**: "복도 AMCL drift로 인한 false goal 판정 문제를 실기기에서 진단. Nav2의 확률적 위치추정 한계를 마커 절대 기준으로 보완하는 계층적 제어 구조를 설계."
 - **Date**: 2026-05-18
