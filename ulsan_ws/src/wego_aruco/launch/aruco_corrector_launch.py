@@ -1,7 +1,6 @@
 import os
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.substitutions import EnvironmentVariable
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -10,20 +9,9 @@ def generate_launch_description():
     markers_file = os.path.join(pkg, 'config', 'markers.yaml')
 
     domain_home_map = {'6': 'home_robot1', '7': 'home_robot2'}
-    import os as _os
-    home_key = domain_home_map.get(_os.environ.get('ROS_DOMAIN_ID', '6'), 'home_robot1')
+    home_key = domain_home_map.get(os.environ.get('ROS_DOMAIN_ID', '6'), 'home_robot1')
 
     return LaunchDescription([
-        Node(
-            package='wego_aruco',
-            executable='aruco_pose_corrector',
-            name='aruco_pose_corrector',
-            output='screen',
-            parameters=[{
-                'markers_file': markers_file,
-                'max_correction_depth': 0.40,
-            }],
-        ),
         Node(
             package='wego_aruco',
             executable='aruco_home_dock',
@@ -33,6 +21,10 @@ def generate_launch_description():
                 'markers_file': markers_file,
                 'home_key':     home_key,
                 'target_dist':  0.271,
+                'kp_yaw':       0.5,
+                'yaw_tol':      0.05,
+                'lateral_tol':  0.01,
+                'max_angular':  0.3,
             }],
         ),
     ])

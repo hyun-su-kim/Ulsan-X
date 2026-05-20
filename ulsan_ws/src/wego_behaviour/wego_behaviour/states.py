@@ -142,19 +142,26 @@ class ReturningState(State):
 
     def execute(self, blackboard):
         self._node.publish_status('RETURNING')
-        home = self._node.waypoints[self._node.home_key]
+        home_key    = self._node.home_key
+        staging_key = home_key + '_staging'
+        waypoints   = self._node.waypoints
 
-        self._node.get_logger().info('RETURNING: 홈으로 이동 중')
+        # staging이 있으면 staging까지 Nav2 이동 후 IBVS, 없으면 home으로 직접
+        nav_target = waypoints[staging_key] if staging_key in waypoints else waypoints[home_key]
+        nav_label  = 'staging' if staging_key in waypoints else '홈(직접)'
+
+        self._node.get_logger().info(f'RETURNING: {nav_label}으로 이동 중')
         try:
             dest_key = blackboard['destination_key']
         except KeyError:
             dest_key = ''
         if _needs_glass_via(dest_key):
-            glass_entry = _make_pose(self._node.waypoints['glass_entry'])
-            glass_exit = _make_pose(self._node.waypoints['glass_exit'])
-            self._navigator.goThroughPoses([glass_exit, glass_entry, _make_pose(home)])
+            glass_entry = _make_pose(waypoints['glass_entry'])
+            glass_exit  = _make_pose(waypoints['glass_exit'])
+            self._navigator.goThroughPoses([glass_exit, glass_entry, _make_pose(nav_target)])
         else:
-            self._navigator.goToPose(_make_pose(home))
+            self._navigator.goToPose(_make_pose(nav_target))
+
         while not self._navigator.isTaskComplete():
             if self._node._pause_flag:
                 self._navigator.cancelTask()
@@ -163,7 +170,7 @@ class ReturningState(State):
             time.sleep(0.1)
 
         if self._navigator.getResult() == TaskResult.SUCCEEDED:
-            self._node.get_logger().info('staging 도착 — IBVS 도킹 시작')
+            self._node.get_logger().info(f'{nav_label} 도착 — IBVS 도킹 시작')
             self._node.call_home_dock()
             return 'succeeded'
 
