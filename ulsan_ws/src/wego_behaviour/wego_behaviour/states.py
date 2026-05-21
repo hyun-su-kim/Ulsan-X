@@ -38,6 +38,7 @@ class IdleState(State):
         self._node.publish_status('IDLE')
         self._node.get_logger().info('IDLE: 방문자 대기 중')
 
+        _tick = 0
         while True:
             if self._node.pending_destination:
                 dest_key = self._node.pending_destination
@@ -49,6 +50,9 @@ class IdleState(State):
                 )
                 return 'goto_destination'
             time.sleep(0.1)
+            _tick += 1
+            if _tick % 10 == 0:  # 1초마다 재발행 — GUI 늦게 켜져도 연결 감지
+                self._node.publish_status('IDLE')
 
 
 class FailedState(State):
@@ -64,7 +68,9 @@ class FailedState(State):
         self._node.speak_text(
             '오류가 발생하여 안내에 실패했습니다. 현재 위치에서 관리자를 기다려 주세요.'
         )
-        time.sleep(10.0)
+        for _ in range(10):
+            time.sleep(1.0)
+            self._node.publish_status('FAILED')
         return 'return_home'
 
 
@@ -94,6 +100,7 @@ class GuidingState(State):
         else:
             self._navigator.goToPose(_make_pose(destination))
 
+        _tick = 0
         while not self._navigator.isTaskComplete():
             if self._node._abort_flag:
                 self._navigator.cancelTask()
@@ -105,6 +112,9 @@ class GuidingState(State):
                 blackboard['return_to'] = 'GUIDING'
                 return 'paused'
             time.sleep(0.1)
+            _tick += 1
+            if _tick % 10 == 0:
+                self._node.publish_status('BUSY')
 
         result = self._navigator.getResult()
         if result == TaskResult.SUCCEEDED:
@@ -142,6 +152,7 @@ class WaitingState(State):
         self._node.publish_status('WAITING')
         self._node.get_logger().info('WAITING: 상대 로봇 통과 대기 중')
 
+        _tick = 0
         while not self._node._resume_flag:
             if self._node._abort_flag:
                 self._node._abort_flag = False
@@ -149,6 +160,9 @@ class WaitingState(State):
                     blackboard['return_to'] = 'RETURNING'
                     self._node.get_logger().info('WAITING: abort → return_to 변경 (GUIDING→RETURNING)')
             time.sleep(0.1)
+            _tick += 1
+            if _tick % 10 == 0:
+                self._node.publish_status('WAITING')
 
         self._node._resume_flag = False
         try:
@@ -189,12 +203,16 @@ class ReturningState(State):
         else:
             self._navigator.goToPose(_make_pose(nav_target))
 
+        _tick = 0
         while not self._navigator.isTaskComplete():
             if self._node._pause_flag:
                 self._navigator.cancelTask()
                 blackboard['return_to'] = 'RETURNING'
                 return 'paused'
             time.sleep(0.1)
+            _tick += 1
+            if _tick % 10 == 0:
+                self._node.publish_status('RETURNING')
 
         if self._navigator.getResult() == TaskResult.SUCCEEDED:
             self._node.get_logger().info(f'{nav_label} 도착 — IBVS 도킹 시작')
