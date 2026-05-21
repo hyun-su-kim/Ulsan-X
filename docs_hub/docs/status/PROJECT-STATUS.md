@@ -14,7 +14,7 @@
 | 2 | **마커 기반 홈 정밀 복귀 구현** | `in_progress` | 3DOF IBVS 구현 완료 (2026-05-20): yaw 보정 추가, staging pose, IBVS 완료 후 AMCL 보정 통합. 실기기 검증 필요. |
 | 3 | **Nav2 BT 커스텀 노드 설계** | `todo` | 취업 어필 포인트. 유리구간 등 커스텀 후보 조사 |
 | 4 | **유리문 구간 중앙 웨이포인트 경유 방식 조사** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. classroom은 goToPose, 나머지는 goThroughPoses([entry, exit, dest]). 복귀 시 순서 반전. DEC-030 참고 |
-| 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `in_progress` | 지도·로봇 상태·카드·긴급 제어 구현 완료. 미완: FAILED 상태 색상, 로봇 선택 UX 개선 |
+| 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `done (2026-05-21)` | 지도·로봇 상태·카드·긴급 제어·FAILED 색상·이벤트 로그 구현 완료 |
 | 6 | **사람 발견 시 정지 기능** | `todo` | 사전학습 or 커스텀 모델 선택 필요. 이것까지 완료 시 1차 데모 완성 |
 
 ---
@@ -117,6 +117,9 @@
   - required_movement_angle: 0.5rad(~28°) 추가 — 홈 출발 180° 회전 시 recovery 루프 해결
 - [x] **RemovePassedGoals radius 0.5 → 0.2** — done (2026-05-21)
   - 유리 구간 경유 포인트 통과 판정 범위 축소 — 경유지 근처를 실제로 통과해야 판정
+- [x] **robot_status 1초 주기 재발행** — done (2026-05-21)
+  - 모든 FSM 상태 루프에서 10틱(1초)마다 `publish_status` 재발행
+  - 기존: 상태 진입 시 1회만 발행 → GUI 늦게 켜지면 연결 감지 불가
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
 
 #### 음성 파이프라인
@@ -216,11 +219,12 @@
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI
-- [ ] `wego_ui` Qt 기반 재구현 (현재는 임시 RViz 테스트용)
-  - 지도 + 두 로봇 실시간 위치 마커
-  - 각 로봇 상태 (IDLE / BUSY / RETURNING) 표시
-  - on_duty 로봇 하이라이트
-  - 목적지 선택 / 수동 명령 패널
+- [x] `wego_ui` Qt 기반 재구현 — done (2026-05-21)
+  - 지도(OccupancyGrid) + 두 로봇 실시간 위치 마커, 줌/패닝
+  - 각 로봇 상태 카드 (IDLE/BUSY/RETURNING/WAITING/FAILED 색상)
+  - 긴급 제어 카드: 로봇 선택 토글 + 일시정지/재개/임무중단 버튼
+  - 이벤트 로그: 상태 전이/버튼 조작 실시간 기록
+  - 시스템 상태 패널: 연결·맵서버·FastAPI·dispatcher·traffic 모니터링
 
 #### 전체 통합 테스트
 - [ ] LIMO 2대 + 노트북 전체 파이프라인 실기기 검증
@@ -272,7 +276,7 @@
 
 | 이슈 | 심각도 | 상태 |
 |------|--------|------|
-| **홈 출발 시 Failed to make progress** | High | 분석 완료, 미수정. home1에서 목적지 출발 시 180° 회전 중 SimpleProgressChecker(선형 거리만 측정) 10초 만료 → Nav2 recovery 반복. DEC-031 참고 |
+| **홈 출발 시 Failed to make progress** | High | **해결 (2026-05-21)** — PoseProgressChecker 교체. 선형+각도 변화 모두 진행으로 인정. DEC-031 참고 |
 | Orin Nano GPU 메모리: YOLO + faster-whisper 동시 가동 시 OOM 가능성 | High | P2에서 프로파일링 예정 |
 | openWakeWord "헤이 리모" 커스텀 모델 학습 필요 여부 | Medium | 미결정 |
 | 두 로봇이 동시에 호출될 때 충돌 시나리오 | Medium | DEC-017: wego_voice에서 on_duty 게이팅으로 해결 예정 |
