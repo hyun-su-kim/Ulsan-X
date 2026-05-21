@@ -65,6 +65,12 @@ def get_full_slots(date: date, db: Session = Depends(get_db)):
     return {"full_slots": full_slots}
 
 
+@router.get("/", response_model=list[schemas.ReservationResponse])
+def get_all_reservations(db: Session = Depends(get_db)):
+    """전체 예약 이력 조회 (관제 GUI용)"""
+    return crud.get_all_reservations(db)
+
+
 @router.get("/today", response_model=list[schemas.ReservationResponse])
 def get_today_reservations(db: Session = Depends(get_db)):
     """

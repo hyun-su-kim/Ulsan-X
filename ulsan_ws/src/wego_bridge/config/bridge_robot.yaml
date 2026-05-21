@@ -23,6 +23,12 @@ topics:
     to_domain: 5
     remap: /ROBOT_NAME/robot_status   # wego_traffic, wego_dispatcher가 구독
 
+  /limo_status:
+    type: limo_msgs/msg/LimoStatus
+    from_domain: ROBOT_DOMAIN
+    to_domain: 5
+    remap: /ROBOT_NAME/limo_status    # ulsan_gui 배터리 표시용
+
   # ── domain 5 → LIMO 도메인 ──────────────────────────────────────────
   /ROBOT_NAME/pause:
     type: std_msgs/msg/Empty

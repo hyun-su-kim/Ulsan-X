@@ -7,25 +7,20 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
-from ulsan_gui.views.login_view    import LoginView
-from ulsan_gui.views.map_view      import MapView
-from ulsan_gui.views.robot_view    import RobotView
-from ulsan_gui.views.log_view      import LogView
-from ulsan_gui.views.settings_view import SettingsView
+from ulsan_gui.views.login_view       import LoginView
+from ulsan_gui.views.map_view         import MapView
+from ulsan_gui.views.robot_view       import RobotView
+from ulsan_gui.views.log_view         import LogView
+from ulsan_gui.views.reservation_view import ReservationView
 
 VIEWS = [
-    ('map',      '🗺',  '지도'),
-    ('robot',    '🤖',  '로봇'),
-    ('log',      '📋',  '로그'),
-    ('settings', '⚙',  '설정'),
+    ('map',         '🗺', '지도'),
+    ('robot',       '🤖', '로봇'),
+    ('reservation', '📅', '예약'),
+    ('log',         '📋', '로그'),
 ]
 
-VIEW_LABELS = {
-    'map':      '지도',
-    'robot':    '로봇',
-    'log':      '로그',
-    'settings': '설정',
-}
+VIEW_LABELS = {k: lbl for k, _, lbl in VIEWS}
 
 PIN = '1234'
 
@@ -110,7 +105,6 @@ class MainWindow(QMainWindow):
         self._breadcrumb = QLabel()
         self._breadcrumb.setFont(QFont('Segoe UI', 12))
         self._breadcrumb.setStyleSheet('color:#6b7280;')
-        self._set_breadcrumb('지도 뷰')
         hbox.addWidget(self._breadcrumb)
 
         hbox.addStretch(1)
@@ -170,8 +164,8 @@ class MainWindow(QMainWindow):
 
         self._sb_btns: dict[str, QPushButton] = {}
         for i, (key, icon, label) in enumerate(VIEWS):
-            # 로봇 ↔ 로그 사이 구분선
-            if i == 2:
+            # 예약 ↔ 로그 사이 구분선
+            if i == 3:
                 sep = QFrame()
                 sep.setFixedSize(30, 1)
                 sep.setStyleSheet('background:#334155; border:none;')
@@ -216,10 +210,10 @@ class MainWindow(QMainWindow):
         return self._stack
 
     def _make_view(self, key: str) -> QWidget:
-        if key == 'map':      return MapView(self.ros)
-        if key == 'robot':    return RobotView(self.ros)
-        if key == 'log':      return LogView(self.ros)
-        if key == 'settings': return SettingsView(self.ros)
+        if key == 'map':         return MapView(self.ros)
+        if key == 'robot':       return RobotView(self.ros)
+        if key == 'reservation': return ReservationView(self.ros)
+        if key == 'log':         return LogView(self.ros)
         return QLabel(key)
 
     # ── 뷰 전환 ──────────────────────────────────────────────────────

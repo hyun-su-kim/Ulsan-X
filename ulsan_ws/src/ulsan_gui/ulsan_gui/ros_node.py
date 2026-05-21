@@ -6,14 +6,17 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
-from std_msgs.msg import String
+from std_msgs.msg import String, Empty
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from sensor_msgs.msg import CompressedImage
 from nav_msgs.msg import OccupancyGrid
+try:
+    from limo_msgs.msg import LimoStatus as _LimoStatus
+    _LIMO_MSGS_OK = True
+except ImportError:
+    _LIMO_MSGS_OK = False
 
 from PyQt5.QtCore import QObject, pyqtSignal
-
-from wego_msgs.srv import WaypointCRUD
 
 
 class GuiSignals(QObject):
@@ -26,6 +29,8 @@ class GuiSignals(QObject):
     sig_camera_2  = pyqtSignal(bytes, str)
     sig_dest_1    = pyqtSignal(str)    # 현재 목적지 (limo1)
     sig_dest_2    = pyqtSignal(str)    # 현재 목적지 (limo2)
+    sig_battery_1 = pyqtSignal(float)  # 배터리 전압 (limo1)
+    sig_battery_2 = pyqtSignal(float)  # 배터리 전압 (limo2)
 
 
 # /map 토픽은 transient_local (latched)로 발행되므로 구독도 맞춰야 함
@@ -69,6 +74,11 @@ class RosNode(Node):
                                  lambda m: self._dest_cb('limo1', m), 10)
         self.create_subscription(String, '/limo2/goal_destination',
                                  lambda m: self._dest_cb('limo2', m), 10)
+        if _LIMO_MSGS_OK:
+            self.create_subscription(_LimoStatus, '/limo1/limo_status',
+                                     lambda m: self._battery_cb('limo1', m), 10)
+            self.create_subscription(_LimoStatus, '/limo2/limo_status',
+                                     lambda m: self._battery_cb('limo2', m), 10)
 
         # 발행
         self._cmd_vel_pubs = {
@@ -79,10 +89,13 @@ class RosNode(Node):
             'limo1': self.create_publisher(String, '/limo1/goal_destination', 10),
             'limo2': self.create_publisher(String, '/limo2/goal_destination', 10),
         }
-
-        self._wp_clients = {
-            'limo1': self.create_client(WaypointCRUD, '/waypoint_crud'),
-            'limo2': self.create_client(WaypointCRUD, '/waypoint_crud'),
+        self._pause_pubs = {
+            'limo1': self.create_publisher(Empty, '/limo1/pause', 10),
+            'limo2': self.create_publisher(Empty, '/limo2/pause', 10),
+        }
+        self._resume_pubs = {
+            'limo1': self.create_publisher(Empty, '/limo1/resume', 10),
+            'limo2': self.create_publisher(Empty, '/limo2/resume', 10),
         }
 
         self.get_logger().info('ulsan_gui ROS 노드 초기화 완료')
@@ -111,6 +124,10 @@ class RosNode(Node):
         self.latest_dest[robot] = msg.data
         (self.signals.sig_dest_1 if robot == 'limo1' else self.signals.sig_dest_2).emit(msg.data)
 
+    def _battery_cb(self, robot: str, msg) -> None:
+        sig = self.signals.sig_battery_1 if robot == 'limo1' else self.signals.sig_battery_2
+        sig.emit(msg.battery_voltage)
+
     # ── 발행 ─────────────────────────────────────────────────────────
 
     def publish_cmd_vel(self, robot: str, linear_x: float, angular_z: float) -> None:
@@ -124,35 +141,11 @@ class RosNode(Node):
         msg.data = destination_key
         self._goal_pubs[robot].publish(msg)
 
-    # ── Waypoint CRUD ─────────────────────────────────────────────────
+    def publish_pause(self, robot: str) -> None:
+        self._pause_pubs[robot].publish(Empty())
 
-    def call_waypoint_crud(self, action: str, key: str = '', label: str = '',
-                           x: float = 0.0, y: float = 0.0, yaw: float = 0.0,
-                           robot: str = 'limo1') -> dict:
-        client = self._wp_clients[robot]
-        if not client.wait_for_service(timeout_sec=0.3):
-            return {'success': False, 'message': '서비스 미연결', 'waypoints_json': '{}'}
-
-        req = WaypointCRUD.Request()
-        req.action = action
-        req.key    = key
-        req.label  = label
-        req.x      = x
-        req.y      = y
-        req.yaw    = yaw
-
-        future = client.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=3.0)
-
-        if future.result() is None:
-            return {'success': False, 'message': '서비스 응답 없음', 'waypoints_json': '{}'}
-
-        res = future.result()
-        return {
-            'success':        res.success,
-            'message':        res.message,
-            'waypoints_json': res.waypoints_json,
-        }
+    def publish_resume(self, robot: str) -> None:
+        self._resume_pubs[robot].publish(Empty())
 
     # ── 유틸 ─────────────────────────────────────────────────────────
 

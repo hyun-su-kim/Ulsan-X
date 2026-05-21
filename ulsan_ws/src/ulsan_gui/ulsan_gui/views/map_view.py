@@ -4,9 +4,9 @@ import requests
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QComboBox, QFrame, QSizePolicy,
-    QTableWidget, QTableWidgetItem, QHeaderView,
+    QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea,
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QThread, QPoint, pyqtSignal
 from PyQt5.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QPen, QBrush
 
 STATUS_COLOR = {
@@ -37,20 +37,11 @@ CARD_TITLE_STYLE = (
     'letter-spacing:0.5px; border:none;'
 )
 
-DEFAULT_DESTINATIONS = [
-    ('목적지 선택...', None),
-    ('classroom_1',            'classroom_1'),
-    ('classroom_2',            'classroom_2'),
-    ('classroom_3',            'classroom_3'),
-    ('classroom_4',            'classroom_4'),
-    ('classroom_5',            'classroom_5'),
-    ('counseling_1',           'counseling_1'),
-    ('counseling_2',           'counseling_2'),
-    ('intensive_counseling_1', 'intensive_counseling_1'),
-    ('intensive_counseling_2', 'intensive_counseling_2'),
-    ('counter',                'counter'),
-    ('home_robot1',            'home_robot1'),
-    ('home_robot2',            'home_robot2'),
+_DEST_KEYS = [
+    'classroom_1', 'classroom_2', 'classroom_3', 'classroom_4', 'classroom_5',
+    'counseling_1', 'counseling_2',
+    'intensive_counseling_1', 'intensive_counseling_2',
+    'counter', 'home_robot1', 'home_robot2',
 ]
 
 
@@ -70,7 +61,7 @@ class _FastApiChecker(QThread):
 # ── 맵 캔버스 ────────────────────────────────────────────────────────
 
 class MapCanvas(QWidget):
-    """OccupancyGrid + 로봇 마커 + 범례 + 줌 컨트롤."""
+    """OccupancyGrid + 로봇 마커 + 범례 + 줌/패닝 컨트롤."""
 
     def __init__(self):
         super().__init__()
@@ -84,15 +75,19 @@ class MapCanvas(QWidget):
         self._statuses: dict[str, str] = {'limo1': 'UNKNOWN', 'limo2': 'UNKNOWN'}
         self._robot_colors = {'limo1': QColor('#2563eb'), 'limo2': QColor('#d97706')}
 
+        # 줌/패닝 상태
+        self._zoom: float = 1.0
+        self._pan = QPoint(0, 0)
+        self._drag_pos = None
+        self.setCursor(Qt.OpenHandCursor)
+
         # ── 줌 컨트롤 (우하단 오버레이) ──
         ctrl_frame = QFrame(self)
-        ctrl_frame.setStyleSheet(
-            'background:transparent; border:none;'
-        )
+        ctrl_frame.setStyleSheet('background:transparent; border:none;')
         ctrl_vbox = QVBoxLayout(ctrl_frame)
         ctrl_vbox.setContentsMargins(0, 0, 0, 0)
         ctrl_vbox.setSpacing(4)
-        for sym in ('+', '−', '⟳'):
+        for sym, cb in (('+', self._zoom_in), ('−', self._zoom_out)):
             b = QPushButton(sym)
             b.setFixedSize(28, 28)
             b.setFont(QFont('Segoe UI', 13))
@@ -101,6 +96,7 @@ class MapCanvas(QWidget):
                 'background:white; border:1px solid #d1d5db; border-radius:6px;'
                 'color:#374151;'
             )
+            b.clicked.connect(lambda _, f=cb: f())
             ctrl_vbox.addWidget(b)
         self._ctrl_frame = ctrl_frame
 
@@ -151,17 +147,76 @@ class MapCanvas(QWidget):
             lh = self._leg_frame.sizeHint().height()
             self._leg_frame.setGeometry(10, 10, max(lw, 140), lh)
 
+    # ── 줌/패닝 ──────────────────────────────────────────────────────
+
+    def _zoom_in(self)  -> None: self._apply_zoom(1.25, self.rect().center())
+    def _zoom_out(self) -> None: self._apply_zoom(1/1.25, self.rect().center())
+
+    def _zoom_reset(self) -> None:
+        self._zoom = 1.0
+        self._pan  = QPoint(0, 0)
+        self.update()
+
+    def _apply_zoom(self, factor: float, cursor_pos) -> None:
+        new_zoom = max(0.3, min(10.0, self._zoom * factor))
+        if new_zoom == self._zoom:
+            return
+        wx, wy = self.width() / 2, self.height() / 2
+        cx, cy = cursor_pos.x(), cursor_pos.y()
+        ratio  = new_zoom / self._zoom
+        rel_x  = cx - wx - self._pan.x()
+        rel_y  = cy - wy - self._pan.y()
+        self._pan  = QPoint(int(cx - wx - rel_x * ratio),
+                            int(cy - wy - rel_y * ratio))
+        self._zoom = new_zoom
+        self.update()
+
+    def wheelEvent(self, e) -> None:
+        factor = 1.15 if e.angleDelta().y() > 0 else 1 / 1.15
+        self._apply_zoom(factor, e.pos())
+
+    def mousePressEvent(self, e) -> None:
+        if e.button() == Qt.LeftButton:
+            self._drag_pos = e.pos()
+            self.setCursor(Qt.ClosedHandCursor)
+
+    def mouseMoveEvent(self, e) -> None:
+        if self._drag_pos is not None:
+            self._pan += e.pos() - self._drag_pos
+            self._drag_pos = e.pos()
+            self.update()
+
+    def mouseReleaseEvent(self, e) -> None:
+        if e.button() == Qt.LeftButton:
+            self._drag_pos = None
+            self.setCursor(Qt.OpenHandCursor)
+
+    def mouseDoubleClickEvent(self, e) -> None:
+        if e.button() == Qt.LeftButton:
+            self._zoom_reset()
+
+    # ── 데이터 업데이트 ───────────────────────────────────────────────
+
     def update_map(self, msg) -> None:
+        import numpy as np
         info = msg.info
         w, h = info.width, info.height
-        data = msg.data
-        img = QImage(w, h, QImage.Format_RGB888)
-        for y in range(h):
-            for x in range(w):
-                v = data[y * w + x]
-                c = 200 if v == -1 else (255 if v == 0 else 0)
-                img.setPixel(x, h - 1 - y, QColor(c, c, c).rgb())
-        self._map_pixmap = QPixmap.fromImage(img)
+
+        arr = np.array(msg.data, dtype=np.int8).reshape(h, w)
+
+        # RGBA 4채널: free=밝은 배경, unknown=중간 회색, occupied=진한 벽
+        rgba = np.zeros((h, w, 4), dtype=np.uint8)
+        free     = arr == 0
+        unknown  = arr == -1
+        occupied = arr > 0
+
+        rgba[free]     = [242, 244, 246, 255]   # 밝은 회백색
+        rgba[unknown]  = [180, 185, 192, 255]   # 중간 회색
+        rgba[occupied] = [ 40,  44,  52, 255]   # 진한 벽
+
+        rgba = np.ascontiguousarray(np.flipud(rgba))
+        img = QImage(rgba.data, w, h, w * 4, QImage.Format_RGBA8888)
+        self._map_pixmap = QPixmap.fromImage(img.copy())
         self._map_info   = info
         self.update()
 
@@ -185,6 +240,7 @@ class MapCanvas(QWidget):
     def paintEvent(self, _) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
         w, h = self.width(), self.height()
 
         if self._map_pixmap is None:
@@ -193,20 +249,25 @@ class MapCanvas(QWidget):
             painter.drawText(self.rect(), Qt.AlignCenter, '/map 토픽 대기 중...')
             return
 
-        info  = self._map_info
-        scale = min(w / info.width, h / info.height)
-        draw_w = int(info.width  * scale)
-        draw_h = int(info.height * scale)
-        off_x  = (w - draw_w) // 2
-        off_y  = (h - draw_h) // 2
-        painter.drawPixmap(off_x, off_y, draw_w, draw_h, self._map_pixmap)
+        info       = self._map_info
+        base_scale = min(w / info.width, h / info.height)
+        eff_scale  = base_scale * self._zoom
+        draw_w     = int(info.width  * eff_scale)
+        draw_h     = int(info.height * eff_scale)
+        off_x      = (w - draw_w) // 2 + self._pan.x()
+        off_y      = (h - draw_h) // 2 + self._pan.y()
+
+        scaled_pm = self._map_pixmap.scaled(
+            draw_w, draw_h, Qt.IgnoreAspectRatio, Qt.SmoothTransformation
+        )
+        painter.drawPixmap(off_x, off_y, scaled_pm)
 
         for robot, pose in self._poses.items():
             if pose is None:
                 continue
             rx, ry, ryaw = pose
-            px = off_x + int((rx - info.origin.position.x) / info.resolution * scale)
-            py = off_y + draw_h - int((ry - info.origin.position.y) / info.resolution * scale)
+            px = off_x + int((rx - info.origin.position.x) / info.resolution * eff_scale)
+            py = off_y + draw_h - int((ry - info.origin.position.y) / info.resolution * eff_scale)
 
             color = self._robot_colors[robot]
             painter.save()
@@ -347,8 +408,8 @@ class MiniLogCard(QFrame):
         vbox.addWidget(title)
 
         self._table = QTableWidget()
-        self._table.setColumnCount(4)
-        self._table.setHorizontalHeaderLabels(['시각', '로봇', '내용', '유형'])
+        self._table.setColumnCount(3)
+        self._table.setHorizontalHeaderLabels(['시각', '유형', '내용'])
         self._table.horizontalHeader().setFont(QFont('Segoe UI', 9, QFont.Bold))
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self._table.setFont(QFont('Segoe UI', 9))
@@ -379,13 +440,12 @@ class MiniLogCard(QFrame):
     def _render(self, logs: list) -> None:
         self._table.setRowCount(len(logs))
         for row, log in enumerate(logs):
-            ts  = log.get('timestamp', '')
+            ts  = log.get('created_at', '')
             ts  = ts[-8:] if len(ts) >= 8 else ts
-            bot = log.get('robot', '').upper()
-            msg = log.get('message', '')
             typ = log.get('type', 'system')
+            msg = log.get('message', '')
             bg, fg = LOG_TYPE_COLOR.get(typ, ('#fff', '#374151'))
-            for col, text in enumerate([ts, bot, msg, typ]):
+            for col, text in enumerate([ts, typ, msg]):
                 item = QTableWidgetItem(text)
                 item.setForeground(QColor(fg))
                 item.setBackground(QColor(bg))
@@ -496,8 +556,9 @@ class MapView(QWidget):
             'border:1px solid #d1d5db; border-radius:6px; padding:5px 8px;'
             'background:#f9fafb; color:#374151;'
         )
-        for label, key in DEFAULT_DESTINATIONS:
-            self._dest_combo.addItem(label, userData=key)
+        self._dest_combo.addItem('목적지 선택...', userData=None)
+        for key in _DEST_KEYS:
+            self._dest_combo.addItem(key, userData=key)
         vbox.addWidget(self._dest_combo)
 
         send_btn = QPushButton('📤  goal_destination 발행')
@@ -523,8 +584,9 @@ class MapView(QWidget):
         title.setStyleSheet(CARD_TITLE_STYLE)
         vbox.addWidget(title)
 
-        row = QHBoxLayout()
-        row.setSpacing(6)
+        row1 = QHBoxLayout()
+        row1.setSpacing(6)
+
         pause_btn = QPushButton('⏸ 일시정지')
         pause_btn.setFixedHeight(34)
         pause_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
@@ -533,10 +595,25 @@ class MapView(QWidget):
             'background:#fef3c7; color:#b45309;'
             'border:1.5px solid #fcd34d; border-radius:6px;'
         )
-        pause_btn.clicked.connect(self._send_zero_vel)
-        row.addWidget(pause_btn)
+        pause_btn.clicked.connect(self._send_pause)
+        row1.addWidget(pause_btn)
 
-        stop_btn = QPushButton('🛑 임무중단')
+        resume_btn = QPushButton('▶ 재개')
+        resume_btn.setFixedHeight(34)
+        resume_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
+        resume_btn.setFocusPolicy(Qt.NoFocus)
+        resume_btn.setStyleSheet(
+            'background:#d1fae5; color:#065f46;'
+            'border:1.5px solid #6ee7b7; border-radius:6px;'
+        )
+        resume_btn.clicked.connect(self._send_resume)
+        row1.addWidget(resume_btn)
+        vbox.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.setSpacing(6)
+
+        stop_btn = QPushButton('🛑 임무중단 (홈 복귀)')
         stop_btn.setFixedHeight(34)
         stop_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
         stop_btn.setFocusPolicy(Qt.NoFocus)
@@ -544,31 +621,45 @@ class MapView(QWidget):
             'background:#fee2e2; color:#b91c1c;'
             'border:1.5px solid #fca5a5; border-radius:6px;'
         )
-        stop_btn.clicked.connect(self._send_zero_vel)
-        row.addWidget(stop_btn)
-        vbox.addLayout(row)
+        stop_btn.clicked.connect(self._send_abort_home)
+        row2.addWidget(stop_btn)
+        vbox.addLayout(row2)
+
         return card
 
     def _build_sys_card(self) -> QFrame:
         card = QFrame()
         card.setStyleSheet('background:#fff; border-radius:10px; border:1px solid #e5e7eb;')
-        vbox = QVBoxLayout(card)
-        vbox.setContentsMargins(14, 12, 14, 12)
-        vbox.setSpacing(0)
+        outer = QVBoxLayout(card)
+        outer.setContentsMargins(14, 12, 14, 12)
+        outer.setSpacing(6)
 
         title = QLabel('📡  시스템 상태')
         title.setFont(QFont('Segoe UI', 11, QFont.Bold))
         title.setStyleSheet(CARD_TITLE_STYLE)
-        vbox.addWidget(title)
-        vbox.addSpacing(6)
+        outer.addWidget(title)
+
+        # 스크롤 영역
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet('background:transparent;')
+
+        inner = QWidget()
+        inner.setStyleSheet('background:transparent;')
+        vbox = QVBoxLayout(inner)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
 
         self._sys_vals: dict[str, QLabel] = {}
         rows = [
-            ('limo1_conn', 'LIMO 1 연결',    f'● Domain {ROBOT_DOMAIN["limo1"]} 대기', '#9ca3af'),
-            ('limo2_conn', 'LIMO 2 연결',    f'● Domain {ROBOT_DOMAIN["limo2"]} 대기', '#9ca3af'),
-            ('fastapi',    'FastAPI 서버',    '● 확인 중', '#9ca3af'),
-            ('dispatcher', 'wego_dispatcher', '● 확인 중', '#9ca3af'),
-            ('traffic',    '충돌 방지',       '● 확인 중', '#9ca3af'),
+            ('limo1_conn', 'LIMO 1 연결',  f'● Domain {ROBOT_DOMAIN["limo1"]} 대기', '#9ca3af'),
+            ('limo2_conn', 'LIMO 2 연결',  f'● Domain {ROBOT_DOMAIN["limo2"]} 대기', '#9ca3af'),
+            ('map_server', '맵 서버',       '● 확인 중', '#9ca3af'),
+            ('fastapi',    'FastAPI',       '● 확인 중', '#9ca3af'),
+            ('dispatcher', '배차 노드',     '● 확인 중', '#9ca3af'),
+            ('traffic',    '충돌 방지',     '● 확인 중', '#9ca3af'),
         ]
         for key, label, init_txt, init_color in rows:
             sep = QFrame()
@@ -577,8 +668,10 @@ class MapView(QWidget):
             vbox.addWidget(sep)
 
             row_w = QWidget()
+            row_w.setStyleSheet('background:transparent;')
             rh = QHBoxLayout(row_w)
-            rh.setContentsMargins(0, 6, 0, 6)
+            rh.setContentsMargins(0, 5, 0, 5)
+            rh.setSpacing(8)
 
             lbl = QLabel(label)
             lbl.setFont(QFont('Segoe UI', 11))
@@ -589,12 +682,15 @@ class MapView(QWidget):
             val = QLabel(init_txt)
             val.setFont(QFont('Segoe UI', 11, QFont.Bold))
             val.setStyleSheet(f'color:{init_color}; border:none;')
+            val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             rh.addWidget(val)
 
             self._sys_vals[key] = val
             vbox.addWidget(row_w)
 
         vbox.addStretch()
+        scroll.setWidget(inner)
+        outer.addWidget(scroll, 1)
         return card
 
     # ── 시그널 연결 ───────────────────────────────────────────────────
@@ -610,6 +706,10 @@ class MapView(QWidget):
         self.ros.signals.sig_dest_1.connect(self._card1.update_destination)
         self.ros.signals.sig_dest_2.connect(self._card2.update_destination)
 
+        # spin_thread가 MainWindow 생성 전에 이미 /map을 수신했을 경우 즉시 렌더링
+        if self.ros.latest_map is not None:
+            self._canvas.update_map(self.ros.latest_map)
+
     # ── 동작 ─────────────────────────────────────────────────────────
 
     def _select_robot(self, robot: str) -> None:
@@ -622,9 +722,15 @@ class MapView(QWidget):
         if key:
             self.ros.publish_goal(self._selected_robot, key)
 
-    def _send_zero_vel(self) -> None:
-        for robot in ('limo1', 'limo2'):
-            self.ros.publish_cmd_vel(robot, 0.0, 0.0)
+    def _send_pause(self) -> None:
+        self.ros.publish_pause(self._selected_robot)
+
+    def _send_resume(self) -> None:
+        self.ros.publish_resume(self._selected_robot)
+
+    def _send_abort_home(self) -> None:
+        home_key = 'home_robot1' if self._selected_robot == 'limo1' else 'home_robot2'
+        self.ros.publish_goal(self._selected_robot, home_key)
 
     def _check_connections(self) -> None:
         # limo 연결 상태
@@ -638,6 +744,16 @@ class MapView(QWidget):
             else:
                 val.setText(f'● Domain {domain} 끊김')
                 val.setStyleSheet('color:#ef4444; border:none;')
+
+        # 맵 서버 — /map 수신 여부로 판단
+        val = self._sys_vals['map_server']
+        if self.ros.latest_map is not None:
+            w, h = self.ros.latest_map.info.width, self.ros.latest_map.info.height
+            val.setText(f'● {w}×{h} 수신')
+            val.setStyleSheet('color:#059669; border:none;')
+        else:
+            val.setText('● /map 대기 중')
+            val.setStyleSheet('color:#ef4444; border:none;')
 
         # FastAPI 비동기 핑
         if not hasattr(self, '_api_checker') or not self._api_checker.isRunning():
@@ -654,10 +770,10 @@ class MapView(QWidget):
             ):
                 val = self._sys_vals[key]
                 if node_name in node_names:
-                    val.setText(f'● {node_name} 실행 중')
+                    val.setText('● 실행 중')
                     val.setStyleSheet('color:#059669; border:none;')
                 else:
-                    val.setText(f'● {node_name} 미실행')
+                    val.setText('● 미실행')
                     val.setStyleSheet('color:#ef4444; border:none;')
         except Exception:
             pass

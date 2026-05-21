@@ -89,6 +89,15 @@ def get_full_slots(db: Session, target_date: date):
     return [slot for slot, count in counts if count >= 4]
 
 
+def get_all_reservations(db: Session):
+    """전체 예약 이력 조회 (관제 GUI용) — 날짜 내림차순, 시간대 오름차순."""
+    return (
+        db.query(models.Reservation)
+        .order_by(models.Reservation.date.desc(), models.Reservation.time_slot)
+        .all()
+    )
+
+
 def get_today_reservations(db: Session, today: date):
     """
     오늘 날짜 예약 전체 조회 (관제 GUI용)

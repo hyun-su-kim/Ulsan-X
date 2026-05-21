@@ -1,4 +1,7 @@
 import time
+import threading
+import urllib.request
+import json
 
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -17,25 +20,106 @@ STATUS_BG = {
     'RETURNING': '#eff6ff', 'WAITING': '#faf5ff', 'UNKNOWN': '#f8fafc',
 }
 
+_BATT_V_MAX = 12.6
+_BATT_V_MIN = 9.0
+
+def _voltage_to_pct(voltage: float) -> float:
+    pct = (voltage - _BATT_V_MIN) / (_BATT_V_MAX - _BATT_V_MIN) * 100.0
+    return max(0.0, min(100.0, pct))
+
+
 TELEOP_KEYS = {
-    Qt.Key_I:     (1,  0),
-    Qt.Key_K:     (0,  0),
-    Qt.Key_Comma: (-1, 0),
-    Qt.Key_J:     (0,  1),
-    Qt.Key_L:     (0, -1),
     Qt.Key_U:     (1,  1),
+    Qt.Key_I:     (1,  0),
     Qt.Key_O:     (1, -1),
+    Qt.Key_J:     (0,  1),
+    Qt.Key_K:     (0,  0),
+    Qt.Key_L:     (0, -1),
     Qt.Key_M:     (-1, 1),
+    Qt.Key_Comma: (-1, 0),
     Qt.Key_Period:(-1,-1),
-    Qt.Key_Space: (0,  0),
-    Qt.Key_Up:    (1,  0),
-    Qt.Key_Down:  (-1, 0),
-    Qt.Key_Left:  (0,  1),
-    Qt.Key_Right: (0, -1),
 }
 
 CARD_STYLE  = 'background:#fff; border-radius:10px; border:1px solid #e5e7eb;'
 LABEL_STYLE = 'color:#111827; border:none;'
+
+_DPAD_KEY_HINTS: dict[tuple, str] = {
+    (1,  1):  'U',
+    (1,  0):  'I',
+    (1, -1):  'O',
+    (0,  1):  'J',
+    (0,  0):  'K',
+    (0, -1):  'L',
+    (-1, 1):  'M',
+    (-1, 0):  ',',
+    (-1,-1):  '.',
+}
+
+
+class _DpadBtn(QFrame):
+    """방향 기호 + 키 힌트를 함께 표시하는 D-pad 버튼."""
+
+    def __init__(self, sym: str, key_hint: str, is_diag: bool, on_press, on_release):
+        super().__init__()
+        self._on_press   = on_press
+        self._on_release = on_release
+        self._is_diag    = is_diag
+        self.setFixedSize(52, 50)
+        self.setCursor(Qt.PointingHandCursor)
+
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(2, 5, 2, 4)
+        vbox.setSpacing(0)
+
+        sym_lbl = QLabel(sym)
+        sym_lbl.setAlignment(Qt.AlignCenter)
+        sym_lbl.setFont(QFont('Segoe UI', 13))
+        sym_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        vbox.addWidget(sym_lbl)
+
+        key_lbl = QLabel(key_hint)
+        key_lbl.setAlignment(Qt.AlignCenter)
+        key_lbl.setFont(QFont('Segoe UI', 7))
+        key_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        vbox.addWidget(key_lbl)
+
+        self._sym_lbl = sym_lbl
+        self._key_lbl = key_lbl
+        self._teleop_enabled = False
+        self._apply_style(False)
+
+    def set_teleop_enabled(self, enabled: bool) -> None:
+        self._teleop_enabled = enabled
+        self._apply_style(False)
+        self.setCursor(Qt.PointingHandCursor if enabled else Qt.ArrowCursor)
+
+    def _apply_style(self, pressed: bool) -> None:
+        if not self._teleop_enabled:
+            bg, border = '#f9fafb', '#e5e7eb'
+            sym_c, key_c = '#d1d5db', '#e5e7eb'
+        elif pressed:
+            bg, border = '#dbeafe', '#93c5fd'
+            sym_c, key_c = '#1e40af', '#3b82f6'
+        else:
+            bg, border = '#f3f4f6', '#d1d5db'
+            sym_c, key_c = '#374151', '#6b7280'
+        self.setStyleSheet(
+            f'QFrame {{ background:{bg}; border:1px solid {border}; border-radius:7px; }}'
+        )
+        self._sym_lbl.setStyleSheet(f'color:{sym_c}; background:transparent; border:none;')
+        self._key_lbl.setStyleSheet(f'color:{key_c}; background:transparent; border:none;')
+
+    def mousePressEvent(self, _) -> None:
+        if not self._teleop_enabled:
+            return
+        self._apply_style(True)
+        self._on_press()
+
+    def mouseReleaseEvent(self, _) -> None:
+        if not self._teleop_enabled:
+            return
+        self._apply_style(False)
+        self._on_release()
 
 
 # ── 배터리 원형 게이지 ────────────────────────────────────────────────
@@ -171,18 +255,21 @@ class TeleopCard(QFrame):
 
     def __init__(self, robot: str, ros_node):
         super().__init__()
-        self.robot = robot
-        self.ros   = ros_node
+        self.robot        = robot
+        self.ros          = ros_node
         self._speed_scale = 0.3
+        self._manual_mode = False
         self.setStyleSheet(CARD_STYLE)
         self.setFocusPolicy(Qt.StrongFocus)
         self._build_ui()
 
     def _build_ui(self) -> None:
+        self._dpad_btns: dict[tuple, '_DpadBtn'] = {}
         vbox = QVBoxLayout(self)
         vbox.setContentsMargins(14, 12, 14, 12)
         vbox.setSpacing(8)
 
+        # 헤더
         header = QHBoxLayout()
         title = QLabel('🕹 수동 조작')
         title.setFont(QFont('Segoe UI', 11, QFont.Bold))
@@ -195,8 +282,17 @@ class TeleopCard(QFrame):
         header.addWidget(sub)
         vbox.addLayout(header)
 
+        # 모드 전환 버튼
+        self._mode_btn = QPushButton('수동 조작 전환')
+        self._mode_btn.setFixedHeight(34)
+        self._mode_btn.setFont(QFont('Segoe UI', 10))
+        self._mode_btn.setFocusPolicy(Qt.NoFocus)
+        self._mode_btn.clicked.connect(self._toggle_manual_mode)
+        self._apply_mode_style()
+        vbox.addWidget(self._mode_btn)
+
         # D-pad (3×3, 대각선 포함)
-        grid = [['↖', '▲', '↗'], ['◀', '■', '▶'], ['↙', '▼', '↘']]
+        grid = [['↖', '↑', '↗'], ['←', '■', '→'], ['↙', '↓', '↘']]
         acts = [[(1,1),(1,0),(1,-1)],[(0,1),(0,0),(0,-1)],[(-1,1),(-1,0),(-1,-1)]]
         dpad_w = QWidget()
         dpad_l = QVBoxLayout(dpad_w)
@@ -206,20 +302,15 @@ class TeleopCard(QFrame):
             row_h = QHBoxLayout()
             row_h.setSpacing(5)
             for c_i, sym in enumerate(row):
-                btn = QPushButton(sym if sym != '■' else '정지')
-                btn.setFixedSize(40, 40)
-                btn.setFont(QFont('Segoe UI', 14 if sym != '■' else 10))
-                is_diag = sym in ('↖', '↗', '↙', '↘')
-                btn.setStyleSheet(
-                    'background:#e9edf2; border:1px solid #d1d5db;'
-                    'border-radius:7px; color:#9ca3af;'
-                    if is_diag else
-                    'background:#f3f4f6; border:1px solid #d1d5db;'
-                    'border-radius:7px; color:#374151;'
+                act      = acts[r_i][c_i]
+                is_diag  = sym in ('↖', '↗', '↙', '↘')
+                key_hint = _DPAD_KEY_HINTS[act]
+                btn = _DpadBtn(
+                    sym, key_hint, is_diag,
+                    on_press=lambda lin=act[0], ang=act[1]: self._send(lin, ang),
+                    on_release=lambda: self._send(0, 0),
                 )
-                act = acts[r_i][c_i]
-                btn.pressed.connect(lambda lin=act[0], ang=act[1]: self._send(lin, ang))
-                btn.released.connect(lambda: self._send(0, 0))
+                self._dpad_btns[act] = btn
                 row_h.addWidget(btn)
             dpad_l.addLayout(row_h)
         vbox.addWidget(dpad_w, alignment=Qt.AlignHCenter)
@@ -244,11 +335,29 @@ class TeleopCard(QFrame):
         speed_row.addWidget(self._speed_val_lbl)
         vbox.addLayout(speed_row)
 
-        hint = QLabel('u i o / j k l / m , . · 방향키 · Space=정지')
-        hint.setFont(QFont('Segoe UI', 9))
-        hint.setAlignment(Qt.AlignCenter)
-        hint.setStyleSheet('color:#9ca3af; border:none;')
-        vbox.addWidget(hint)
+    def _toggle_manual_mode(self) -> None:
+        self._manual_mode = not self._manual_mode
+        if self._manual_mode:
+            self.ros.publish_pause(self.robot)
+        else:
+            self._send(0, 0)
+            self.ros.publish_resume(self.robot)
+        self._apply_mode_style()
+        for btn in self._dpad_btns.values():
+            btn.set_teleop_enabled(self._manual_mode)
+
+    def _apply_mode_style(self) -> None:
+        if self._manual_mode:
+            self._mode_btn.setText('자율주행 복귀')
+            self._mode_btn.setStyleSheet(
+                'background:#1e40af; color:#fff; border:none; border-radius:6px;'
+            )
+        else:
+            self._mode_btn.setText('수동 조작 전환')
+            self._mode_btn.setStyleSheet(
+                'background:#f1f5f9; color:#6b7280;'
+                'border:1px solid #e5e7eb; border-radius:6px;'
+            )
 
     def _on_speed_change(self, val: int) -> None:
         self._speed_scale = val / 10.0
@@ -264,17 +373,31 @@ class TeleopCard(QFrame):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.isAutoRepeat():
             return
+        if not self._manual_mode:
+            super().keyPressEvent(event)
+            return
         act = TELEOP_KEYS.get(event.key())
-        if act:
+        if act is not None:
             self._send(act[0], act[1])
+            btn = self._dpad_btns.get(act)
+            if btn:
+                btn._apply_style(True)
         else:
             super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         if event.isAutoRepeat():
             return
-        if event.key() in TELEOP_KEYS and event.key() not in (Qt.Key_K, Qt.Key_Space):
-            self._send(0, 0)
+        if not self._manual_mode:
+            super().keyReleaseEvent(event)
+            return
+        act = TELEOP_KEYS.get(event.key())
+        if act is not None:
+            if event.key() != Qt.Key_K:
+                self._send(0, 0)
+            btn = self._dpad_btns.get(act)
+            if btn:
+                btn._apply_style(False)
         else:
             super().keyReleaseEvent(event)
 
@@ -360,11 +483,7 @@ class RobotPanel(QWidget):
 
         vbox.addWidget(self._mission_box)
 
-        # 배터리 원형 게이지 + 나머지 메트릭 2×2
-        row1 = QHBoxLayout()
-        row1.setSpacing(6)
-
-        # 배터리 박스 (원형 게이지 사용)
+        # 배터리 게이지 (전체 폭)
         batt_box = QFrame()
         batt_box.setStyleSheet('background:#f8fafc; border-radius:8px; border:1px solid #f1f5f9;')
         batt_vbox = QVBoxLayout(batt_box)
@@ -376,18 +495,15 @@ class RobotPanel(QWidget):
         batt_vbox.addWidget(batt_lbl)
         self._batt_gauge = BatteryGauge()
         batt_vbox.addWidget(self._batt_gauge, 1)
+        vbox.addWidget(batt_box)
 
-        self._metric_task = _metric_box('금일 임무', '--', '건')
-        row1.addWidget(batt_box)
-        row1.addWidget(self._metric_task)
-        vbox.addLayout(row1)
-
+        # 금일 임무 수 + 완료 수
         row2 = QHBoxLayout()
         row2.setSpacing(6)
-        self._metric_dist   = _metric_box('금일 주행', '--', 'm')
-        self._metric_uptime = _metric_box('가동 시간', '--', '')
-        row2.addWidget(self._metric_dist)
-        row2.addWidget(self._metric_uptime)
+        self._metric_task_total = _metric_box('금일 임무', '--', '건')
+        self._metric_task_done  = _metric_box('완료',     '--', '건')
+        row2.addWidget(self._metric_task_total)
+        row2.addWidget(self._metric_task_done)
         vbox.addLayout(row2)
 
         vbox.addStretch()
@@ -467,14 +583,14 @@ class RobotPanel(QWidget):
 
         if self.robot == 'limo1':
             self.ros.signals.sig_status_1.connect(self._on_status)
-            self.ros.signals.sig_pose_1.connect(self._on_pose)
             self.ros.signals.sig_camera_1.connect(self._on_camera)
             self.ros.signals.sig_dest_1.connect(self._on_dest)
+            self.ros.signals.sig_battery_1.connect(self._on_battery)
         else:
             self.ros.signals.sig_status_2.connect(self._on_status)
-            self.ros.signals.sig_pose_2.connect(self._on_pose)
             self.ros.signals.sig_camera_2.connect(self._on_camera)
             self.ros.signals.sig_dest_2.connect(self._on_dest)
+            self.ros.signals.sig_battery_2.connect(self._on_battery)
 
         cam_timer = QTimer(self)
         cam_timer.timeout.connect(self._check_cam_live)
@@ -519,8 +635,12 @@ class RobotPanel(QWidget):
         if dest:
             self._mission_lbl_dest.setText(dest)
 
-    def _on_pose(self, msg) -> None:
-        pass
+    def _on_battery(self, voltage: float) -> None:
+        self._batt_gauge.set_value(_voltage_to_pct(voltage))
+
+    def set_today_tasks(self, total: int, done: int) -> None:
+        self._metric_task_total._val.setText(str(total))
+        self._metric_task_done._val.setText(str(done))
 
     def _add_event(self, msg: str) -> None:
         from datetime import datetime
@@ -584,6 +704,7 @@ def _metric_box(label: str, value: str, unit: str) -> QFrame:
     val_row.addStretch()
     vbox.addLayout(val_row)
 
+    box._val = val_lbl
     return box
 
 
@@ -598,6 +719,11 @@ class RobotView(QWidget):
 
         ros_node.signals.sig_status_1.connect(lambda s: self._on_tab_status('limo1', s))
         ros_node.signals.sig_status_2.connect(lambda s: self._on_tab_status('limo2', s))
+
+        self._task_timer = QTimer(self)
+        self._task_timer.timeout.connect(self._fetch_today_tasks)
+        self._task_timer.start(30_000)
+        self._fetch_today_tasks()
 
     def _build_ui(self, ros_node) -> None:
         vbox = QVBoxLayout(self)
@@ -661,6 +787,25 @@ class RobotView(QWidget):
         vbox.addWidget(self._stack, 1)
 
         self._select('limo1')
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._fetch_today_tasks()
+
+    def _fetch_today_tasks(self) -> None:
+        def _do():
+            try:
+                with urllib.request.urlopen(
+                    'http://localhost:8000/reservations/today', timeout=3
+                ) as resp:
+                    data = json.loads(resp.read())
+                total = len(data)
+                done  = sum(1 for r in data if r.get('status') == 'COMPLETED')
+                for panel in self._panels.values():
+                    panel.set_today_tasks(total, done)
+            except Exception:
+                pass
+        threading.Thread(target=_do, daemon=True).start()
 
     def _on_tab_status(self, robot: str, status: str) -> None:
         self._statuses[robot] = status
