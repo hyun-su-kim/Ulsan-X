@@ -16,6 +16,7 @@ try:
 except ImportError:
     _LIMO_MSGS_OK = False
 
+
 from PyQt5.QtCore import QObject, pyqtSignal
 
 
@@ -31,6 +32,7 @@ class GuiSignals(QObject):
     sig_dest_2    = pyqtSignal(str)    # 현재 목적지 (limo2)
     sig_battery_1 = pyqtSignal(float)  # 배터리 전압 (limo1)
     sig_battery_2 = pyqtSignal(float)  # 배터리 전압 (limo2)
+    sig_gui_log   = pyqtSignal(str, str, str)  # (log_type, robot_label, message)
 
 
 # /map 토픽은 transient_local (latched)로 발행되므로 구독도 맞춰야 함
@@ -49,6 +51,7 @@ class RosNode(Node):
         self.signals = GuiSignals()
 
         self.latest_status: dict[str, str]    = {'limo1': 'UNKNOWN', 'limo2': 'UNKNOWN'}
+        self._prev_status:  dict[str, str]    = {'limo1': '',        'limo2': ''}
         self.latest_pose:   dict[str, object] = {'limo1': None,      'limo2': None}
         self.latest_dest:   dict[str, str]    = {'limo1': '',        'limo2': ''}
         self.latest_map:    OccupancyGrid | None = None
@@ -106,10 +109,28 @@ class RosNode(Node):
 
     # ── 구독 콜백 ────────────────────────────────────────────────────
 
+    _STATUS_LOG_TYPE = {
+        'IDLE': 'system', 'BUSY': 'mission_start',
+        'RETURNING': 'mission_complete', 'WAITING': 'waiting',
+        'ERROR': 'mission_fail', 'UNKNOWN': 'system',
+    }
+
     def _status_cb(self, robot: str, msg: String) -> None:
         self.latest_status[robot] = msg.data
         self._last_recv[robot] = time.time()
         (self.signals.sig_status_1 if robot == 'limo1' else self.signals.sig_status_2).emit(msg.data)
+
+        if msg.data != self._prev_status[robot]:
+            label = 'LIMO 1' if robot == 'limo1' else 'LIMO 2'
+            prev  = self._prev_status[robot]
+            if not prev:
+                log_msg  = f'연결됨 ({msg.data})'
+                log_type = 'system'
+            else:
+                log_msg  = msg.data
+                log_type = self._STATUS_LOG_TYPE.get(msg.data, 'system')
+            self.signals.sig_gui_log.emit(log_type, label, log_msg)
+            self._prev_status[robot] = msg.data
 
     def _pose_cb(self, robot: str, msg: PoseWithCovarianceStamped) -> None:
         self.latest_pose[robot] = msg

@@ -337,11 +337,14 @@ class TeleopCard(QFrame):
 
     def _toggle_manual_mode(self) -> None:
         self._manual_mode = not self._manual_mode
+        label = 'LIMO 1' if self.robot == 'limo1' else 'LIMO 2'
         if self._manual_mode:
             self.ros.publish_pause(self.robot)
+            self.ros.signals.sig_gui_log.emit('system', label, '수동조작 전환')
         else:
             self._send(0, 0)
             self.ros.publish_resume(self.robot)
+            self.ros.signals.sig_gui_log.emit('system', label, '자율주행 복귀')
         self._apply_mode_style()
         for btn in self._dpad_btns.values():
             btn.set_teleop_enabled(self._manual_mode)

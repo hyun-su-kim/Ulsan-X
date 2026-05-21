@@ -1,9 +1,10 @@
 import math
+from datetime import datetime
 
 import requests
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QPushButton, QComboBox, QFrame, QSizePolicy,
+    QPushButton, QFrame, QSizePolicy,
     QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea,
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, QPoint, pyqtSignal
@@ -39,13 +40,6 @@ CARD_TITLE_STYLE = (
     'font-size:11px; font-weight:600; color:#6b7280;'
     'letter-spacing:0.5px; border:none;'
 )
-
-_DEST_KEYS = [
-    'classroom_1', 'classroom_2', 'classroom_3', 'classroom_4', 'classroom_5',
-    'counseling_1', 'counseling_2',
-    'intensive_counseling_1', 'intensive_counseling_2',
-    'counter', 'home_robot1', 'home_robot2',
-]
 
 
 # ── FastAPI 비동기 체크 스레드 ────────────────────────────────────────
@@ -381,23 +375,13 @@ class RobotStatusCard(QFrame):
 
 
 
-# ── 미니 로그 fetch 스레드 ────────────────────────────────────────────
-
-class _LogFetch(QThread):
-    done = pyqtSignal(list)
-
-    def run(self) -> None:
-        try:
-            r = requests.get('http://localhost:8000/logs', timeout=2)
-            if r.ok:
-                self.done.emit(r.json()[-8:])
-        except Exception:
-            pass
-
-
-# ── 미니 미션 로그 카드 ───────────────────────────────────────────────
+# ── 미니 이벤트 로그 카드 ─────────────────────────────────────────────
 
 class MiniLogCard(QFrame):
+    """GUI 이벤트(버튼 조작, 상태 전이)를 실시간으로 표시하는 로컬 로그."""
+
+    _MAX_ROWS = 50
+
     def __init__(self):
         super().__init__()
         self.setStyleSheet('background:#fff; border-radius:10px; border:1px solid #e5e7eb;')
@@ -405,15 +389,17 @@ class MiniLogCard(QFrame):
         vbox.setContentsMargins(14, 12, 14, 10)
         vbox.setSpacing(6)
 
-        title = QLabel('📋 미션 로그')
+        title = QLabel('📋 이벤트 로그')
         title.setFont(QFont('Segoe UI', 11, QFont.Bold))
         title.setStyleSheet(CARD_TITLE_STYLE)
         vbox.addWidget(title)
 
         self._table = QTableWidget()
         self._table.setColumnCount(3)
-        self._table.setHorizontalHeaderLabels(['시각', '유형', '내용'])
+        self._table.setHorizontalHeaderLabels(['시각', '로봇', '내용'])
         self._table.horizontalHeader().setFont(QFont('Segoe UI', 9, QFont.Bold))
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self._table.setFont(QFont('Segoe UI', 9))
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -421,7 +407,8 @@ class MiniLogCard(QFrame):
         self._table.verticalHeader().setVisible(False)
         self._table.setShowGrid(False)
         self._table.setAlternatingRowColors(True)
-        self._table.verticalHeader().setDefaultSectionSize(22)
+        self._table.setWordWrap(True)
+        self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self._table.setStyleSheet(
             'QTableWidget { border:none; background:#fff; }'
             'QHeaderView::section { background:#f8fafc; border:none;'
@@ -430,29 +417,19 @@ class MiniLogCard(QFrame):
         )
         vbox.addWidget(self._table, 1)
 
-        timer = QTimer(self)
-        timer.timeout.connect(self._fetch)
-        timer.start(5000)
-        self._fetch()
-
-    def _fetch(self) -> None:
-        self._thread = _LogFetch()
-        self._thread.done.connect(self._render)
-        self._thread.start()
-
-    def _render(self, logs: list) -> None:
-        self._table.setRowCount(len(logs))
-        for row, log in enumerate(logs):
-            ts  = log.get('created_at', '')
-            ts  = ts[-8:] if len(ts) >= 8 else ts
-            typ = log.get('type', 'system')
-            msg = log.get('message', '')
-            bg, fg = LOG_TYPE_COLOR.get(typ, ('#fff', '#374151'))
-            for col, text in enumerate([ts, typ, msg]):
-                item = QTableWidgetItem(text)
-                item.setForeground(QColor(fg))
-                item.setBackground(QColor(bg))
-                self._table.setItem(row, col, item)
+    def add_log(self, log_type: str, robot: str, message: str) -> None:
+        ts = datetime.now().strftime('%H:%M:%S')
+        bg, fg = LOG_TYPE_COLOR.get(log_type, ('#fff', '#374151'))
+        row = self._table.rowCount()
+        self._table.insertRow(row)
+        for col, text in enumerate([ts, robot, message]):
+            item = QTableWidgetItem(text)
+            item.setForeground(QColor(fg))
+            item.setBackground(QColor(bg))
+            self._table.setItem(row, col, item)
+        self._table.scrollToBottom()
+        while self._table.rowCount() > self._MAX_ROWS:
+            self._table.removeRow(0)
 
 
 # ── 메인 뷰 ──────────────────────────────────────────────────────────
@@ -521,24 +498,23 @@ class MapView(QWidget):
         right_vbox = QVBoxLayout(right)
         right_vbox.setContentsMargins(0, 0, 0, 0)
         right_vbox.setSpacing(8)
-        right_vbox.addWidget(self._build_mission_card())
         right_vbox.addWidget(self._build_emergency_card())
         right_vbox.addWidget(self._build_sys_card(), 1)
         hbox.addWidget(right)
 
-    def _build_mission_card(self) -> QFrame:
+    def _build_emergency_card(self) -> QFrame:
         card = QFrame()
         card.setStyleSheet('background:#fff; border-radius:10px; border:1px solid #e5e7eb;')
         vbox = QVBoxLayout(card)
         vbox.setContentsMargins(14, 12, 14, 12)
         vbox.setSpacing(8)
 
-        title = QLabel('🎯  수동 임무 발행')
+        title = QLabel('⚠️  긴급 제어')
         title.setFont(QFont('Segoe UI', 11, QFont.Bold))
         title.setStyleSheet(CARD_TITLE_STYLE)
         vbox.addWidget(title)
 
-        # 로봇 토글 버튼 (목업의 .rsel-btn)
+        # 로봇 선택 토글
         toggle_row = QHBoxLayout()
         toggle_row.setSpacing(6)
         self._rsel_btns: dict[str, QPushButton] = {}
@@ -552,40 +528,6 @@ class MapView(QWidget):
             self._rsel_btns[robot_id] = btn
             toggle_row.addWidget(btn)
         vbox.addLayout(toggle_row)
-
-        self._dest_combo = QComboBox()
-        self._dest_combo.setFont(QFont('Segoe UI', 11))
-        self._dest_combo.setStyleSheet(
-            'border:1px solid #d1d5db; border-radius:6px; padding:5px 8px;'
-            'background:#f9fafb; color:#374151;'
-        )
-        self._dest_combo.addItem('목적지 선택...', userData=None)
-        for key in _DEST_KEYS:
-            self._dest_combo.addItem(key, userData=key)
-        vbox.addWidget(self._dest_combo)
-
-        send_btn = QPushButton('📤  goal_destination 발행')
-        send_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
-        send_btn.setFixedHeight(34)
-        send_btn.setFocusPolicy(Qt.NoFocus)
-        send_btn.setStyleSheet(
-            'background:#1e40af; color:#fff; border-radius:6px; border:none;'
-        )
-        send_btn.clicked.connect(self._send_mission)
-        vbox.addWidget(send_btn)
-        return card
-
-    def _build_emergency_card(self) -> QFrame:
-        card = QFrame()
-        card.setStyleSheet('background:#fff; border-radius:10px; border:1px solid #e5e7eb;')
-        vbox = QVBoxLayout(card)
-        vbox.setContentsMargins(14, 12, 14, 12)
-        vbox.setSpacing(8)
-
-        title = QLabel('⚠️  긴급 제어')
-        title.setFont(QFont('Segoe UI', 11, QFont.Bold))
-        title.setStyleSheet(CARD_TITLE_STYLE)
-        vbox.addWidget(title)
 
         row1 = QHBoxLayout()
         row1.setSpacing(6)
@@ -708,8 +650,8 @@ class MapView(QWidget):
         self.ros.signals.sig_map.connect(self._canvas.update_map)
         self.ros.signals.sig_dest_1.connect(self._card1.update_destination)
         self.ros.signals.sig_dest_2.connect(self._card2.update_destination)
+        self.ros.signals.sig_gui_log.connect(self._mini_log.add_log)
 
-        # spin_thread가 MainWindow 생성 전에 이미 /map을 수신했을 경우 즉시 렌더링
         if self.ros.latest_map is not None:
             self._canvas.update_map(self.ros.latest_map)
 
@@ -720,19 +662,20 @@ class MapView(QWidget):
         for r, btn in self._rsel_btns.items():
             btn.setStyleSheet(self._rsel_style(r == robot))
 
-    def _send_mission(self) -> None:
-        key = self._dest_combo.currentData()
-        if key:
-            self.ros.publish_goal(self._selected_robot, key)
-
     def _send_pause(self) -> None:
+        label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_pause(self._selected_robot)
+        self.ros.signals.sig_gui_log.emit('waiting', label, '일시정지')
 
     def _send_resume(self) -> None:
+        label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_resume(self._selected_robot)
+        self.ros.signals.sig_gui_log.emit('system', label, '재개')
 
     def _send_abort_home(self) -> None:
+        label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_abort(self._selected_robot)
+        self.ros.signals.sig_gui_log.emit('mission_fail', label, '임무중단')
 
     def _check_connections(self) -> None:
         # limo 연결 상태
