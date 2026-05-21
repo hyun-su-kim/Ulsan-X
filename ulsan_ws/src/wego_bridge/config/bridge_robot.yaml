@@ -24,7 +24,7 @@ topics:
     remap: /ROBOT_NAME/robot_status   # wego_traffic, wego_dispatcher가 구독
 
   /limo_status:
-    type: limo_msgs/msg/LimoStatus
+    type: wego_msgs/msg/LimoStatus
     from_domain: ROBOT_DOMAIN
     to_domain: 5
     remap: /ROBOT_NAME/limo_status    # ulsan_gui 배터리 표시용
@@ -47,6 +47,12 @@ topics:
     from_domain: 5
     to_domain: ROBOT_DOMAIN
     remap: /goal_destination          # wego_dispatcher → wego_behaviour
+
+  /ROBOT_NAME/abort:
+    type: std_msgs/msg/Empty
+    from_domain: 5
+    to_domain: ROBOT_DOMAIN
+    remap: /abort                     # ulsan_gui → wego_behaviour
 
   /ROBOT_NAME/speak_text:
     type: std_msgs/msg/String

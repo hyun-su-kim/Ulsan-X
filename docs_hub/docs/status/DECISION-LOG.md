@@ -4,7 +4,44 @@
 
 ---
 
-### DEC-031: 홈 출발 시 Failed to make progress — PoseProgressChecker 교체 (미적용)
+### DEC-033: GUIDING 실패 처리 — FAILED 상태 추가 (done 2026-05-21)
+- **Context**: 현재 GuidingState에서 Nav2가 SUCCEEDED가 아닌 결과를 반환하면 바로 IDLE로 전환. 두 가지 문제: ① 실패한 위치(복도 중간 등)에서 IDLE이 되어 dispatcher가 즉시 재배정 가능 — 로봇이 홈 아닌 위치에서 새 임무를 받는 위험. ② IDLE과 실패를 관제 UI에서 구분 불가.
+- **Decision**: **GUIDING failed → FAILED 상태 → RETURNING**
+  - `FailedState`: `robot_status='FAILED'` 발행 + TTS "오류가 발생하여 안내에 실패했습니다. 현재 위치에서 관리자를 기다려 주세요." + 10초 대기 → `'return_home'` 반환
+  - FSM: `GUIDING 'failed' → FAILED`, `FAILED 'return_home' → RETURNING`
+  - 관제 UI: FAILED 빨간 색상 추가 (`#dc2626`)
+- **TTS 내용 선택 이유**: "홈으로 복귀합니다"는 방문자를 혼란 없이 남겨두는 문제. "관리자를 기다려 주세요"로 방문자에게 다음 행동을 안내하고, 10초 대기로 관제자가 현장 이동할 여유를 확보.
+- **Rationale**:
+  - 실패 후 항상 홈 복귀 → dispatcher가 로봇 위치를 신뢰 가능 (IDLE = 홈에 있음 보장)
+  - 10초 FAILED 표시 → 관제자 인지 + 현장 이동 여유
+  - "실패 시 원점 복귀"는 서비스 로봇 표준 패턴 (Kiva, Fetch, MiR 동일)
+- **면접 어필**: "FSM 상태 설계 시 실패 처리를 별도 상태로 분리해 위치 신뢰성과 관제 가시성을 동시에 확보. TTS를 방문자 UX 관점에서 설계해 로봇 실패 상황에서도 방문자 혼란을 최소화."
+- **Date**: 2026-05-21
+
+---
+
+### DEC-032: abort(임무 중단) 기능 설계 — /abort 전용 토픽 (done 2026-05-21)
+- **Context**: 관제 UI의 🛑 임무중단 버튼이 `goal_destination`에 `home_key`를 발행하는 방식으로 구현되어 있었음. 두 가지 문제: ① FSM 상태와 무관하게 동작 — WAITING 중이면 home 목적지를 가이딩 목적지로 인식해 IDLE 이후 다시 홈으로 안내하는 오동작 가능. ② IDLE/RETURNING 상태에서도 적용되어 불필요한 임무 시작.
+- **Decision**: **`/abort` 전용 토픽 + FSM 상태별 처리**
+  - **GUIDING**: `navigator.cancelTask()` → `'aborted'` → RETURNING
+  - **WAITING** (return_to='GUIDING'): `_abort_flag` 감지 → `blackboard['return_to'] = 'RETURNING'` (WAITING 유지, resume 후 RETURNING으로 복귀)
+  - **WAITING** (return_to='RETURNING'): 무시 (이미 복귀 예정)
+  - **IDLE / RETURNING**: 무시
+- **구현**:
+  - `behaviour_node.py`: `/abort` 구독, `_abort_cb`, FSM `'aborted': 'RETURNING'` 전환 추가
+  - `states.py`: GuidingState abort 우선 체크(pause보다 앞), WaitingState abort 루프 내 처리
+  - `bridge_robot.yaml`: `/ROBOT_NAME/abort` 브릿지 (domain 5→LIMO)
+  - `ros_node.py`: `_abort_pubs`, `publish_abort()`
+  - `map_view.py`: `_send_abort_home()` → `publish_abort()` 호출로 변경
+- **Rationale**:
+  - WAITING 상태에서 즉시 RETURNING이 아니라 `return_to`를 변경하는 이유: wego_traffic이 resume을 보낼 때까지 기다려야 함. 즉시 복귀하면 상대 로봇과 충돌 위험.
+  - abort 전용 채널 분리로 각 FSM 상태가 의미있는 처리 가능.
+- **면접 어필**: "abort 신호를 goal_destination 재사용이 아닌 전용 채널로 분리하여, FSM 각 상태가 맥락에 맞는 처리를 할 수 있게 설계. WAITING 중 abort 시 즉시 전환하지 않고 충돌 회피 우선순위를 유지하는 부분이 핵심."
+- **Date**: 2026-05-21
+
+---
+
+### DEC-031: 홈 출발 시 Failed to make progress — PoseProgressChecker 교체 (분석 완료, 미적용)
 - **Context**: home1에서 classroom 목적지로 출발 시 로봇이 180° 제자리 회전 필요. 이 과정에서 `Failed to make progress` 반복 발생. Nav2가 recovery(ClearEntireCostmap)를 최대 6회 반복하며 각 시도마다 10초씩 소요.
 - **원인 분석**:
   - `SimpleProgressChecker`는 선형 이동 거리만 측정. 제자리 회전(각도 변화)을 진행으로 인식 안 함
@@ -24,7 +61,7 @@
       ├── Wait (3번째)
       └── BackUp (4번째)
   ```
-- **Decision**: **`PoseProgressChecker`로 교체** (내일 적용 예정)
+- **Decision**: **`PoseProgressChecker`로 교체 검토 → 미적용(사용자 요청으로 revert)**
   - `required_movement_radius: 0.5` OR `required_movement_angle: 0.5rad(≈28°)` 중 하나 만족 시 진행 인정
   - 180° 회전 시작 직후 각도 조건 통과 → 실패 없이 주행 시작
 - **Rationale**:

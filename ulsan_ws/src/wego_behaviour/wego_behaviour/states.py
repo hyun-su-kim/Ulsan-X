@@ -51,11 +51,28 @@ class IdleState(State):
             time.sleep(0.1)
 
 
+class FailedState(State):
+    """임무 실패 상태: 실패 로깅 후 홈 복귀."""
+
+    def __init__(self, node):
+        super().__init__(outcomes=['return_home'])
+        self._node = node
+
+    def execute(self, blackboard):
+        self._node.publish_status('FAILED')
+        self._node.get_logger().warn('임무 실패 — 10초 대기 후 홈 복귀')
+        self._node.speak_text(
+            '오류가 발생하여 안내에 실패했습니다. 현재 위치에서 관리자를 기다려 주세요.'
+        )
+        time.sleep(10.0)
+        return 'return_home'
+
+
 class GuidingState(State):
     """안내 상태: 목적지까지 navigate_to_pose 실행."""
 
     def __init__(self, node, navigator: BasicNavigator):
-        super().__init__(outcomes=['succeeded', 'failed', 'paused'])
+        super().__init__(outcomes=['succeeded', 'failed', 'paused', 'aborted'])
         self._node = node
         self._navigator = navigator
 
@@ -78,6 +95,11 @@ class GuidingState(State):
             self._navigator.goToPose(_make_pose(destination))
 
         while not self._navigator.isTaskComplete():
+            if self._node._abort_flag:
+                self._navigator.cancelTask()
+                self._node._abort_flag = False
+                self._node.get_logger().info('GUIDING: abort → RETURNING')
+                return 'aborted'
             if self._node._pause_flag:
                 self._navigator.cancelTask()
                 blackboard['return_to'] = 'GUIDING'
@@ -121,6 +143,11 @@ class WaitingState(State):
         self._node.get_logger().info('WAITING: 상대 로봇 통과 대기 중')
 
         while not self._node._resume_flag:
+            if self._node._abort_flag:
+                self._node._abort_flag = False
+                if blackboard.get('return_to') == 'GUIDING':
+                    blackboard['return_to'] = 'RETURNING'
+                    self._node.get_logger().info('WAITING: abort → return_to 변경 (GUIDING→RETURNING)')
             time.sleep(0.1)
 
         self._node._resume_flag = False

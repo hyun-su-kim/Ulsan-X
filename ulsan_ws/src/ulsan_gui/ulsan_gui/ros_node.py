@@ -11,7 +11,7 @@ from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from sensor_msgs.msg import CompressedImage
 from nav_msgs.msg import OccupancyGrid
 try:
-    from limo_msgs.msg import LimoStatus as _LimoStatus
+    from wego_msgs.msg import LimoStatus as _LimoStatus
     _LIMO_MSGS_OK = True
 except ImportError:
     _LIMO_MSGS_OK = False
@@ -97,6 +97,10 @@ class RosNode(Node):
             'limo1': self.create_publisher(Empty, '/limo1/resume', 10),
             'limo2': self.create_publisher(Empty, '/limo2/resume', 10),
         }
+        self._abort_pubs = {
+            'limo1': self.create_publisher(Empty, '/limo1/abort', 10),
+            'limo2': self.create_publisher(Empty, '/limo2/abort', 10),
+        }
 
         self.get_logger().info('ulsan_gui ROS 노드 초기화 완료')
 
@@ -146,6 +150,9 @@ class RosNode(Node):
 
     def publish_resume(self, robot: str) -> None:
         self._resume_pubs[robot].publish(Empty())
+
+    def publish_abort(self, robot: str) -> None:
+        self._abort_pubs[robot].publish(Empty())
 
     # ── 유틸 ─────────────────────────────────────────────────────────
 

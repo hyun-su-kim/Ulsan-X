@@ -11,15 +11,18 @@ from PyQt5.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QPen, QBrush
 
 STATUS_COLOR = {
     'IDLE':      '#16a34a', 'BUSY':      '#d97706',
-    'RETURNING': '#2563eb', 'WAITING':   '#9333ea', 'UNKNOWN': '#9ca3af',
+    'RETURNING': '#2563eb', 'WAITING':   '#9333ea',
+    'FAILED':    '#dc2626', 'UNKNOWN':   '#9ca3af',
 }
 STATUS_BG = {
     'IDLE':      '#f0fdf4', 'BUSY':      '#fffbeb',
-    'RETURNING': '#eff6ff', 'WAITING':   '#faf5ff', 'UNKNOWN': '#f8fafc',
+    'RETURNING': '#eff6ff', 'WAITING':   '#faf5ff',
+    'FAILED':    '#fef2f2', 'UNKNOWN':   '#f8fafc',
 }
 STATUS_BORDER = {
     'IDLE':      '#10b981', 'BUSY':      '#f59e0b',
-    'RETURNING': '#3b82f6', 'WAITING':   '#9333ea', 'UNKNOWN': '#9ca3af',
+    'RETURNING': '#3b82f6', 'WAITING':   '#9333ea',
+    'FAILED':    '#ef4444', 'UNKNOWN':   '#9ca3af',
 }
 # Domain ID 하드코딩 (LIMO1=6, LIMO2=7)
 ROBOT_DOMAIN = {'limo1': 6, 'limo2': 7}
@@ -729,8 +732,7 @@ class MapView(QWidget):
         self.ros.publish_resume(self._selected_robot)
 
     def _send_abort_home(self) -> None:
-        home_key = 'home_robot1' if self._selected_robot == 'limo1' else 'home_robot2'
-        self.ros.publish_goal(self._selected_robot, home_key)
+        self.ros.publish_abort(self._selected_robot)
 
     def _check_connections(self) -> None:
         # limo 연결 상태

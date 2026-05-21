@@ -1,7 +1,7 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 3 — 1차 데모 준비 (2026-05-18)**
+**Phase 3 — 1차 데모 준비 (2026-05-21)**
 핵심 기능 구현 완료. 1차 데모 목표: TTS 수정, ArUco 정밀도 검토, BT 커스텀, 유리문 경로 안정화, 관제 UI, 사람 감지 정지 기능.
 
 ---
@@ -14,7 +14,7 @@
 | 2 | **마커 기반 홈 정밀 복귀 구현** | `in_progress` | 3DOF IBVS 구현 완료 (2026-05-20): yaw 보정 추가, staging pose, IBVS 완료 후 AMCL 보정 통합. 실기기 검증 필요. |
 | 3 | **Nav2 BT 커스텀 노드 설계** | `todo` | 취업 어필 포인트. 유리구간 등 커스텀 후보 조사 |
 | 4 | **유리문 구간 중앙 웨이포인트 경유 방식 조사** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. classroom은 goToPose, 나머지는 goThroughPoses([entry, exit, dest]). 복귀 시 순서 반전. DEC-030 참고 |
-| 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `todo` | 마지막 순서 |
+| 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `in_progress` | 지도·로봇 상태·카드·긴급 제어 구현 완료. 미완: FAILED 상태 색상, 로봇 선택 UX 개선 |
 | 6 | **사람 발견 시 정지 기능** | `todo` | 사전학습 or 커스텀 모델 선택 필요. 이것까지 완료 시 1차 데모 완성 |
 
 ---
@@ -98,6 +98,20 @@
 - [x] **behaviour FSM 실기기 웨이포인트 주행 검증** — done (2026-05-08)
   - classroom_1 → home1 왕복 주행 성공 (IDLE→GUIDING→RETURNING→IDLE)
   - goal_test_node로 목적지 수동 발행 → FSM 전환 정상 확인
+- [x] **abort(임무 중단) 기능 구현** — done (2026-05-21). DEC-032 참고
+  - `/abort` 토픽 구독 → GUIDING: cancelTask()+'aborted'→RETURNING, WAITING: return_to 변경(GUIDING→RETURNING)
+  - wego_bridge `/ROBOT_NAME/abort` 브릿지 추가 (domain 5→LIMO)
+  - ulsan_gui `publish_abort()` 추가, 🛑 임무중단 버튼 연동
+- [x] **LimoStatus.msg wego_msgs 마이그레이션** — done (2026-05-21)
+  - `limo_msgs` 외부 의존성 제거 → `wego_msgs/msg/LimoStatus.msg` 신규 생성
+  - `bridge_robot.yaml` 타입 변경, `ros_node.py` import 변경
+- [x] **BT navigator XML 경로 오류 수정** — done (2026-05-21)
+  - `navigation_only_launch.py` 파라미터 오버라이드로 커스텀 XML 경로 명시
+- [x] **WaypointCRUD 서비스 제거** — done (2026-05-21)
+  - 예약 DB 기반 아키텍처로 waypoint 동적 수정 불필요 확정, CMakeLists + behaviour_node 정리
+- [x] **GUIDING 실패 처리 — FAILED 상태 추가** — done (2026-05-21). DEC-033 참고
+  - GUIDING failed → FAILED(TTS "관리자를 기다려 주세요" + 10초 대기) → RETURNING
+  - 관제 UI FAILED 빨간 색상 추가. 실기기 검증 필요.
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
 
 #### 음성 파이프라인
