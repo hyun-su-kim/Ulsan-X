@@ -1,7 +1,7 @@
 
 <!--
   navigate_to_pose 기반 동일 구조.
-  RemovePassedGoals radius 0.7 → 0.5 으로 조정 (유리 구간 경유 포인트 통과 판정 범위 축소).
+  RemovePassedGoals radius 0.7 → 0.5 → 0.2 으로 조정 (유리 구간 경유 포인트 통과 판정 범위 축소).
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -10,7 +10,7 @@
         <RateController hz="0.333">
           <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
             <ReactiveSequence>
-              <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.5"/>
+              <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.2"/>
               <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
             </ReactiveSequence>
             <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>

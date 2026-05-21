@@ -41,7 +41,7 @@
 
 ---
 
-### DEC-031: 홈 출발 시 Failed to make progress — PoseProgressChecker 교체 (분석 완료, 미적용)
+### DEC-031: 홈 출발 시 Failed to make progress — PoseProgressChecker 교체 (done 2026-05-21)
 - **Context**: home1에서 classroom 목적지로 출발 시 로봇이 180° 제자리 회전 필요. 이 과정에서 `Failed to make progress` 반복 발생. Nav2가 recovery(ClearEntireCostmap)를 최대 6회 반복하며 각 시도마다 10초씩 소요.
 - **원인 분석**:
   - `SimpleProgressChecker`는 선형 이동 거리만 측정. 제자리 회전(각도 변화)을 진행으로 인식 안 함
@@ -61,7 +61,7 @@
       ├── Wait (3번째)
       └── BackUp (4번째)
   ```
-- **Decision**: **`PoseProgressChecker`로 교체 검토 → 미적용(사용자 요청으로 revert)**
+- **Decision**: **`PoseProgressChecker`로 교체** (revert 후 재적용 2026-05-21)
   - `required_movement_radius: 0.5` OR `required_movement_angle: 0.5rad(≈28°)` 중 하나 만족 시 진행 인정
   - 180° 회전 시작 직후 각도 조건 통과 → 실패 없이 주행 시작
 - **Rationale**:

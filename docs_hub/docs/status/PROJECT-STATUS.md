@@ -112,6 +112,11 @@
 - [x] **GUIDING 실패 처리 — FAILED 상태 추가** — done (2026-05-21). DEC-033 참고
   - GUIDING failed → FAILED(TTS "관리자를 기다려 주세요" + 10초 대기) → RETURNING
   - 관제 UI FAILED 빨간 색상 추가. 실기기 검증 필요.
+- [x] **PoseProgressChecker 교체** — done (2026-05-21). DEC-031 참고
+  - SimpleProgressChecker → PoseProgressChecker: 선형+각도 변화 모두 진행으로 인정
+  - required_movement_angle: 0.5rad(~28°) 추가 — 홈 출발 180° 회전 시 recovery 루프 해결
+- [x] **RemovePassedGoals radius 0.5 → 0.2** — done (2026-05-21)
+  - 유리 구간 경유 포인트 통과 판정 범위 축소 — 경유지 근처를 실제로 통과해야 판정
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
 
 #### 음성 파이프라인
