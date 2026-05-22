@@ -11,7 +11,7 @@ from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from sensor_msgs.msg import CompressedImage
 from nav_msgs.msg import OccupancyGrid
 try:
-    from wego_msgs.msg import LimoStatus as _LimoStatus
+    from limo_msgs.msg import LimoStatus as _LimoStatus
     _LIMO_MSGS_OK = True
 except ImportError:
     _LIMO_MSGS_OK = False

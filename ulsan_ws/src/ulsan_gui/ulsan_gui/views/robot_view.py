@@ -172,11 +172,11 @@ class BatteryGauge(QWidget):
             painter.drawArc(rect, 90 * 16, -span)
 
             painter.setPen(QColor('#111827'))
-            painter.setFont(QFont('Segoe UI', max(9, size // 5), QFont.Bold))
+            painter.setFont(QFont('Segoe UI', max(8, size // 8), QFont.Bold))
             painter.drawText(rect, Qt.AlignCenter, f'{pct:.0f}%')
         else:
             painter.setPen(QColor('#9ca3af'))
-            painter.setFont(QFont('Segoe UI', max(8, size // 6)))
+            painter.setFont(QFont('Segoe UI', max(7, size // 9)))
             painter.drawText(rect, Qt.AlignCenter, '--')
 
 
