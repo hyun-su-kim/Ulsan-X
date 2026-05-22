@@ -4,8 +4,8 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QStackedWidget, QLabel, QPushButton, QFrame,
 )
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt, QTimer, QVariantAnimation
+from PyQt5.QtGui import QFont, QColor, QPainter
 
 from ulsan_gui.views.login_view       import LoginView
 from ulsan_gui.views.map_view         import MapView
@@ -25,6 +25,28 @@ VIEW_LABELS = {k: lbl for k, _, lbl in VIEWS}
 PIN = '1234'
 
 BUSY_STATES = {'BUSY', 'RETURNING', 'WAITING'}
+
+
+class _FadeOverlay(QWidget):
+    """뷰 전환 fade용 오버레이. QGraphicsOpacityEffect 대체."""
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._alpha = 0
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hide()
+
+    def set_alpha(self, a: int) -> None:
+        self._alpha = int(a)
+        self.setGeometry(self.parent().rect())
+        self.setVisible(self._alpha > 0)
+        if self._alpha > 0:
+            self.raise_()
+            self.update()
+
+    def paintEvent(self, _) -> None:
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(240, 242, 245, self._alpha))
+        p.end()
 
 
 class MainWindow(QMainWindow):
@@ -197,20 +219,28 @@ class MainWindow(QMainWindow):
 
         return sidebar
 
-    def _build_content(self) -> QStackedWidget:
+    def _build_content(self) -> QWidget:
         self._stack = QStackedWidget()
-        self._views: dict[str, QWidget] = {}
 
+        self._views: dict[str, QWidget] = {}
         for key, _, _ in VIEWS:
             view = self._make_view(key)
             self._views[key] = view
             self._stack.addWidget(view)
 
+        wrapper = QWidget()
+        wl = QVBoxLayout(wrapper)
+        wl.setContentsMargins(0, 0, 0, 0)
+        wl.setSpacing(0)
+        wl.addWidget(self._stack)
+        self._fade_overlay = _FadeOverlay(wrapper)
+        self._anim: QVariantAnimation | None = None
+
         self._switch_view('map')
-        return self._stack
+        return wrapper
 
     def _make_view(self, key: str) -> QWidget:
-        if key == 'map':         return MapView(self.ros)
+        if key == 'map':         return MapView(self.ros, switch_view_cb=self._navigate_to_robot)
         if key == 'robot':       return RobotView(self.ros)
         if key == 'reservation': return ReservationView(self.ros)
         if key == 'log':         return LogView(self.ros)
@@ -218,11 +248,40 @@ class MainWindow(QMainWindow):
 
     # ── 뷰 전환 ──────────────────────────────────────────────────────
 
-    def _switch_view(self, key: str) -> None:
-        self._stack.setCurrentWidget(self._views[key])
-        for k, btn in self._sb_btns.items():
-            btn.setStyleSheet(self._sb_style(k == key))
-        self._set_breadcrumb(VIEW_LABELS[key])
+    def _navigate_to_robot(self, robot: str) -> None:
+        self._switch_view('robot', robot)
+
+    def _switch_view(self, key: str, robot: str = None) -> None:
+        if self._anim:
+            self._anim.stop()
+            self._fade_overlay.set_alpha(0)
+            self._anim = None
+
+        def _commit():
+            self._stack.setCurrentWidget(self._views[key])
+            for k, btn in self._sb_btns.items():
+                btn.setStyleSheet(self._sb_style(k == key))
+            self._set_breadcrumb(VIEW_LABELS[key])
+            if robot and key == 'robot':
+                rv = self._views.get('robot')
+                if rv and hasattr(rv, '_select'):
+                    rv._select(robot, animated=False)
+            anim_out = QVariantAnimation(self)
+            anim_out.setStartValue(255)
+            anim_out.setEndValue(0)
+            anim_out.setDuration(150)
+            anim_out.valueChanged.connect(lambda v: self._fade_overlay.set_alpha(v))
+            anim_out.start()
+            self._anim = anim_out
+
+        anim_in = QVariantAnimation(self)
+        anim_in.setStartValue(0)
+        anim_in.setEndValue(255)
+        anim_in.setDuration(100)
+        anim_in.valueChanged.connect(lambda v: self._fade_overlay.set_alpha(v))
+        anim_in.finished.connect(_commit)
+        anim_in.start()
+        self._anim = anim_in
 
     @staticmethod
     def _sb_style(active: bool) -> str:

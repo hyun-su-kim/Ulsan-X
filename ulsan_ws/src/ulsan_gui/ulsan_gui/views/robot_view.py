@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QSlider, QFrame, QSizePolicy,
     QDialog, QScrollArea, QStackedWidget,
 )
-from PyQt5.QtCore import Qt, QTimer, QRect
+from PyQt5.QtCore import Qt, QTimer, QRect, QVariantAnimation
 from PyQt5.QtGui import QFont, QImage, QPixmap, QKeyEvent, QPainter, QPen, QColor
 
 STATUS_COLOR = {
@@ -711,6 +711,29 @@ def _metric_box(label: str, value: str, unit: str) -> QFrame:
     return box
 
 
+# ── fade 오버레이 ────────────────────────────────────────────────────
+
+class _FadeOverlay(QWidget):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._alpha = 0
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hide()
+
+    def set_alpha(self, a: int) -> None:
+        self._alpha = int(a)
+        self.setGeometry(self.parent().rect())
+        self.setVisible(self._alpha > 0)
+        if self._alpha > 0:
+            self.raise_()
+            self.update()
+
+    def paintEvent(self, _) -> None:
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(240, 242, 245, self._alpha))
+        p.end()
+
+
 # ── 로봇 뷰 (탭 선택) ────────────────────────────────────────────────
 
 class RobotView(QWidget):
@@ -787,9 +810,17 @@ class RobotView(QWidget):
         self._stack = QStackedWidget()
         for panel in self._panels.values():
             self._stack.addWidget(panel)
-        vbox.addWidget(self._stack, 1)
 
-        self._select('limo1')
+        stack_wrapper = QWidget()
+        sw_layout = QVBoxLayout(stack_wrapper)
+        sw_layout.setContentsMargins(0, 0, 0, 0)
+        sw_layout.setSpacing(0)
+        sw_layout.addWidget(self._stack)
+        self._tab_overlay = _FadeOverlay(stack_wrapper)
+        self._tab_anim: QVariantAnimation | None = None
+
+        vbox.addWidget(stack_wrapper, 1)
+        self._select('limo1', animated=False)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -822,18 +853,47 @@ class RobotView(QWidget):
             f'color:{c}; background:{"rgba(0,0,0,0.1)" if active else bg};'
         )
 
-    def _select(self, robot: str) -> None:
-        self._stack.setCurrentWidget(self._panels[robot])
-        for r, frame in self._tab_btns.items():
-            active = (r == robot)
-            frame.setStyleSheet(self._tab_style(active))
-            self._tab_name_lbls[r].setStyleSheet(
-                f'background:transparent; border:none;'
-                f'color:{"#1e40af" if active else "#6b7280"};'
-            )
-        self._panels[robot].setFocus()
-        for r in ('limo1', 'limo2'):
-            self._on_tab_status(r, self._statuses[r])
+    def _select(self, robot: str, animated: bool = True) -> None:
+        if self._tab_anim:
+            self._tab_anim.stop()
+            self._tab_overlay.set_alpha(0)
+            self._tab_anim = None
+
+        def _apply():
+            self._stack.setCurrentWidget(self._panels[robot])
+            for r, frame in self._tab_btns.items():
+                active = (r == robot)
+                frame.setStyleSheet(self._tab_style(active))
+                self._tab_name_lbls[r].setStyleSheet(
+                    f'background:transparent; border:none;'
+                    f'color:{"#1e40af" if active else "#6b7280"};'
+                )
+            self._panels[robot].setFocus()
+            for r in ('limo1', 'limo2'):
+                self._on_tab_status(r, self._statuses[r])
+
+        if not animated:
+            _apply()
+            return
+
+        def _commit():
+            _apply()
+            anim_out = QVariantAnimation(self)
+            anim_out.setStartValue(255)
+            anim_out.setEndValue(0)
+            anim_out.setDuration(150)
+            anim_out.valueChanged.connect(lambda v: self._tab_overlay.set_alpha(v))
+            anim_out.start()
+            self._tab_anim = anim_out
+
+        anim_in = QVariantAnimation(self)
+        anim_in.setStartValue(0)
+        anim_in.setEndValue(255)
+        anim_in.setDuration(100)
+        anim_in.valueChanged.connect(lambda v: self._tab_overlay.set_alpha(v))
+        anim_in.finished.connect(_commit)
+        anim_in.start()
+        self._tab_anim = anim_in
 
     @staticmethod
     def _tab_style(active: bool) -> str:

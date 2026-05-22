@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea,
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, QPoint, pyqtSignal
-from PyQt5.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QPen, QBrush
+from PyQt5.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QPen, QBrush, QPolygon
 
 STATUS_COLOR = {
     'IDLE':      '#16a34a', 'BUSY':      '#d97706',
@@ -25,9 +25,6 @@ STATUS_BORDER = {
     'RETURNING': '#3b82f6', 'WAITING':   '#9333ea',
     'FAILED':    '#ef4444', 'UNKNOWN':   '#9ca3af',
 }
-# Domain ID 하드코딩 (LIMO1=6, LIMO2=7)
-ROBOT_DOMAIN = {'limo1': 6, 'limo2': 7}
-
 LOG_TYPE_COLOR = {
     'mission_start':    ('#dbeafe', '#1d4ed8'),
     'mission_complete': ('#d1fae5', '#047857'),
@@ -270,29 +267,45 @@ class MapCanvas(QWidget):
             painter.save()
             painter.translate(px, py)
             painter.rotate(-math.degrees(ryaw))
-            painter.setPen(QPen(color, 2))
+
+            R = 13
+            # 흰색 외곽선으로 배경과 구분
+            painter.setPen(QPen(Qt.white, 3))
+            painter.setBrush(QBrush(Qt.white))
+            painter.drawEllipse(-(R + 2), -(R + 2), 2 * (R + 2), 2 * (R + 2))
+            # 본체 원
+            painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(color))
-            painter.drawEllipse(-8, -8, 16, 16)
-            painter.setPen(QPen(Qt.white, 2))
-            painter.drawLine(0, 0, 0, -12)
+            painter.drawEllipse(-R, -R, 2 * R, 2 * R)
+            # 방향 화살표 (삼각형, 앞방향=위)
+            arrow = QPolygon([
+                QPoint(0,  -(R + 14)),
+                QPoint(-8, -(R - 3)),
+                QPoint(8,  -(R - 3)),
+            ])
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(Qt.white))
+            painter.drawPolygon(arrow)
+
             painter.restore()
 
             label = 'L1' if robot == 'limo1' else 'L2'
-            painter.setPen(Qt.white)
-            painter.setFont(QFont('Segoe UI', 8, QFont.Bold))
-            painter.drawText(px + 10, py - 4, label)
+            painter.setPen(color)
+            painter.setFont(QFont('Segoe UI', 9, QFont.Bold))
+            painter.drawText(px + R + 6, py - 4, label)
 
 
 # ── 로봇 상태 카드 ────────────────────────────────────────────────────
 
 class RobotStatusCard(QFrame):
-    def __init__(self, robot_id: str):
+    def __init__(self, robot_id: str, on_click=None):
         super().__init__()
         self._robot_id = robot_id
         self._status   = 'UNKNOWN'
-        domain = ROBOT_DOMAIN.get(robot_id, '?')
-        self._domain_str = f'Domain {domain}'
+        self._on_click = on_click
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        if on_click:
+            self.setCursor(Qt.PointingHandCursor)
         self._build_ui()
         self._apply_border()
 
@@ -323,7 +336,7 @@ class RobotStatusCard(QFrame):
         self._dest_lbl.setFont(QFont('Segoe UI', 11))
         self._dest_lbl.setStyleSheet('color:#6b7280; border:none;')
 
-        self._sub_lbl = QLabel(f'{self._domain_str} · 배터리 -- %')
+        self._sub_lbl = QLabel('배터리 -- %')
         self._sub_lbl.setFont(QFont('Segoe UI', 10))
         self._sub_lbl.setStyleSheet('color:#9ca3af; border:none;')
 
@@ -333,10 +346,10 @@ class RobotStatusCard(QFrame):
         hbox.addLayout(info_vbox, 1)
 
         self._badge = QLabel('UNKNOWN')
-        self._badge.setFont(QFont('Segoe UI', 10, QFont.Bold))
+        self._badge.setFont(QFont('Segoe UI', 9, QFont.Bold))
         self._badge.setAlignment(Qt.AlignCenter)
         self._badge.setStyleSheet(
-            f'border-radius:12px; padding:3px 8px; border:none;'
+            f'border-radius:10px; padding:2px 6px; border:none;'
             f'color:{STATUS_COLOR["UNKNOWN"]}; background:{STATUS_BG["UNKNOWN"]};'
         )
         hbox.addWidget(self._badge)
@@ -363,16 +376,23 @@ class RobotStatusCard(QFrame):
         bg = STATUS_BG.get(status, STATUS_BG['UNKNOWN'])
         self._badge.setText(status)
         self._badge.setStyleSheet(
-            f'border-radius:12px; padding:3px 8px; border:none;'
+            f'border-radius:10px; padding:2px 6px; border:none;'
             f'color:{c}; background:{bg};'
         )
         if status == 'IDLE':
             self._dest_lbl.setText('방문자 대기 중')
 
+    def update_battery(self, voltage: float) -> None:
+        pct = max(0.0, min(100.0, (voltage - 9.0) / (12.6 - 9.0) * 100.0))
+        self._sub_lbl.setText(f'배터리 {pct:.0f}%')
+
     def update_destination(self, dest: str) -> None:
         if dest:
             self._dest_lbl.setText(f'→ {dest}')
 
+    def mousePressEvent(self, e) -> None:
+        if e.button() == Qt.LeftButton and self._on_click:
+            self._on_click()
 
 
 # ── 미니 이벤트 로그 카드 ─────────────────────────────────────────────
@@ -434,12 +454,21 @@ class MiniLogCard(QFrame):
 
 # ── 메인 뷰 ──────────────────────────────────────────────────────────
 
+_PAUSE_NORMAL  = 'background:#fef3c7; color:#b45309; border:1.5px solid #fcd34d; border-radius:6px;'
+_RESUME_NORMAL = 'background:#d1fae5; color:#065f46; border:1.5px solid #6ee7b7; border-radius:6px;'
+_ABORT_NORMAL  = 'background:#fee2e2; color:#b91c1c; border:1.5px solid #fca5a5; border-radius:6px;'
+_PAUSE_FLASH   = 'background:#b45309; color:#fff;    border:1.5px solid #b45309; border-radius:6px;'
+_RESUME_FLASH  = 'background:#065f46; color:#fff;    border:1.5px solid #065f46; border-radius:6px;'
+_ABORT_FLASH   = 'background:#b91c1c; color:#fff;    border:1.5px solid #b91c1c; border-radius:6px;'
+
+
 class MapView(QWidget):
-    def __init__(self, ros_node):
+    def __init__(self, ros_node, switch_view_cb=None):
         super().__init__()
         self.setStyleSheet('background:#f0f2f5;')
         self.ros = ros_node
         self._selected_robot = 'limo1'
+        self._switch_view_cb = switch_view_cb
         self._build_ui()
         self._connect_signals()
 
@@ -465,8 +494,8 @@ class MapView(QWidget):
         cards_vbox = QVBoxLayout(cards_area)
         cards_vbox.setContentsMargins(0, 0, 0, 0)
         cards_vbox.setSpacing(8)
-        self._card1 = RobotStatusCard('limo1')
-        self._card2 = RobotStatusCard('limo2')
+        self._card1 = RobotStatusCard('limo1', on_click=lambda: self._navigate_to_robot('limo1'))
+        self._card2 = RobotStatusCard('limo2', on_click=lambda: self._navigate_to_robot('limo2'))
         cards_vbox.addWidget(self._card1)
         cards_vbox.addWidget(self._card2)
         left_vbox.addWidget(cards_area)
@@ -483,7 +512,7 @@ class MapView(QWidget):
         map_card_vbox.setContentsMargins(14, 12, 14, 14)
         map_card_vbox.setSpacing(8)
 
-        map_title = QLabel('🗺  실시간 위치 — /map OccupancyGrid')
+        map_title = QLabel('🗺  실시간 위치')
         map_title.setFont(QFont('Segoe UI', 11, QFont.Bold))
         map_title.setStyleSheet(CARD_TITLE_STYLE)
         map_card_vbox.addWidget(map_title)
@@ -532,42 +561,33 @@ class MapView(QWidget):
         row1 = QHBoxLayout()
         row1.setSpacing(6)
 
-        pause_btn = QPushButton('⏸ 일시정지')
-        pause_btn.setFixedHeight(34)
-        pause_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
-        pause_btn.setFocusPolicy(Qt.NoFocus)
-        pause_btn.setStyleSheet(
-            'background:#fef3c7; color:#b45309;'
-            'border:1.5px solid #fcd34d; border-radius:6px;'
-        )
-        pause_btn.clicked.connect(self._send_pause)
-        row1.addWidget(pause_btn)
+        self._pause_btn = QPushButton('⏸ 일시정지')
+        self._pause_btn.setFixedHeight(34)
+        self._pause_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
+        self._pause_btn.setFocusPolicy(Qt.NoFocus)
+        self._pause_btn.setStyleSheet(_PAUSE_NORMAL)
+        self._pause_btn.clicked.connect(self._send_pause)
+        row1.addWidget(self._pause_btn)
 
-        resume_btn = QPushButton('▶ 재개')
-        resume_btn.setFixedHeight(34)
-        resume_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
-        resume_btn.setFocusPolicy(Qt.NoFocus)
-        resume_btn.setStyleSheet(
-            'background:#d1fae5; color:#065f46;'
-            'border:1.5px solid #6ee7b7; border-radius:6px;'
-        )
-        resume_btn.clicked.connect(self._send_resume)
-        row1.addWidget(resume_btn)
+        self._resume_btn = QPushButton('▶ 재개')
+        self._resume_btn.setFixedHeight(34)
+        self._resume_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
+        self._resume_btn.setFocusPolicy(Qt.NoFocus)
+        self._resume_btn.setStyleSheet(_RESUME_NORMAL)
+        self._resume_btn.clicked.connect(self._send_resume)
+        row1.addWidget(self._resume_btn)
         vbox.addLayout(row1)
 
         row2 = QHBoxLayout()
         row2.setSpacing(6)
 
-        stop_btn = QPushButton('🛑 임무중단 (홈 복귀)')
-        stop_btn.setFixedHeight(34)
-        stop_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
-        stop_btn.setFocusPolicy(Qt.NoFocus)
-        stop_btn.setStyleSheet(
-            'background:#fee2e2; color:#b91c1c;'
-            'border:1.5px solid #fca5a5; border-radius:6px;'
-        )
-        stop_btn.clicked.connect(self._send_abort_home)
-        row2.addWidget(stop_btn)
+        self._abort_btn = QPushButton('🛑 임무중단 (홈 복귀)')
+        self._abort_btn.setFixedHeight(34)
+        self._abort_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
+        self._abort_btn.setFocusPolicy(Qt.NoFocus)
+        self._abort_btn.setStyleSheet(_ABORT_NORMAL)
+        self._abort_btn.clicked.connect(self._send_abort_home)
+        row2.addWidget(self._abort_btn)
         vbox.addLayout(row2)
 
         return card
@@ -599,8 +619,8 @@ class MapView(QWidget):
 
         self._sys_vals: dict[str, QLabel] = {}
         rows = [
-            ('limo1_conn', 'LIMO 1 연결',  f'● Domain {ROBOT_DOMAIN["limo1"]} 대기', '#9ca3af'),
-            ('limo2_conn', 'LIMO 2 연결',  f'● Domain {ROBOT_DOMAIN["limo2"]} 대기', '#9ca3af'),
+            ('limo1_conn', 'LIMO 1',  '● 확인 중', '#9ca3af'),
+            ('limo2_conn', 'LIMO 2',  '● 확인 중', '#9ca3af'),
             ('map_server', '맵 서버',       '● 확인 중', '#9ca3af'),
             ('fastapi',    'FastAPI',       '● 확인 중', '#9ca3af'),
             ('dispatcher', '배차 노드',     '● 확인 중', '#9ca3af'),
@@ -615,7 +635,7 @@ class MapView(QWidget):
             row_w = QWidget()
             row_w.setStyleSheet('background:transparent;')
             rh = QHBoxLayout(row_w)
-            rh.setContentsMargins(0, 5, 0, 5)
+            rh.setContentsMargins(8, 5, 8, 5)
             rh.setSpacing(8)
 
             lbl = QLabel(label)
@@ -650,6 +670,8 @@ class MapView(QWidget):
         self.ros.signals.sig_map.connect(self._canvas.update_map)
         self.ros.signals.sig_dest_1.connect(self._card1.update_destination)
         self.ros.signals.sig_dest_2.connect(self._card2.update_destination)
+        self.ros.signals.sig_battery_1.connect(self._card1.update_battery)
+        self.ros.signals.sig_battery_2.connect(self._card2.update_battery)
         self.ros.signals.sig_gui_log.connect(self._mini_log.add_log)
 
         if self.ros.latest_map is not None:
@@ -657,56 +679,61 @@ class MapView(QWidget):
 
     # ── 동작 ─────────────────────────────────────────────────────────
 
+    def _navigate_to_robot(self, robot: str) -> None:
+        if self._switch_view_cb:
+            self._switch_view_cb(robot)
+
     def _select_robot(self, robot: str) -> None:
         self._selected_robot = robot
         for r, btn in self._rsel_btns.items():
             btn.setStyleSheet(self._rsel_style(r == robot))
 
+    @staticmethod
+    def _flash_btn(btn: QPushButton, flash_style: str, normal_style: str) -> None:
+        btn.setStyleSheet(flash_style)
+        QTimer.singleShot(220, lambda: btn.setStyleSheet(normal_style))
+
     def _send_pause(self) -> None:
         label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_pause(self._selected_robot)
         self.ros.signals.sig_gui_log.emit('waiting', label, '일시정지')
+        self._flash_btn(self._pause_btn, _PAUSE_FLASH, _PAUSE_NORMAL)
 
     def _send_resume(self) -> None:
         label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_resume(self._selected_robot)
         self.ros.signals.sig_gui_log.emit('system', label, '재개')
+        self._flash_btn(self._resume_btn, _RESUME_FLASH, _RESUME_NORMAL)
 
     def _send_abort_home(self) -> None:
         label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_abort(self._selected_robot)
         self.ros.signals.sig_gui_log.emit('mission_fail', label, '임무중단')
+        self._flash_btn(self._abort_btn, _ABORT_FLASH, _ABORT_NORMAL)
 
     def _check_connections(self) -> None:
-        # limo 연결 상태
         for robot, key in (('limo1', 'limo1_conn'), ('limo2', 'limo2_conn')):
-            conn   = self.ros.is_connected(robot)
-            val    = self._sys_vals[key]
-            domain = ROBOT_DOMAIN[robot]
-            if conn:
-                val.setText(f'● Domain {domain} 정상')
+            val = self._sys_vals[key]
+            if self.ros.is_connected(robot):
+                val.setText('● 연결')
                 val.setStyleSheet('color:#059669; border:none;')
             else:
-                val.setText(f'● Domain {domain} 끊김')
+                val.setText('● 미연결')
                 val.setStyleSheet('color:#ef4444; border:none;')
 
-        # 맵 서버 — /map 수신 여부로 판단
         val = self._sys_vals['map_server']
         if self.ros.latest_map is not None:
-            w, h = self.ros.latest_map.info.width, self.ros.latest_map.info.height
-            val.setText(f'● {w}×{h} 수신')
+            val.setText('● 연결')
             val.setStyleSheet('color:#059669; border:none;')
         else:
-            val.setText('● /map 대기 중')
+            val.setText('● 미연결')
             val.setStyleSheet('color:#ef4444; border:none;')
 
-        # FastAPI 비동기 핑
         if not hasattr(self, '_api_checker') or not self._api_checker.isRunning():
             self._api_checker = _FastApiChecker()
             self._api_checker.done.connect(self._on_fastapi_result)
             self._api_checker.start()
 
-        # ROS 노드 목록으로 dispatcher / traffic 체크
         try:
             node_names = self.ros.get_node_names()
             for key, node_name in (
@@ -715,10 +742,10 @@ class MapView(QWidget):
             ):
                 val = self._sys_vals[key]
                 if node_name in node_names:
-                    val.setText('● 실행 중')
+                    val.setText('● 연결')
                     val.setStyleSheet('color:#059669; border:none;')
                 else:
-                    val.setText('● 미실행')
+                    val.setText('● 미연결')
                     val.setStyleSheet('color:#ef4444; border:none;')
         except Exception:
             pass
@@ -726,10 +753,10 @@ class MapView(QWidget):
     def _on_fastapi_result(self, ok: bool) -> None:
         val = self._sys_vals['fastapi']
         if ok:
-            val.setText('● 응답 정상')
+            val.setText('● 연결')
             val.setStyleSheet('color:#059669; border:none;')
         else:
-            val.setText('● 응답 없음')
+            val.setText('● 미연결')
             val.setStyleSheet('color:#ef4444; border:none;')
 
     @staticmethod

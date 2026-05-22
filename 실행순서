@@ -3,21 +3,24 @@
 cd /home/yechan/Ulsan-X/ulsan_ui/ulsan_reservation
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-# 터미널 2 — 방문자 UI (태블릿용)
+# 터미널 2 — wego_dispatcher
+ros2 launch wego_dispatcher dispatcher_launch.py
+
+# 터미널 3 — 방문자 UI
 cd /home/yechan/Ulsan-X/ulsan_ui/ulsan-visitor-ui
 npm start
 
-# 터미널 3 — 웹 예약 UI
+# 터미널 4 — 웹 예약 UI
 cd /home/yechan/Ulsan-X/ulsan_ui/ulsan-web-ui
-PORT=3001 npm start
+npm start
 
-# 터미널 4 — wego_dispatcher
-ros2 launch wego_dispatcher dispatcher_launch.py
-
+# 터미널 5 — 관제 GUI (GUI + wego_dispatcher + FastAPI)
+ros2 launch ulsan_gui gui_launch.py
 -------------------------------------------------------------
-서버 노트북 (domain 6, 7)
+서버 (domain 6, 7)
 # 터미널 1 — AMCL + Nav2
 ros2 launch wego navigation_diff_launch.py use_rviz:=false
+
 # 터미널 2 — FSM
 ros2 launch wego_behaviour behaviour_launch.py
 
@@ -27,7 +30,7 @@ ros2 launch wego_aruco aruco_corrector_launch.py
 # 터미널 4 — TTS
 ros2 launch wego_voice voice_launch.py
 
-# 터미널 5 — domain bridge
+# 터미널 5 — domain_bridge
 ros2 launch wego_bridge bridge_launch.py
 -------------------------------------------------------------
 로봇 본체 (domain 6, 7)
