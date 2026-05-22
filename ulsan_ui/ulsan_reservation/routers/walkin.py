@@ -84,6 +84,9 @@ def assign_walkin(db: Session = Depends(get_db)):
     )
     mission = crud.create_mission(db, mission_data)
 
+    crud.create_log(db, log_type="mission_start",
+                    message=f"현장방문 안내 배정: {label} ({robot})")
+
     return schemas.WalkinAssignResponse(
         mission_id=mission.id,
         robot=robot,

@@ -14,7 +14,7 @@
 | 2 | **마커 기반 홈 정밀 복귀 구현** | `in_progress` | 3DOF IBVS 구현 완료 (2026-05-20): yaw 보정 추가, staging pose, IBVS 완료 후 AMCL 보정 통합. 실기기 검증 필요. |
 | 3 | **Nav2 BT 커스텀 노드 설계** | `todo` | 취업 어필 포인트. 유리구간 등 커스텀 후보 조사 |
 | 4 | **유리문 구간 중앙 웨이포인트 경유 방식 조사** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. classroom은 goToPose, 나머지는 goThroughPoses([entry, exit, dest]). 복귀 시 순서 반전. DEC-030 참고 |
-| 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `done (2026-05-21)` | 지도·로봇 상태·카드·긴급 제어·FAILED 색상·이벤트 로그 구현 완료 |
+| 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `done (2026-05-22)` | 지도·로봇 상태·카드·긴급 제어·이벤트 로그·미션 로그·확장성 리팩토링 완료. DEC-034·DEC-035·DEC-036 참고 |
 | 6 | **사람 발견 시 정지 기능** | `todo` | 사전학습 or 커스텀 모델 선택 필요. 이것까지 완료 시 1차 데모 완성 |
 
 ---
@@ -120,7 +120,33 @@
 - [x] **robot_status 1초 주기 재발행** — done (2026-05-21)
   - 모든 FSM 상태 루프에서 10틱(1초)마다 `publish_status` 재발행
   - 기존: 상태 진입 시 1회만 발행 → GUI 늦게 켜지면 연결 감지 불가
+- [x] **관제 GUI 종합 점검 — 이벤트/미션 로그 분리** — done (2026-05-22). DEC-034 참고
+  - 이벤트 로그: 관제 GUI 조작(상태 전이/긴급 제어/수동조작 전환) — 지도 뷰 통합 + 로봇 뷰 개별. 메모리 전용
+  - 미션 로그: 방문자 UI 임무(배정/완료/실패/노쇼) — FastAPI logs 테이블 영구 저장
+  - robot_view `_on_status`의 1초 중복 `_add_event` 호출 제거
+  - `sig_gui_log` 필터링 기반 개별 이벤트 로그
+  - FastAPI `assign.py` 3곳(reservation/classroom/complete), `walkin.py` 1곳에 `create_log` 추가
+- [x] **관제 GUI 정합성 버그 수정** — done (2026-05-22)
+  - `_STATUS_LOG_TYPE`의 `'ERROR'` → `'FAILED'` (mission_fail 로그가 정상 발화)
+  - `robot_view` STATUS_COLOR/STATUS_BG에 FAILED 색상 누락 추가
+  - LOG_TYPE_COLOR를 `ulsan_gui/styles.py` 단일 정본으로 통합 (3개 파일 중복 제거, map_view 팔레트 채택)
+- [x] **관제 GUI 확장성 리팩토링** — done (2026-05-22). DEC-035 참고
+  - `ros_node.py`에 `ROBOTS` 튜플 단일 정본 + `RobotState` dataclass 도입
+  - `GuiSignals` 분리 시그널 8개(`sig_status_1/2` 등) → 통합 시그널 5개(`sig_status(robot, status)` 등)
+  - 5개 분산 dict (`latest_status`, `_prev_status`, `latest_pose`, `latest_dest`, `_last_recv`)를 `self.robots: dict[str, RobotState]` 단일 dict로 통합
+  - 모든 뷰의 하드코딩 `'limo1'`/`'limo2'` 제거. 탭/카드/시스템 상태/통계 칩 모두 ROBOTS 기반 동적 생성
+  - 공통 `HttpGetThread` 클래스(`http_thread.py`) 신규 — 3개 HTTP 스레드 클래스 중복 제거
+  - `_FastApiChecker` 단일 인스턴스 재사용 (2초마다 객체 재생성 → 1회 생성)
+- [x] **today_tasks 로봇별 카운트 분리** — done (2026-05-22)
+  - `crud.count_today_missions_by_robot` + `GET /assign/today/by-robot` 신규
+  - 기존: 두 로봇 패널에 동일한 학원 전체 카운트 → 각 로봇별 실제 임무/완료 카운트
+- [x] **FAILED 미션 통계 분리** — done (2026-05-22). DEC-036 참고
+  - 기존: FAILED → RETURNING → IDLE 시퀀스도 `/complete`로 일괄 처리 → mission_fail 로그 누락
+  - `dispatcher_node`에 `_failed` set 추가, FAILED 상태 진입 시 미션 ID 추적
+  - IDLE 복귀 시 `_failed`에 있으면 `PATCH /assign/{id}/fail` 호출
+  - FastAPI `fail_mission` 엔드포인트 신규 → `mission_fail` 로그 기록
 - [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
+- [ ] **백엔드 확장성 정리 (데모 후)** — FastAPI/wego_dispatcher의 `ROBOTS` 상수화 + `wego_traffic` N-pair 거리 비교 일반화
 
 #### 음성 파이프라인
 - [x] `wego_voice` 패키지: TTS 전용으로 단순화 — done (2026-05-13)
@@ -144,6 +170,11 @@
   - `POST /robots/{id}/status`, `GET /robots/status`
   - `GET /logs` — 관제 GUI 알림 로그
   - APScheduler: 매시 10분 노쇼(No-show) 감지 → logs 테이블 삽입
+- [x] `ulsan_reservation` 미션 로그 통합 — done (2026-05-22). DEC-034 참고
+  - `POST /assign`, `POST /assign/classroom`, `POST /walkin/assign` → `mission_start` 로그
+  - `PATCH /assign/{id}/complete` → `mission_complete` 로그
+  - `PATCH /assign/{id}/fail` 신규 — FAILED 미션 전용 (DEC-036)
+  - `GET /assign/today/by-robot` 신규 — 로봇별 오늘 임무 카운트
 - [x] `ulsan-web-ui` React 웹 예약 UI 구현 — done (2026-05-12)
   - 예약 폼: 이름/전화번호/날짜(react-datepicker)/시간 선택
   - 만석 시간대 자동 회색 비활성화 + "(마감)" 표시

@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QVariantAnimation
 from PyQt5.QtGui import QFont, QColor, QPainter
 
+from ulsan_gui.ros_node              import ROBOTS
 from ulsan_gui.views.login_view       import LoginView
 from ulsan_gui.views.map_view         import MapView
 from ulsan_gui.views.robot_view       import RobotView
@@ -53,7 +54,7 @@ class MainWindow(QMainWindow):
     def __init__(self, ros_node):
         super().__init__()
         self.ros = ros_node
-        self._robot_statuses = {'limo1': 'UNKNOWN', 'limo2': 'UNKNOWN'}
+        self._robot_statuses = {r: 'UNKNOWN' for r in ROBOTS}
 
         self.setWindowTitle('wego 관제 대시보드')
         self.resize(1280, 800)
@@ -73,8 +74,7 @@ class MainWindow(QMainWindow):
         self._clock_timer.start(1000)
         self._tick_clock()
 
-        self.ros.signals.sig_status_1.connect(lambda s: self._on_status('limo1', s))
-        self.ros.signals.sig_status_2.connect(lambda s: self._on_status('limo2', s))
+        self.ros.signals.sig_status.connect(self._on_status)
 
     # ── 메인 앱 레이아웃 ─────────────────────────────────────────────
 
@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
         hbox.addStretch(1)
 
         # 통계 칩
-        self._chip_total = _make_stat_chip('#6b7280', '전체',   '2')
+        self._chip_total = _make_stat_chip('#6b7280', '전체', str(len(ROBOTS)))
         self._chip_busy  = _make_stat_chip('#f59e0b', '운행 중', '0')
         self._chip_idle  = _make_stat_chip('#10b981', '대기',   '0')
         for chip in (self._chip_total, self._chip_busy, self._chip_idle):
@@ -186,8 +186,7 @@ class MainWindow(QMainWindow):
 
         self._sb_btns: dict[str, QPushButton] = {}
         for i, (key, icon, label) in enumerate(VIEWS):
-            # 예약 ↔ 로그 사이 구분선
-            if i == 3:
+            if i > 0:
                 sep = QFrame()
                 sep.setFixedSize(30, 1)
                 sep.setStyleSheet('background:#334155; border:none;')
@@ -242,7 +241,7 @@ class MainWindow(QMainWindow):
     def _make_view(self, key: str) -> QWidget:
         if key == 'map':         return MapView(self.ros, switch_view_cb=self._navigate_to_robot)
         if key == 'robot':       return RobotView(self.ros)
-        if key == 'reservation': return ReservationView(self.ros)
+        if key == 'reservation': return ReservationView()
         if key == 'log':         return LogView(self.ros)
         return QLabel(key)
 

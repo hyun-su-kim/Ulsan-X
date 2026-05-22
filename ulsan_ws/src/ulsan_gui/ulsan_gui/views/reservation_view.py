@@ -8,9 +8,11 @@ from PyQt5.QtWidgets import (
     QDialog, QFormLayout, QDateEdit, QMessageBox,
     QCalendarWidget,
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QDate
+from PyQt5.QtCore import Qt, QTimer, QDate
 from PyQt5.QtGui import QFont, QColor, QTextCharFormat
 from PyQt5.QtWidgets import QApplication
+
+from ulsan_gui.http_thread import HttpGetThread
 
 API_BASE = 'http://localhost:8000'
 
@@ -40,19 +42,6 @@ _COMBO_STYLE = (
     '  background:#fff; color:#111827; border:1px solid #d1d5db;'
     '  selection-background-color:#eff6ff; selection-color:#1e40af; outline:0; }'
 )
-
-
-# ── 백그라운드 fetch 스레드 ────────────────────────────────────────────
-
-class _FetchThread(QThread):
-    done = pyqtSignal(list)
-
-    def run(self) -> None:
-        try:
-            r = requests.get(f'{API_BASE}/reservations/', timeout=3)
-            self.done.emit(r.json() if r.ok else [])
-        except Exception:
-            self.done.emit([])
 
 
 # ── 예약 추가 / 수정 다이얼로그 ──────────────────────────────────────────
@@ -154,9 +143,8 @@ class _ReservationDialog(QDialog):
 # ── 메인 뷰 ──────────────────────────────────────────────────────────
 
 class ReservationView(QWidget):
-    def __init__(self, ros_node):
+    def __init__(self):
         super().__init__()
-        self.ros = ros_node
         self._all_data: list[dict] = []
         self._build_ui()
 
@@ -317,12 +305,12 @@ class ReservationView(QWidget):
         self._fetch()
 
     def _fetch(self) -> None:
-        self._thread = _FetchThread()
+        self._thread = HttpGetThread(f'{API_BASE}/reservations/')
         self._thread.done.connect(self._on_fetched)
         self._thread.start()
 
-    def _on_fetched(self, data: list) -> None:
-        self._all_data = data
+    def _on_fetched(self, response) -> None:
+        self._all_data = response.json() if response is not None else []
         self._apply_filter()
         if self._scroll_top_next:
             self._table.scrollToTop()

@@ -1,16 +1,16 @@
 import csv
-import io
 from datetime import datetime
 
-import requests
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QFrame, QFileDialog,
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
+
+from ulsan_gui.http_thread import HttpGetThread
 
 API_URL = 'http://localhost:8000/logs'
 
@@ -24,31 +24,9 @@ _COMBO_STYLE = (
     '  selection-background-color:#eff6ff; selection-color:#1e40af; outline:0; }'
 )
 
-LOG_TYPE_COLOR = {
-    'mission_start':    ('#fffbeb', '#d97706'),
-    'mission_complete': ('#f0fdf4', '#16a34a'),
-    'mission_fail':     ('#fef2f2', '#dc2626'),
-    'waiting':          ('#faf5ff', '#9333ea'),
-    'system':           ('#f8fafc', '#374151'),
-}
+from ulsan_gui.styles import LOG_TYPE_COLOR
 
 COLUMNS = ['시각', '유형', '내용']
-
-
-class LogFetchThread(QThread):
-    fetched = pyqtSignal(list)
-
-    def __init__(self, url: str):
-        super().__init__()
-        self._url = url
-
-    def run(self) -> None:
-        try:
-            resp = requests.get(self._url, timeout=3)
-            if resp.ok:
-                self.fetched.emit(resp.json())
-        except Exception:
-            pass
 
 
 class LogView(QWidget):
@@ -138,12 +116,14 @@ class LogView(QWidget):
     # ── 데이터 ────────────────────────────────────────────────────────
 
     def _fetch(self) -> None:
-        self._thread = LogFetchThread(API_URL)
-        self._thread.fetched.connect(self._on_fetched)
+        self._thread = HttpGetThread(API_URL)
+        self._thread.done.connect(self._on_fetched)
         self._thread.start()
 
-    def _on_fetched(self, logs: list) -> None:
-        self._all_logs = logs
+    def _on_fetched(self, response) -> None:
+        if response is None:
+            return
+        self._all_logs = response.json()
         self._apply_filter()
 
     def _apply_filter(self) -> None:

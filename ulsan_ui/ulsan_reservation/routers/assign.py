@@ -66,6 +66,9 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
         tts_text=tts_text,
     ))
 
+    crud.create_log(db, log_type="mission_start",
+                    message=f"예약 안내 배정: {reservation.name}님 → {label} ({robot})")
+
     return schemas.AssignResponse(mission_id=mission.id, robot=robot)
 
 
@@ -97,7 +100,21 @@ def assign_classroom(body: schemas.AssignClassroomRequest, db: Session = Depends
         tts_text=tts_text,
     ))
 
+    crud.create_log(db, log_type="mission_start",
+                    message=f"강의실 안내 배정: {label} ({robot})")
+
     return schemas.AssignResponse(mission_id=mission.id, robot=robot)
+
+
+@router.get("/today/by-robot")
+def count_today_by_robot(db: Session = Depends(get_db)):
+    """
+    오늘 생성된 미션을 로봇별로 카운트.
+
+    관제 GUI 로봇 뷰의 '금일 임무 / 완료' 카드에서 사용한다.
+    반환 예: {"limo1": {"total": 5, "done": 3}, "limo2": {"total": 2, "done": 2}}
+    """
+    return crud.count_today_missions_by_robot(db)
 
 
 @router.get("/pending", response_model=list[schemas.MissionResponse])
@@ -132,6 +149,31 @@ def complete_mission(mission_id: int, db: Session = Depends(get_db)):
     mission = crud.complete_mission(db, mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="미션을 찾을 수 없음")
+
+    crud.create_log(db, log_type="mission_complete",
+                    message=f"임무 완료: {mission.destination} ({mission.robot_assigned})")
+
+    return {"ok": True}
+
+
+@router.patch("/{mission_id}/fail")
+def fail_mission(mission_id: int, db: Session = Depends(get_db)):
+    """
+    임무 실패 후 홈 복귀 확인 시 wego_dispatcher가 호출.
+
+    GUIDING 중 Nav2 실패 → FAILED → RETURNING → IDLE 시퀀스를
+    dispatcher가 추적해 /complete 대신 /fail로 호출한다.
+
+    mission.status는 COMPLETED로 마킹하되 logs에 mission_fail 타입으로 기록 →
+    "오늘 임무 N건 중 M건 실패" 같은 집계를 logs 테이블 기준으로 가능.
+    """
+    mission = crud.complete_mission(db, mission_id)
+    if not mission:
+        raise HTTPException(status_code=404, detail="미션을 찾을 수 없음")
+
+    crud.create_log(db, log_type="mission_fail",
+                    message=f"임무 실패: {mission.destination} ({mission.robot_assigned})")
+
     return {"ok": True}
 
 

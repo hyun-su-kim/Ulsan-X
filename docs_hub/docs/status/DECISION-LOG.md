@@ -4,6 +4,81 @@
 
 ---
 
+### DEC-036: FAILED 미션 통계 분리 — dispatcher 상태 시퀀스 추론 (done 2026-05-22)
+- **Context**: GUIDING 실패 후 FAILED → RETURNING → IDLE 시퀀스를 거쳐 홈으로 복귀하는데, 기존 `wego_dispatcher._check_completions`는 "ACTIVE 미션의 로봇이 IDLE이면 완료"로만 판정. 정상 완료와 실패 후 복귀를 구분 없이 `PATCH /assign/{id}/complete`로 일괄 처리 → DB logs 테이블에 모든 미션이 `mission_complete`로만 기록되어 **임무 실패가 임무 완료로 둔갑하는 문제**.
+- **Options**:
+  - A) wego_behaviour가 FAILED 진입 시 `/limo[12]/mission_failed` 별도 토픽 발행 → dispatcher 구독
+  - B) dispatcher가 기존 `/robot_status` 시퀀스에서 FAILED를 감지해 `_failed` set으로 추적
+- **Decision**: **방법 B — 상태 시퀀스 추론**
+  - `dispatcher_node`에 `_failed: set[int]` 추가
+  - `_status_cb`에서 FAILED 상태 진입 시 해당 로봇의 active 미션을 `_failed`에 등록
+  - `_check_completions`에서 IDLE 복귀 감지 시 `_failed`에 있으면 `PATCH /assign/{id}/fail` 호출
+  - FastAPI에 `fail_mission` 엔드포인트 신규 — mission.status는 COMPLETED로 마킹하되 logs에 `mission_fail` 타입 기록
+- **Rationale**:
+  - 방법 A는 wego_behaviour + wego_bridge + dispatcher + FastAPI 4곳 수정 필요 → 실기기 테스트 부담
+  - dispatcher가 이미 `/robot_status`를 구독 중이고, robot_status는 1초 주기로 재발행되므로 FAILED 한 번도 못 보고 지나갈 가능성 매우 낮음
+  - mission.status는 COMPLETED로 유지하고 logs 타입만 분리 → DB 스키마 변경 없음, 기존 카운트 함수 영향 없음
+- **GUI abort와의 차이**: GUI 강제 abort는 RETURNING으로 직접 전이(FAILED 미경유)하므로 자동으로 `/complete`로 잡힘. abort 자체는 이미 이벤트 로그에 별도 기록되니 중복 없음.
+- **면접 어필**: "FSM 상태 시퀀스를 dispatcher가 추적해 별도 토픽 없이 통계 분리 달성. 단순함과 확장성 간 트레이드오프 판단을 명확히 보여줄 수 있는 사례."
+- **Date**: 2026-05-22
+
+---
+
+### DEC-035: 관제 GUI 확장성 리팩토링 — ROBOTS 단일 정본 + 통합 시그널 (done 2026-05-22)
+- **Context**: 기존 `ulsan_gui` 코드 전반에 `'limo1'`/`'limo2'` 하드코딩이 산재. `GuiSignals`는 `sig_status_1`/`sig_status_2`처럼 숫자 suffix로 시그널을 분리해놨고, `ros_node`는 5개의 분산 dict(`latest_status`, `_prev_status`, `latest_pose`, `latest_dest`, `_last_recv`)에 같은 키를 박아둠. 로봇을 추가하려면 8개 시그널 정의 + 5개 dict + 모든 뷰의 if 분기 등 수십 곳을 동시 수정해야 하는 구조.
+- **Decision**: **ROBOTS 튜플 단일 정본 + RobotState dataclass + 통합 시그널**
+  - `ros_node.ROBOTS: tuple[str, ...] = ('limo1', 'limo2')` — 단일 정본
+  - `robot_label(robot)` 헬퍼 — `'limo1'` → `'LIMO 1'` 동적 변환
+  - `@dataclass RobotState` — 5개 분산 dict를 `self.robots: dict[str, RobotState]`로 통합
+  - `GuiSignals`: `sig_status_1/2` 등 8개 분리 시그널 → `sig_status(robot, status)` 등 5개 통합 시그널
+  - 모든 뷰: 탭/카드/시스템 상태/통계 칩이 `for robot in ROBOTS:` 루프로 동적 생성
+  - 색상 팔레트: 인덱스 기반 순환(`_ROBOT_COLORS[i % len(_ROBOT_COLORS)]`)
+- **Rationale**:
+  - pyqtSignal은 클래스 변수라 동적 추가 불가 → `(robot, value)` 파라미터 방식으로 통합 필수
+  - 같은 키를 5개 dict에 분산하는 패턴은 의미적으로 "로봇 한 마리"가 한 단위로 묶이지 못한 결과 → dataclass 한 객체로 묶음
+  - 로봇 추가 시 ROBOTS 튜플 한 줄 수정으로 GUI 전체 자동 확장
+- **부수 정리 (같이 진행)**:
+  - 공통 `HttpGetThread` 클래스 신규 — 3개 HTTP 스레드 클래스 중복 제거
+  - `_FastApiChecker`를 `MapView.__init__`에서 1회 생성 후 재사용 (2초마다 객체 재생성 → 단일 인스턴스)
+- **백엔드 확장성**: FastAPI(`routers/robots.py`, `_pick_idle_robot`, `count_today_missions_by_robot`)와 `wego_dispatcher`, `wego_traffic`은 여전히 2대 전용 — **데모 후 작업**으로 보류
+- **면접 어필**: "GUI에서 ROBOTS 튜플 한 줄로 N대 로봇 자동 확장. pyqtSignal 클래스 변수 제약 하에서 통합 시그널 + 파라미터 필터링 패턴으로 해결. dataclass로 도메인 모델 응집도 확보."
+- **Date**: 2026-05-22
+
+---
+
+### DEC-034: 관제 GUI 로그 아키텍처 — 이벤트 로그 vs 미션 로그 분리 (done 2026-05-22)
+- **Context**: 관제 GUI에 로그성 위젯이 3곳(지도 뷰 미니 이벤트 로그, 로봇 뷰 "오늘 이벤트", 로그 뷰 미션 로그) 존재. 각자 데이터 소스·필터링 조건이 다른데 명확한 역할 분리가 없었고, 로봇 뷰 "오늘 이벤트"는 `sig_status_1/2`에서 상태 변화 필터 없이 매번 `_add_event` 호출 → robot_status가 1초 주기로 재발행되며 같은 상태가 1초마다 누적되는 버그. 또한 FastAPI logs 테이블에는 노쇼 감지만 들어가고 임무 시작/완료 로그는 누락 상태.
+- **Decision**: **이벤트 로그(GUI 조작) ↔ 미션 로그(방문자 UI 임무) 명확 분리**
+  - **이벤트 로그** (메모리, GUI 세션만): 관제 GUI에서 발생한 모든 조작
+    - 상태 전이 (IDLE/BUSY/RETURNING/WAITING/FAILED)
+    - 긴급 제어 (일시정지/재개/임무중단)
+    - 수동조작 전환/복귀
+    - 지도 뷰: 두 로봇 통합 표시
+    - 로봇 뷰: `sig_gui_log` 필터링으로 해당 로봇 개별 표시
+  - **미션 로그** (DB 영구 저장, 로그 뷰): 방문자 UI를 통한 임무 흐름
+    - 예약 체크인 배정 → `mission_start`
+    - 강의실 안내 배정 → `mission_start`
+    - 현장방문 배정 → `mission_start`
+    - 임무 완료 → `mission_complete`
+    - 임무 실패(FAILED 거침) → `mission_fail` (DEC-036)
+    - 노쇼 감지 → `noshow` (APScheduler)
+- **구현**:
+  - `robot_view._on_status`에서 무조건 `_add_event` 호출 제거
+  - `RobotPanel._connect_signals`에 `sig_gui_log` 연결 추가, `_on_gui_log`에서 robot_label 비교로 필터링
+  - FastAPI `assign.py` 3곳, `walkin.py` 1곳에 `create_log` 호출 추가
+  - `LOG_TYPE_COLOR`를 `ulsan_gui/styles.py` 단일 정본으로 통합 (3개 파일 중복 제거)
+- **부수 버그 수정**:
+  - `_STATUS_LOG_TYPE`의 `'ERROR'` → `'FAILED'` (mission_fail 로그가 발화되지 않던 죽은 매핑)
+  - `robot_view` STATUS_COLOR/STATUS_BG에 FAILED 누락 추가 (회색 UNKNOWN으로 표시되던 버그)
+- **Rationale**:
+  - 두 로그의 시간 스케일·범위·저장 정책이 본질적으로 다름 (실시간 조작 추적 vs 영구 비즈니스 기록)
+  - 같은 정보를 3곳에 중복 표시하는 대신 책임을 분리 → 정보 가치 명확화
+  - mission_fail 로그가 발화되지 않던 정합성 버그(ERROR ≠ FAILED)를 동시 해결
+- **면접 어필**: "로그성 위젯의 역할을 시간 스케일·범위·저장 정책 기준으로 분리. 비즈니스 데이터(미션)와 운영 데이터(GUI 조작)를 다른 계층에서 관리하는 설계 원칙 적용."
+- **Date**: 2026-05-22
+
+---
+
 ### DEC-033: GUIDING 실패 처리 — FAILED 상태 추가 (done 2026-05-21)
 - **Context**: 현재 GuidingState에서 Nav2가 SUCCEEDED가 아닌 결과를 반환하면 바로 IDLE로 전환. 두 가지 문제: ① 실패한 위치(복도 중간 등)에서 IDLE이 되어 dispatcher가 즉시 재배정 가능 — 로봇이 홈 아닌 위치에서 새 임무를 받는 위험. ② IDLE과 실패를 관제 UI에서 구분 불가.
 - **Decision**: **GUIDING failed → FAILED 상태 → RETURNING**

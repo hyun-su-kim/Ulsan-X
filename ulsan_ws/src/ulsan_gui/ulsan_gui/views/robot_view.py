@@ -1,7 +1,4 @@
 import time
-import threading
-import urllib.request
-import json
 
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -11,14 +8,21 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QRect, QVariantAnimation
 from PyQt5.QtGui import QFont, QImage, QPixmap, QKeyEvent, QPainter, QPen, QColor
 
+from ulsan_gui.ros_node    import ROBOTS, robot_label
+from ulsan_gui.http_thread import HttpGetThread
+
 STATUS_COLOR = {
     'IDLE':      '#16a34a', 'BUSY': '#d97706',
-    'RETURNING': '#2563eb', 'WAITING': '#9333ea', 'UNKNOWN': '#9ca3af',
+    'RETURNING': '#2563eb', 'WAITING': '#9333ea',
+    'FAILED':    '#dc2626', 'UNKNOWN': '#9ca3af',
 }
 STATUS_BG = {
     'IDLE':      '#f0fdf4', 'BUSY': '#fffbeb',
-    'RETURNING': '#eff6ff', 'WAITING': '#faf5ff', 'UNKNOWN': '#f8fafc',
+    'RETURNING': '#eff6ff', 'WAITING': '#faf5ff',
+    'FAILED':    '#fef2f2', 'UNKNOWN': '#f8fafc',
 }
+
+from ulsan_gui.styles import LOG_TYPE_COLOR
 
 _BATT_V_MAX = 12.6
 _BATT_V_MIN = 9.0
@@ -59,11 +63,10 @@ _DPAD_KEY_HINTS: dict[tuple, str] = {
 class _DpadBtn(QFrame):
     """방향 기호 + 키 힌트를 함께 표시하는 D-pad 버튼."""
 
-    def __init__(self, sym: str, key_hint: str, is_diag: bool, on_press, on_release):
+    def __init__(self, sym: str, key_hint: str, on_press, on_release):
         super().__init__()
         self._on_press   = on_press
         self._on_release = on_release
-        self._is_diag    = is_diag
         self.setFixedSize(52, 50)
         self.setCursor(Qt.PointingHandCursor)
 
@@ -303,10 +306,9 @@ class TeleopCard(QFrame):
             row_h.setSpacing(5)
             for c_i, sym in enumerate(row):
                 act      = acts[r_i][c_i]
-                is_diag  = sym in ('↖', '↗', '↙', '↘')
                 key_hint = _DPAD_KEY_HINTS[act]
                 btn = _DpadBtn(
-                    sym, key_hint, is_diag,
+                    sym, key_hint,
                     on_press=lambda lin=act[0], ang=act[1]: self._send(lin, ang),
                     on_release=lambda: self._send(0, 0),
                 )
@@ -337,7 +339,7 @@ class TeleopCard(QFrame):
 
     def _toggle_manual_mode(self) -> None:
         self._manual_mode = not self._manual_mode
-        label = 'LIMO 1' if self.robot == 'limo1' else 'LIMO 2'
+        label = robot_label(self.robot)
         if self._manual_mode:
             self.ros.publish_pause(self.robot)
             self.ros.signals.sig_gui_log.emit('system', label, '수동조작 전환')
@@ -445,7 +447,7 @@ class RobotPanel(QWidget):
 
         # 헤더
         header_hbox = QHBoxLayout()
-        name_lbl = QLabel(f'🤖 {self.robot.upper()}')
+        name_lbl = QLabel(f'🤖 {robot_label(self.robot)}')
         name_lbl.setFont(QFont('Segoe UI', 14, QFont.Bold))
         name_lbl.setStyleSheet(LABEL_STYLE)
         header_hbox.addWidget(name_lbl)
@@ -547,7 +549,7 @@ class RobotPanel(QWidget):
         vbox.setSpacing(8)
 
         header = QHBoxLayout()
-        title = QLabel(f'📷 {self.robot.upper()} 전방 카메라')
+        title = QLabel(f'📷 {robot_label(self.robot)} 전방 카메라')
         title.setFont(QFont('Segoe UI', 11, QFont.Bold))
         title.setStyleSheet(LABEL_STYLE)
         header.addWidget(title)
@@ -584,16 +586,16 @@ class RobotPanel(QWidget):
     def _connect_signals(self) -> None:
         self._cam_last_recv: float = 0.0
 
-        if self.robot == 'limo1':
-            self.ros.signals.sig_status_1.connect(self._on_status)
-            self.ros.signals.sig_camera_1.connect(self._on_camera)
-            self.ros.signals.sig_dest_1.connect(self._on_dest)
-            self.ros.signals.sig_battery_1.connect(self._on_battery)
-        else:
-            self.ros.signals.sig_status_2.connect(self._on_status)
-            self.ros.signals.sig_camera_2.connect(self._on_camera)
-            self.ros.signals.sig_dest_2.connect(self._on_dest)
-            self.ros.signals.sig_battery_2.connect(self._on_battery)
+        # 통합 시그널 + 로봇 필터링
+        self.ros.signals.sig_status.connect(
+            lambda r, s: self._on_status(s) if r == self.robot else None)
+        self.ros.signals.sig_camera.connect(
+            lambda r, d, f: self._on_camera(d, f) if r == self.robot else None)
+        self.ros.signals.sig_dest.connect(
+            lambda r, d: self._on_dest(d) if r == self.robot else None)
+        self.ros.signals.sig_battery.connect(
+            lambda r, v: self._on_battery(v) if r == self.robot else None)
+        self.ros.signals.sig_gui_log.connect(self._on_gui_log)
 
         cam_timer = QTimer(self)
         cam_timer.timeout.connect(self._check_cam_live)
@@ -632,7 +634,6 @@ class RobotPanel(QWidget):
                 'background:#eff6ff; border-radius:8px; border:1px solid #bfdbfe;'
             )
             self._mission_lbl_title.setStyleSheet('color:#1d4ed8; border:none;')
-        self._add_event(status)
 
     def _on_dest(self, dest: str) -> None:
         if dest:
@@ -645,8 +646,13 @@ class RobotPanel(QWidget):
         self._metric_task_total._val.setText(str(total))
         self._metric_task_done._val.setText(str(done))
 
-    def _add_event(self, msg: str) -> None:
+    def _on_gui_log(self, log_type: str, label: str, message: str) -> None:
+        if label == robot_label(self.robot):
+            self._add_event(log_type, message)
+
+    def _add_event(self, log_type: str, msg: str) -> None:
         from datetime import datetime
+        _, fg = LOG_TYPE_COLOR.get(log_type, ('#fff', '#374151'))
         row = QHBoxLayout()
         time_lbl = QLabel(datetime.now().strftime('%H:%M:%S'))
         time_lbl.setFont(QFont('Segoe UI', 9))
@@ -655,7 +661,7 @@ class RobotPanel(QWidget):
 
         msg_lbl = QLabel(msg)
         msg_lbl.setFont(QFont('Segoe UI', 9))
-        msg_lbl.setStyleSheet('color:#374151; border:none;')
+        msg_lbl.setStyleSheet(f'color:{fg}; border:none;')
 
         row.addWidget(time_lbl)
         row.addWidget(msg_lbl, 1)
@@ -740,11 +746,10 @@ class RobotView(QWidget):
     def __init__(self, ros_node):
         super().__init__()
         self.setFocusPolicy(Qt.StrongFocus)
-        self._statuses = {'limo1': 'UNKNOWN', 'limo2': 'UNKNOWN'}
+        self._statuses = {r: 'UNKNOWN' for r in ROBOTS}
         self._build_ui(ros_node)
 
-        ros_node.signals.sig_status_1.connect(lambda s: self._on_tab_status('limo1', s))
-        ros_node.signals.sig_status_2.connect(lambda s: self._on_tab_status('limo2', s))
+        ros_node.signals.sig_status.connect(self._on_tab_status)
 
         self._task_timer = QTimer(self)
         self._task_timer.timeout.connect(self._fetch_today_tasks)
@@ -769,8 +774,8 @@ class RobotView(QWidget):
         self._tab_name_lbls: dict[str, QLabel] = {}
         self._tab_badges: dict[str, QLabel] = {}
 
-        for robot in ('limo1', 'limo2'):
-            label = 'LIMO 1' if robot == 'limo1' else 'LIMO 2'
+        for robot in ROBOTS:
+            label = robot_label(robot)
 
             # QFrame 기반 클릭 가능 탭 (QPushButton.setLayout은 Qt에서 렌더링 깨짐)
             tab_frame = QFrame()
@@ -820,26 +825,26 @@ class RobotView(QWidget):
         self._tab_anim: QVariantAnimation | None = None
 
         vbox.addWidget(stack_wrapper, 1)
-        self._select('limo1', animated=False)
+        self._select(ROBOTS[0], animated=False)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._fetch_today_tasks()
 
     def _fetch_today_tasks(self) -> None:
-        def _do():
-            try:
-                with urllib.request.urlopen(
-                    'http://localhost:8000/reservations/today', timeout=3
-                ) as resp:
-                    data = json.loads(resp.read())
-                total = len(data)
-                done  = sum(1 for r in data if r.get('status') == 'COMPLETED')
-                for panel in self._panels.values():
-                    panel.set_today_tasks(total, done)
-            except Exception:
-                pass
-        threading.Thread(target=_do, daemon=True).start()
+        if hasattr(self, '_today_thread') and self._today_thread.isRunning():
+            return
+        self._today_thread = HttpGetThread('http://localhost:8000/assign/today/by-robot')
+        self._today_thread.done.connect(self._on_today_tasks)
+        self._today_thread.start()
+
+    def _on_today_tasks(self, response) -> None:
+        if response is None:
+            return
+        data = response.json()
+        for robot, panel in self._panels.items():
+            stats = data.get(robot, {'total': 0, 'done': 0})
+            panel.set_today_tasks(stats.get('total', 0), stats.get('done', 0))
 
     def _on_tab_status(self, robot: str, status: str) -> None:
         self._statuses[robot] = status
@@ -869,7 +874,7 @@ class RobotView(QWidget):
                     f'color:{"#1e40af" if active else "#6b7280"};'
                 )
             self._panels[robot].setFocus()
-            for r in ('limo1', 'limo2'):
+            for r in ROBOTS:
                 self._on_tab_status(r, self._statuses[r])
 
         if not animated:

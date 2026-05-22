@@ -74,6 +74,35 @@ COMPLETED: "안내 완료" 표시 → 4초 후 홈으로
 
 ---
 
+## 관제 GUI (ulsan_gui)
+
+### 구조
+| 모듈 | 역할 |
+|---|---|
+| `ros_node.py` | ROS 노드 + `ROBOTS` 단일 정본 + `RobotState` dataclass + 통합 시그널 |
+| `main_window.py` | 사이드바·헤더·뷰 전환 |
+| `http_thread.py` | 공통 `HttpGetThread` 백그라운드 HTTP 클래스 |
+| `styles.py` | `LOG_TYPE_COLOR` 단일 정본 |
+| `views/login_view.py` | PIN 인증 |
+| `views/map_view.py` | 지도 + 로봇 카드 + 긴급 제어 + 시스템 상태 + 통합 이벤트 로그 |
+| `views/robot_view.py` | 로봇별 탭(카메라/수동조작/개별 이벤트 로그) |
+| `views/reservation_view.py` | 예약 CRUD |
+| `views/log_view.py` | 미션 로그 (DB 영구) |
+
+### 확장성 (DEC-035)
+`ros_node.ROBOTS: tuple[str, ...] = ('limo1', 'limo2')` 한 줄이 GUI 전체의 정본. 로봇 추가 시 이 튜플만 수정하면 탭/카드/시스템 상태/통계 칩/시그널 구독·발행 모두 자동 확장된다.
+
+### 로그 아키텍처 (DEC-034)
+| 위치 | 종류 | 데이터 소스 | 저장 정책 |
+|---|---|---|---|
+| 지도 뷰 미니 이벤트 로그 | 두 로봇 통합 이벤트 | `sig_gui_log` (메모리) | GUI 세션만 |
+| 로봇 뷰 개별 이벤트 로그 | 해당 로봇 이벤트 | `sig_gui_log` 필터링 (메모리) | GUI 세션만 |
+| 로그 뷰 미션 로그 | DB 영구 기록 | FastAPI `/logs` 폴링 | 영구 |
+
+이벤트 로그 = 관제 GUI 조작(상태 전이/긴급 제어/수동조작 전환), 미션 로그 = 방문자 UI 임무(배정/완료/실패/노쇼). FAILED 미션은 `mission_fail` 타입으로 분리 기록 (DEC-036).
+
+---
+
 ## wego_dispatcher (신규 rclpy 노드)
 
 ### 역할
@@ -142,10 +171,14 @@ COMPLETED: "안내 완료" 표시 → 4초 후 홈으로
 | 메서드 | 경로 | 용도 |
 |---|---|---|
 | GET | `/walkin/rooms/available` | 현재 시간대 빈 상담실 조회 |
-| POST | `/walkin/assign` | 현장 방문 배정 + walk-in DB 삽입 + 로봇 배정 |
-| POST | `/assign` | 예약 체크인 후 로봇 임무 배정 |
-| POST | `/assign/classroom` | 강의실 안내 로봇 배정 (DB 기록 없음) |
+| POST | `/walkin/assign` | 현장 방문 배정 + walk-in DB 삽입 + 로봇 배정 (mission_start 로그) |
+| POST | `/assign` | 예약 체크인 후 로봇 임무 배정 (mission_start 로그) |
+| POST | `/assign/classroom` | 강의실 안내 로봇 배정 (mission_start 로그) |
 | GET | `/assign/pending` | wego_dispatcher 폴링용 미결 미션 조회 |
+| PATCH | `/assign/{id}/start` | wego_dispatcher PENDING → ACTIVE |
+| PATCH | `/assign/{id}/complete` | wego_dispatcher 정상 복귀 (mission_complete 로그) |
+| PATCH | `/assign/{id}/fail` | wego_dispatcher FAILED 거친 복귀 (mission_fail 로그, DEC-036) |
+| GET | `/assign/today/by-robot` | 로봇별 오늘 임무/완료 카운트 (관제 GUI 로봇 뷰) |
 | POST | `/robots/{id}/status` | wego_dispatcher → 로봇 상태 업데이트 |
 | GET | `/robots/status` | 두 로봇 현재 상태 조회 (태블릿 폴링용) |
 | GET | `/logs` | 관제 UI 알림 로그 목록 |

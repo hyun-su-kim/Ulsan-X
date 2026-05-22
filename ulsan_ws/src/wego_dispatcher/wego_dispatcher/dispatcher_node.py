@@ -55,6 +55,8 @@ class DispatcherNode(Node):
         self._active_missions: dict[int, str] = {}
         # 로봇이 non-IDLE로 전환된 것이 확인된 미션 — 출발 전 IDLE을 완료로 오인하는 것을 막음
         self._departed: set[int] = set()
+        # FAILED 상태를 거친 미션 — IDLE 복귀 시 /complete 대신 /fail 호출
+        self._failed: set[int] = set()
         self._lock = threading.Lock()
 
         # 상태 구독
@@ -85,12 +87,15 @@ class DispatcherNode(Node):
             if old_status != new_status:
                 self._robot_status[robot] = new_status
                 self.get_logger().info(f'{robot} 상태: {old_status} → {new_status}')
-                # 로봇이 non-IDLE로 전환 → 해당 로봇의 ACTIVE 미션을 출발 확인으로 마킹
+                # 로봇이 non-IDLE로 전환 → 출발 확인으로 마킹
+                # FAILED 진입 → 실패 마킹 (IDLE 복귀 시 /fail로 분기)
                 if new_status != "IDLE":
                     with self._lock:
                         for mid, r in self._active_missions.items():
                             if r == robot:
                                 self._departed.add(mid)
+                                if new_status == "FAILED":
+                                    self._failed.add(mid)
                 # FastAPI in-memory 상태 동기화
                 try:
                     requests.post(
@@ -173,17 +178,22 @@ class DispatcherNode(Node):
             with self._lock:
                 robot = self._active_missions.pop(mission_id, None)
                 self._departed.discard(mission_id)
+                is_failed = mission_id in self._failed
+                self._failed.discard(mission_id)
             if robot is None:
                 continue
 
-            self.get_logger().info(f'[{mission_id}] {robot} 홈 복귀 확인 → COMPLETED')
+            endpoint = 'fail' if is_failed else 'complete'
+            self.get_logger().info(
+                f'[{mission_id}] {robot} 홈 복귀 확인 → {endpoint.upper()}'
+            )
             try:
                 requests.patch(
-                    f'{self._api}/assign/{mission_id}/complete',
+                    f'{self._api}/assign/{mission_id}/{endpoint}',
                     timeout=1.0,
                 )
             except Exception as e:
-                self.get_logger().warn(f'complete PATCH 실패: {e}')
+                self.get_logger().warn(f'{endpoint} PATCH 실패: {e}')
 
     def _pick_idle_robot(self) -> str | None:
         """limo1 우선으로 IDLE 로봇 반환. 호출 전 _lock 보유 필요."""

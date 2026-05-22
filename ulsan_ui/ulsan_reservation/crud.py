@@ -3,7 +3,7 @@
 # DB 로직을 라우터와 분리함으로써 코드 재사용성과 가독성을 높인다
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 from datetime import date
 import models
 import schemas
@@ -360,6 +360,32 @@ def create_log(db: Session, log_type: str, message: str):
     db.commit()
     db.refresh(log)
     return log
+
+
+def count_today_missions_by_robot(db: Session):
+    """오늘 생성된 미션을 로봇별로 카운트 (total, done)."""
+    today = date.today()
+    result = {
+        'limo1': {'total': 0, 'done': 0},
+        'limo2': {'total': 0, 'done': 0},
+    }
+    rows = (
+        db.query(
+            models.Mission.robot_assigned,
+            models.Mission.status,
+            func.count(models.Mission.id),
+        )
+        .filter(func.date(models.Mission.created_at) == today)
+        .filter(models.Mission.robot_assigned.isnot(None))
+        .group_by(models.Mission.robot_assigned, models.Mission.status)
+        .all()
+    )
+    for robot, status, cnt in rows:
+        if robot in result:
+            result[robot]['total'] += cnt
+            if status == models.MissionStatus.COMPLETED:
+                result[robot]['done'] += cnt
+    return result
 
 
 def get_logs(db: Session, limit: int = 100):

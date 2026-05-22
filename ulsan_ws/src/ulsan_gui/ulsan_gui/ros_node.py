@@ -1,6 +1,7 @@
 import math
 import time
 import threading
+from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
@@ -20,19 +21,36 @@ except ImportError:
 from PyQt5.QtCore import QObject, pyqtSignal
 
 
+# 로봇 목록 — 단일 정본. 로봇 추가 시 이 튜플만 수정하면 GUI 전체가 자동 확장
+ROBOTS: tuple[str, ...] = ('limo1', 'limo2')
+
+
+def robot_label(robot: str) -> str:
+    """'limo1' → 'LIMO 1'."""
+    if robot.startswith('limo') and robot[4:].isdigit():
+        return f'LIMO {robot[4:]}'
+    return robot
+
+
+@dataclass
+class RobotState:
+    status: str = 'UNKNOWN'
+    prev_status: str = ''
+    pose: object = None
+    dest: str = ''
+    last_recv: float = 0.0
+
+
 class GuiSignals(QObject):
-    sig_status_1  = pyqtSignal(str)
-    sig_status_2  = pyqtSignal(str)
-    sig_pose_1    = pyqtSignal(object)
-    sig_pose_2    = pyqtSignal(object)
-    sig_map       = pyqtSignal(object)
-    sig_camera_1  = pyqtSignal(bytes, str)
-    sig_camera_2  = pyqtSignal(bytes, str)
-    sig_dest_1    = pyqtSignal(str)    # 현재 목적지 (limo1)
-    sig_dest_2    = pyqtSignal(str)    # 현재 목적지 (limo2)
-    sig_battery_1 = pyqtSignal(float)  # 배터리 전압 (limo1)
-    sig_battery_2 = pyqtSignal(float)  # 배터리 전압 (limo2)
-    sig_gui_log   = pyqtSignal(str, str, str)  # (log_type, robot_label, message)
+    # 로봇별 시그널 — (robot_name, value) 형태로 통합
+    sig_status   = pyqtSignal(str, str)         # (robot, status)
+    sig_pose     = pyqtSignal(str, object)      # (robot, pose_msg)
+    sig_camera   = pyqtSignal(str, bytes, str)  # (robot, data, fmt)
+    sig_dest     = pyqtSignal(str, str)         # (robot, dest)
+    sig_battery  = pyqtSignal(str, float)       # (robot, voltage)
+    # 비로봇 시그널
+    sig_map      = pyqtSignal(object)
+    sig_gui_log  = pyqtSignal(str, str, str)    # (log_type, robot_label, message)
 
 
 # /map 토픽은 transient_local (latched)로 발행되므로 구독도 맞춰야 함
@@ -50,59 +68,52 @@ class RosNode(Node):
 
         self.signals = GuiSignals()
 
-        self.latest_status: dict[str, str]    = {'limo1': 'UNKNOWN', 'limo2': 'UNKNOWN'}
-        self._prev_status:  dict[str, str]    = {'limo1': '',        'limo2': ''}
-        self.latest_pose:   dict[str, object] = {'limo1': None,      'limo2': None}
-        self.latest_dest:   dict[str, str]    = {'limo1': '',        'limo2': ''}
-        self.latest_map:    OccupancyGrid | None = None
-        self._last_recv:    dict[str, float]  = {'limo1': 0.0,       'limo2': 0.0}
+        # 로봇별 상태 — 단일 dict
+        self.robots: dict[str, RobotState] = {r: RobotState() for r in ROBOTS}
+        self.latest_map: OccupancyGrid | None = None
 
-        # 구독
-        self.create_subscription(String, '/limo1/robot_status',
-                                 lambda m: self._status_cb('limo1', m), 10)
-        self.create_subscription(String, '/limo2/robot_status',
-                                 lambda m: self._status_cb('limo2', m), 10)
-        self.create_subscription(PoseWithCovarianceStamped, '/limo1/amcl_pose',
-                                 lambda m: self._pose_cb('limo1', m), 10)
-        self.create_subscription(PoseWithCovarianceStamped, '/limo2/amcl_pose',
-                                 lambda m: self._pose_cb('limo2', m), 10)
-        # transient_local QoS로 맵 구독 (GUI 실행 전 발행된 맵도 수신)
+        # 구독 — 로봇별 루프
+        for robot in ROBOTS:
+            self.create_subscription(
+                String, f'/{robot}/robot_status',
+                lambda m, r=robot: self._status_cb(r, m), 10,
+            )
+            self.create_subscription(
+                PoseWithCovarianceStamped, f'/{robot}/amcl_pose',
+                lambda m, r=robot: self._pose_cb(r, m), 10,
+            )
+            self.create_subscription(
+                CompressedImage, f'/{robot}/camera/image/compressed',
+                lambda m, r=robot: self._camera_cb(r, m), 10,
+            )
+            self.create_subscription(
+                String, f'/{robot}/goal_destination',
+                lambda m, r=robot: self._dest_cb(r, m), 10,
+            )
+            if _LIMO_MSGS_OK:
+                self.create_subscription(
+                    _LimoStatus, f'/{robot}/limo_status',
+                    lambda m, r=robot: self._battery_cb(r, m), 10,
+                )
+
+        # /map 토픽은 transient_local QoS로 구독 (GUI 실행 전 발행된 맵도 수신)
         self.create_subscription(OccupancyGrid, '/map', self._map_cb, _MAP_QOS)
-        self.create_subscription(CompressedImage, '/limo1/camera/image/compressed',
-                                 lambda m: self._camera_cb('limo1', m), 10)
-        self.create_subscription(CompressedImage, '/limo2/camera/image/compressed',
-                                 lambda m: self._camera_cb('limo2', m), 10)
-        # 목적지 구독 (dispatcher 및 GUI 발행 모두 수신)
-        self.create_subscription(String, '/limo1/goal_destination',
-                                 lambda m: self._dest_cb('limo1', m), 10)
-        self.create_subscription(String, '/limo2/goal_destination',
-                                 lambda m: self._dest_cb('limo2', m), 10)
-        if _LIMO_MSGS_OK:
-            self.create_subscription(_LimoStatus, '/limo1/limo_status',
-                                     lambda m: self._battery_cb('limo1', m), 10)
-            self.create_subscription(_LimoStatus, '/limo2/limo_status',
-                                     lambda m: self._battery_cb('limo2', m), 10)
 
-        # 발행
+        # 발행 — 로봇별 dict
         self._cmd_vel_pubs = {
-            'limo1': self.create_publisher(Twist, '/limo1/cmd_vel', 10),
-            'limo2': self.create_publisher(Twist, '/limo2/cmd_vel', 10),
+            r: self.create_publisher(Twist, f'/{r}/cmd_vel', 10) for r in ROBOTS
         }
         self._goal_pubs = {
-            'limo1': self.create_publisher(String, '/limo1/goal_destination', 10),
-            'limo2': self.create_publisher(String, '/limo2/goal_destination', 10),
+            r: self.create_publisher(String, f'/{r}/goal_destination', 10) for r in ROBOTS
         }
         self._pause_pubs = {
-            'limo1': self.create_publisher(Empty, '/limo1/pause', 10),
-            'limo2': self.create_publisher(Empty, '/limo2/pause', 10),
+            r: self.create_publisher(Empty, f'/{r}/pause', 10) for r in ROBOTS
         }
         self._resume_pubs = {
-            'limo1': self.create_publisher(Empty, '/limo1/resume', 10),
-            'limo2': self.create_publisher(Empty, '/limo2/resume', 10),
+            r: self.create_publisher(Empty, f'/{r}/resume', 10) for r in ROBOTS
         }
         self._abort_pubs = {
-            'limo1': self.create_publisher(Empty, '/limo1/abort', 10),
-            'limo2': self.create_publisher(Empty, '/limo2/abort', 10),
+            r: self.create_publisher(Empty, f'/{r}/abort', 10) for r in ROBOTS
         }
 
         self.get_logger().info('ulsan_gui ROS 노드 초기화 완료')
@@ -112,46 +123,45 @@ class RosNode(Node):
     _STATUS_LOG_TYPE = {
         'IDLE': 'system', 'BUSY': 'mission_start',
         'RETURNING': 'mission_complete', 'WAITING': 'waiting',
-        'ERROR': 'mission_fail', 'UNKNOWN': 'system',
+        'FAILED': 'mission_fail', 'UNKNOWN': 'system',
     }
 
     def _status_cb(self, robot: str, msg: String) -> None:
-        self.latest_status[robot] = msg.data
-        self._last_recv[robot] = time.time()
-        (self.signals.sig_status_1 if robot == 'limo1' else self.signals.sig_status_2).emit(msg.data)
+        st = self.robots[robot]
+        st.status = msg.data
+        st.last_recv = time.time()
+        self.signals.sig_status.emit(robot, msg.data)
 
-        if msg.data != self._prev_status[robot]:
-            label = 'LIMO 1' if robot == 'limo1' else 'LIMO 2'
-            prev  = self._prev_status[robot]
-            if not prev:
+        if msg.data != st.prev_status:
+            label = robot_label(robot)
+            if not st.prev_status:
                 log_msg  = f'연결됨 ({msg.data})'
                 log_type = 'system'
             else:
                 log_msg  = msg.data
                 log_type = self._STATUS_LOG_TYPE.get(msg.data, 'system')
             self.signals.sig_gui_log.emit(log_type, label, log_msg)
-            self._prev_status[robot] = msg.data
+            st.prev_status = msg.data
 
     def _pose_cb(self, robot: str, msg: PoseWithCovarianceStamped) -> None:
-        self.latest_pose[robot] = msg
-        self._last_recv[robot] = time.time()
-        (self.signals.sig_pose_1 if robot == 'limo1' else self.signals.sig_pose_2).emit(msg)
+        st = self.robots[robot]
+        st.pose = msg
+        st.last_recv = time.time()
+        self.signals.sig_pose.emit(robot, msg)
 
     def _map_cb(self, msg: OccupancyGrid) -> None:
         self.latest_map = msg
         self.signals.sig_map.emit(msg)
 
     def _camera_cb(self, robot: str, msg: CompressedImage) -> None:
-        sig = self.signals.sig_camera_1 if robot == 'limo1' else self.signals.sig_camera_2
-        sig.emit(bytes(msg.data), msg.format)
+        self.signals.sig_camera.emit(robot, bytes(msg.data), msg.format)
 
     def _dest_cb(self, robot: str, msg: String) -> None:
-        self.latest_dest[robot] = msg.data
-        (self.signals.sig_dest_1 if robot == 'limo1' else self.signals.sig_dest_2).emit(msg.data)
+        self.robots[robot].dest = msg.data
+        self.signals.sig_dest.emit(robot, msg.data)
 
     def _battery_cb(self, robot: str, msg) -> None:
-        sig = self.signals.sig_battery_1 if robot == 'limo1' else self.signals.sig_battery_2
-        sig.emit(msg.battery_voltage)
+        self.signals.sig_battery.emit(robot, msg.battery_voltage)
 
     # ── 발행 ─────────────────────────────────────────────────────────
 
@@ -178,7 +188,7 @@ class RosNode(Node):
     # ── 유틸 ─────────────────────────────────────────────────────────
 
     def is_connected(self, robot: str, timeout_sec: float = 3.0) -> bool:
-        return (time.time() - self._last_recv[robot]) < timeout_sec
+        return (time.time() - self.robots[robot].last_recv) < timeout_sec
 
     @staticmethod
     def pose_to_xyyaw(pose_msg: PoseWithCovarianceStamped) -> tuple[float, float, float]:

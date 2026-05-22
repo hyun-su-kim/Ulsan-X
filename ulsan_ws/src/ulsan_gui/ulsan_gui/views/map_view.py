@@ -1,14 +1,16 @@
 import math
 from datetime import datetime
 
-import requests
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QFrame, QSizePolicy,
     QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea,
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, QPoint, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QPen, QBrush, QPolygon
+
+from ulsan_gui.ros_node import ROBOTS, robot_label
+from ulsan_gui.http_thread import HttpGetThread
 
 STATUS_COLOR = {
     'IDLE':      '#16a34a', 'BUSY':      '#d97706',
@@ -25,13 +27,8 @@ STATUS_BORDER = {
     'RETURNING': '#3b82f6', 'WAITING':   '#9333ea',
     'FAILED':    '#ef4444', 'UNKNOWN':   '#9ca3af',
 }
-LOG_TYPE_COLOR = {
-    'mission_start':    ('#dbeafe', '#1d4ed8'),
-    'mission_complete': ('#d1fae5', '#047857'),
-    'mission_fail':     ('#fee2e2', '#b91c1c'),
-    'waiting':          ('#fef3c7', '#b45309'),
-    'system':           ('#f3f4f6', '#374151'),
-}
+
+from ulsan_gui.styles import LOG_TYPE_COLOR
 
 CARD_TITLE_STYLE = (
     'font-size:11px; font-weight:600; color:#6b7280;'
@@ -39,17 +36,9 @@ CARD_TITLE_STYLE = (
 )
 
 
-# ── FastAPI 비동기 체크 스레드 ────────────────────────────────────────
-
-class _FastApiChecker(QThread):
-    done = pyqtSignal(bool)
-
-    def run(self) -> None:
-        try:
-            r = requests.get('http://localhost:8000/logs', timeout=0.5)
-            self.done.emit(r.ok)
-        except Exception:
-            self.done.emit(False)
+# 로봇 마커 색상 팔레트 — ROBOTS 인덱스 기준으로 순환
+_ROBOT_COLORS = ['#2563eb', '#d97706', '#10b981', '#9333ea', '#dc2626']
+_LEGEND_DOTS  = ['#f59e0b', '#10b981', '#3b82f6', '#9333ea', '#ef4444']
 
 
 # ── 맵 캔버스 ────────────────────────────────────────────────────────
@@ -65,9 +54,12 @@ class MapCanvas(QWidget):
         )
         self._map_pixmap: QPixmap | None = None
         self._map_info   = None
-        self._poses: dict[str, tuple | None] = {'limo1': None, 'limo2': None}
-        self._statuses: dict[str, str] = {'limo1': 'UNKNOWN', 'limo2': 'UNKNOWN'}
-        self._robot_colors = {'limo1': QColor('#2563eb'), 'limo2': QColor('#d97706')}
+        self._poses: dict[str, tuple | None] = {r: None for r in ROBOTS}
+        self._statuses: dict[str, str] = {r: 'UNKNOWN' for r in ROBOTS}
+        self._robot_colors = {
+            r: QColor(_ROBOT_COLORS[i % len(_ROBOT_COLORS)])
+            for i, r in enumerate(ROBOTS)
+        }
 
         # 줌/패닝 상태
         self._zoom: float = 1.0
@@ -104,10 +96,9 @@ class MapCanvas(QWidget):
         leg_vbox.setSpacing(4)
 
         self._legend_rows: dict[str, QLabel] = {}
-        for robot_id, label, color in (
-            ('limo1', 'LIMO 1 (UNKNOWN)', '#f59e0b'),
-            ('limo2', 'LIMO 2 (UNKNOWN)', '#10b981'),
-        ):
+        for i, robot_id in enumerate(ROBOTS):
+            color = _LEGEND_DOTS[i % len(_LEGEND_DOTS)]
+            label = f'{robot_label(robot_id)} (UNKNOWN)'
             row = QHBoxLayout()
             row.setSpacing(6)
             dot = QLabel()
@@ -228,8 +219,7 @@ class MapCanvas(QWidget):
         self._statuses[robot] = status
         lbl = self._legend_rows.get(robot)
         if lbl:
-            name = 'LIMO 1' if robot == 'limo1' else 'LIMO 2'
-            lbl.setText(f'{name} ({status})')
+            lbl.setText(f'{robot_label(robot)} ({status})')
 
     def paintEvent(self, _) -> None:
         painter = QPainter(self)
@@ -289,7 +279,7 @@ class MapCanvas(QWidget):
 
             painter.restore()
 
-            label = 'L1' if robot == 'limo1' else 'L2'
+            label = f'L{robot[4:]}' if robot.startswith('limo') else robot
             painter.setPen(color)
             painter.setFont(QFont('Segoe UI', 9, QFont.Bold))
             painter.drawText(px + R + 6, py - 4, label)
@@ -327,8 +317,7 @@ class RobotStatusCard(QFrame):
         info_vbox.setSpacing(2)
         info_vbox.setContentsMargins(0, 0, 0, 0)
 
-        name = 'LIMO 1' if self._robot_id == 'limo1' else 'LIMO 2'
-        name_lbl = QLabel(name)
+        name_lbl = QLabel(robot_label(self._robot_id))
         name_lbl.setFont(QFont('Segoe UI', 13, QFont.Bold))
         name_lbl.setStyleSheet('color:#111827; border:none;')
 
@@ -467,10 +456,14 @@ class MapView(QWidget):
         super().__init__()
         self.setStyleSheet('background:#f0f2f5;')
         self.ros = ros_node
-        self._selected_robot = 'limo1'
+        self._selected_robot = ROBOTS[0]
         self._switch_view_cb = switch_view_cb
         self._build_ui()
         self._connect_signals()
+
+        # FastAPI 핑 체크 스레드 — 단일 인스턴스 재사용
+        self._api_checker = HttpGetThread('http://localhost:8000/logs', timeout=0.5)
+        self._api_checker.done.connect(self._on_fastapi_result)
 
         self._conn_timer = QTimer()
         self._conn_timer.timeout.connect(self._check_connections)
@@ -488,16 +481,20 @@ class MapView(QWidget):
         left_vbox.setContentsMargins(0, 0, 0, 0)
         left_vbox.setSpacing(8)
 
-        # 로봇 카드 (168px — 목업 grid-template-rows:168px)
+        # 로봇 카드 — 로봇당 84px 가정
         cards_area = QWidget()
-        cards_area.setFixedHeight(168)
+        cards_area.setFixedHeight(max(168, 84 * len(ROBOTS)))
         cards_vbox = QVBoxLayout(cards_area)
         cards_vbox.setContentsMargins(0, 0, 0, 0)
         cards_vbox.setSpacing(8)
-        self._card1 = RobotStatusCard('limo1', on_click=lambda: self._navigate_to_robot('limo1'))
-        self._card2 = RobotStatusCard('limo2', on_click=lambda: self._navigate_to_robot('limo2'))
-        cards_vbox.addWidget(self._card1)
-        cards_vbox.addWidget(self._card2)
+        self._cards: dict[str, RobotStatusCard] = {}
+        for robot in ROBOTS:
+            card = RobotStatusCard(
+                robot,
+                on_click=lambda r=robot: self._navigate_to_robot(r),
+            )
+            self._cards[robot] = card
+            cards_vbox.addWidget(card)
         left_vbox.addWidget(cards_area)
 
         # 미니 로그 (나머지 공간)
@@ -547,12 +544,12 @@ class MapView(QWidget):
         toggle_row = QHBoxLayout()
         toggle_row.setSpacing(6)
         self._rsel_btns: dict[str, QPushButton] = {}
-        for robot_id, label in (('limo1', 'LIMO 1'), ('limo2', 'LIMO 2')):
-            btn = QPushButton(label)
+        for robot_id in ROBOTS:
+            btn = QPushButton(robot_label(robot_id))
             btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
             btn.setFixedHeight(32)
             btn.setFocusPolicy(Qt.NoFocus)
-            btn.setStyleSheet(self._rsel_style(robot_id == 'limo1'))
+            btn.setStyleSheet(self._rsel_style(robot_id == self._selected_robot))
             btn.clicked.connect(lambda _, r=robot_id: self._select_robot(r))
             self._rsel_btns[robot_id] = btn
             toggle_row.addWidget(btn)
@@ -618,14 +615,13 @@ class MapView(QWidget):
         vbox.setSpacing(0)
 
         self._sys_vals: dict[str, QLabel] = {}
-        rows = [
-            ('limo1_conn', 'LIMO 1',  '● 확인 중', '#9ca3af'),
-            ('limo2_conn', 'LIMO 2',  '● 확인 중', '#9ca3af'),
+        rows = [(f'{r}_conn', robot_label(r), '● 확인 중', '#9ca3af') for r in ROBOTS]
+        rows.extend([
             ('map_server', '맵 서버',       '● 확인 중', '#9ca3af'),
             ('fastapi',    'FastAPI',       '● 확인 중', '#9ca3af'),
             ('dispatcher', '배차 노드',     '● 확인 중', '#9ca3af'),
             ('traffic',    '충돌 방지',     '● 확인 중', '#9ca3af'),
-        ]
+        ])
         for key, label, init_txt, init_color in rows:
             sep = QFrame()
             sep.setFrameShape(QFrame.HLine)
@@ -661,21 +657,31 @@ class MapView(QWidget):
     # ── 시그널 연결 ───────────────────────────────────────────────────
 
     def _connect_signals(self) -> None:
-        self.ros.signals.sig_status_1.connect(
-            lambda s: (self._card1.update_status(s), self._canvas.update_status('limo1', s)))
-        self.ros.signals.sig_status_2.connect(
-            lambda s: (self._card2.update_status(s), self._canvas.update_status('limo2', s)))
-        self.ros.signals.sig_pose_1.connect(lambda m: self._canvas.update_pose('limo1', m))
-        self.ros.signals.sig_pose_2.connect(lambda m: self._canvas.update_pose('limo2', m))
+        self.ros.signals.sig_status.connect(self._on_status)
+        self.ros.signals.sig_pose.connect(self._canvas.update_pose)
+        self.ros.signals.sig_dest.connect(self._on_dest)
+        self.ros.signals.sig_battery.connect(self._on_battery)
         self.ros.signals.sig_map.connect(self._canvas.update_map)
-        self.ros.signals.sig_dest_1.connect(self._card1.update_destination)
-        self.ros.signals.sig_dest_2.connect(self._card2.update_destination)
-        self.ros.signals.sig_battery_1.connect(self._card1.update_battery)
-        self.ros.signals.sig_battery_2.connect(self._card2.update_battery)
         self.ros.signals.sig_gui_log.connect(self._mini_log.add_log)
 
         if self.ros.latest_map is not None:
             self._canvas.update_map(self.ros.latest_map)
+
+    def _on_status(self, robot: str, status: str) -> None:
+        card = self._cards.get(robot)
+        if card:
+            card.update_status(status)
+        self._canvas.update_status(robot, status)
+
+    def _on_dest(self, robot: str, dest: str) -> None:
+        card = self._cards.get(robot)
+        if card:
+            card.update_destination(dest)
+
+    def _on_battery(self, robot: str, voltage: float) -> None:
+        card = self._cards.get(robot)
+        if card:
+            card.update_battery(voltage)
 
     # ── 동작 ─────────────────────────────────────────────────────────
 
@@ -694,26 +700,23 @@ class MapView(QWidget):
         QTimer.singleShot(220, lambda: btn.setStyleSheet(normal_style))
 
     def _send_pause(self) -> None:
-        label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_pause(self._selected_robot)
-        self.ros.signals.sig_gui_log.emit('waiting', label, '일시정지')
+        self.ros.signals.sig_gui_log.emit('waiting', robot_label(self._selected_robot), '일시정지')
         self._flash_btn(self._pause_btn, _PAUSE_FLASH, _PAUSE_NORMAL)
 
     def _send_resume(self) -> None:
-        label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_resume(self._selected_robot)
-        self.ros.signals.sig_gui_log.emit('system', label, '재개')
+        self.ros.signals.sig_gui_log.emit('system', robot_label(self._selected_robot), '재개')
         self._flash_btn(self._resume_btn, _RESUME_FLASH, _RESUME_NORMAL)
 
     def _send_abort_home(self) -> None:
-        label = 'LIMO 1' if self._selected_robot == 'limo1' else 'LIMO 2'
         self.ros.publish_abort(self._selected_robot)
-        self.ros.signals.sig_gui_log.emit('mission_fail', label, '임무중단')
+        self.ros.signals.sig_gui_log.emit('mission_fail', robot_label(self._selected_robot), '임무중단')
         self._flash_btn(self._abort_btn, _ABORT_FLASH, _ABORT_NORMAL)
 
     def _check_connections(self) -> None:
-        for robot, key in (('limo1', 'limo1_conn'), ('limo2', 'limo2_conn')):
-            val = self._sys_vals[key]
+        for robot in ROBOTS:
+            val = self._sys_vals[f'{robot}_conn']
             if self.ros.is_connected(robot):
                 val.setText('● 연결')
                 val.setStyleSheet('color:#059669; border:none;')
@@ -729,9 +732,7 @@ class MapView(QWidget):
             val.setText('● 미연결')
             val.setStyleSheet('color:#ef4444; border:none;')
 
-        if not hasattr(self, '_api_checker') or not self._api_checker.isRunning():
-            self._api_checker = _FastApiChecker()
-            self._api_checker.done.connect(self._on_fastapi_result)
+        if not self._api_checker.isRunning():
             self._api_checker.start()
 
         try:
@@ -750,7 +751,8 @@ class MapView(QWidget):
         except Exception:
             pass
 
-    def _on_fastapi_result(self, ok: bool) -> None:
+    def _on_fastapi_result(self, response) -> None:
+        ok = response is not None
         val = self._sys_vals['fastapi']
         if ok:
             val.setText('● 연결')
