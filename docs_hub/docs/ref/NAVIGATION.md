@@ -373,15 +373,23 @@ waypoints:
 wego_dispatcher → /goal_destination (String 키, 예: "classroom_1")
   → wego_behaviour IDLE 상태 수신
   → waypoints.yaml에서 좌표 조회
+  → blackboard['from_home'] = True 설정
   → GUIDING:
+      [홈 출발 시] navigator.spin(180°) 선실행  ← DEC-037
+        목적: AMCL 파티클 수렴 + Nav2에 180° 회전 부담 제거
       classroom_1~5 → navigate_to_pose(목적지)
       나머지        → navigate_through_poses([glass_entry, glass_exit, 목적지])
     → Nav2 내부 BT (경로 계획 + 장애물 회피 + 복구)
       → 도달 시 RETURNING 전환
-        → classroom_1~5 → navigate_to_pose(home)
-          나머지        → navigate_through_poses([glass_exit, glass_entry, home])
-          → 홈 도착 → IDLE 복귀
+        → classroom_1~5 → navigate_to_pose(home_staging)
+          나머지        → navigate_through_poses([glass_exit, glass_entry, home_staging])
+          → staging 도착 → IBVS 홈 도킹 (aruco_home_dock 서비스)
+          → 홈 정밀 정차 → IDLE 복귀
 ```
+
+**Progress Checker**: `SimpleProgressChecker` (선형 이동만 측정)
+- 홈 출발 180° 회전은 Spin으로 선처리하므로 주행 시작 시 이미 방향 맞춰진 상태
+- 주행 중 제자리 회전(stuck) 정확히 감지 → recovery 동작 정상 발동 (DEC-037)
 
 `home_key`는 `ROS_DOMAIN_ID`로 자동 결정 (robot_config.yaml의 domain_home_map):
 ```bash

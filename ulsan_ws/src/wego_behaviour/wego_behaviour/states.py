@@ -45,6 +45,8 @@ class IdleState(State):
                 self._node.pending_destination = None
                 blackboard['destination'] = self._node.waypoints[dest_key]
                 blackboard['destination_key'] = dest_key
+                # 홈 출발임을 표시 — GuidingState에서 Spin 선실행 트리거
+                blackboard['from_home'] = True
                 self._node.get_logger().info(
                     f'목적지 확정: {blackboard["destination"]["label"]}'
                 )
@@ -88,6 +90,40 @@ class GuidingState(State):
         self._node.get_logger().info(
             f'GUIDING: {destination["label"]} 로 이동 중'
         )
+
+        # 홈 출발 시 180° Spin 선실행
+        # 목적: (1) AMCL 파티클 수렴 — 제자리 회전으로 다양한 각도 스캔 수집
+        #        (2) Nav2 출발 직후 180° 회전 부담 제거 — SimpleProgressChecker 실패 방지
+        # WAITING resume 재진입 시에는 from_home=False이므로 이중 Spin 없음
+        if blackboard.get('from_home', False):
+            blackboard['from_home'] = False  # 재진입 시 이중 Spin 방지 — 즉시 초기화
+            self._node.get_logger().info('홈 출발 — 180° Spin 시작 (AMCL 수렴)')
+            self._navigator.spin(spin_dist=math.pi)  # 180° 회전
+
+            _spin_tick = 0
+            while not self._navigator.isTaskComplete():
+                if self._node._abort_flag:
+                    # abort 수신 — Spin 취소 후 즉시 RETURNING
+                    self._navigator.cancelTask()
+                    self._node._abort_flag = False
+                    self._node.get_logger().info('Spin 중 abort 수신 → RETURNING')
+                    return 'aborted'
+                if self._node._pause_flag:
+                    # pause 수신 — Spin 취소 후 WAITING
+                    # 재개 시 from_home=False이므로 재Spin 없이 바로 주행 진입
+                    self._navigator.cancelTask()
+                    blackboard['return_to'] = 'GUIDING'
+                    return 'paused'
+                time.sleep(0.1)
+                _spin_tick += 1
+                if _spin_tick % 10 == 0:
+                    self._node.publish_status('BUSY')
+
+            if self._navigator.getResult() == TaskResult.SUCCEEDED:
+                self._node.get_logger().info('180° Spin 완료 — 주행 시작')
+            else:
+                # Spin 실패해도 주행 계속 (graceful degradation)
+                self._node.get_logger().warn('Spin 실패 — 주행 계속')
 
         try:
             dest_key = blackboard['destination_key']

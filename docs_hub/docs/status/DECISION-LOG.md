@@ -4,6 +4,28 @@
 
 ---
 
+### DEC-037: 홈 출발 180° 회전 문제 — Spin 선실행 + SimpleProgressChecker 복원 (done 2026-05-25)
+- **Context**: PoseProgressChecker(`required_movement_angle: 0.5rad`) 적용으로 홈 출발 180° 회전 시 `Failed to make progress`는 해결됐으나, 부작용 발견. PoseProgressChecker는 각도 변화도 "진행"으로 인정하므로, 주행 중 로봇이 제자리 회전하며 실제로 stuck된 상황에서도 실패 판정이 내려지지 않음 → 복구 동작(recovery) 미발동 → stuck 방치 위험.
+- **Options**:
+  - A) PoseProgressChecker 유지 — 홈 출발은 해결되나 주행 중 stuck 감지 정확도 희생
+  - B) Spin 선실행 + SimpleProgressChecker 복원 — 홈 출발 전 미리 회전, 주행 중 stuck 감지는 SimpleProgressChecker로 정확히 유지
+- **Decision**: **방법 B — Spin 선실행 + SimpleProgressChecker 복원**
+  - `IdleState`: 목적지 수신 시 `blackboard['from_home'] = True` 설정
+  - `GuidingState`: `from_home=True`이면 `navigator.spin(math.pi)` 선실행 후 `from_home=False` 초기화
+    - Spin 중 abort/pause 처리 — abort: RETURNING 전환, pause: WAITING 전환 (재개 시 재Spin 없음)
+    - Spin 실패 시 graceful degradation — 경고 로그 후 주행 계속
+  - `diff_navigation_params.yaml`: `PoseProgressChecker` → `SimpleProgressChecker` 복원, `required_movement_angle` 제거
+- **Rationale**:
+  - PoseProgressChecker는 "회전해도 괜찮아"라는 패치. Spin은 "회전을 미리 끝내고 출발"이라는 근본 해결
+  - AMCL 파티클 수렴 부수 효과: 홈 출발 직전은 AMCL drift 가능성이 가장 높은 시점. Spin 중 다양한 각도 LiDAR 스캔 수집 → 파티클 수렴 가속. 상용 AMR이 초기화 시 제자리 회전으로 localization을 안정화하는 것과 동일 원리
+  - SimpleProgressChecker 복원으로 주행 중 stuck 감지 정확도 회복 → 복구 동작 정상 발동
+  - PoseProgressChecker는 "홈 출발 문제" 해결을 위해 "전체 주행 구간 stuck 감지"를 희생하는 트레이드오프가 나쁨
+- **구현 위치**: `wego_behaviour/states.py` (IdleState, GuidingState), `wego_2d_nav/params/diff_navigation_params.yaml`
+- **면접 어필**: "PoseProgressChecker로 회전을 '진행'으로 인정하는 패치 대신, 홈 출발 전 Spin으로 회전을 선처리하는 방식을 선택. 주행 중 실제 stuck 감지 정확도를 희생하지 않으면서 출발 문제를 근본적으로 해결. Spin이 AMCL 파티클 수렴을 돕는 부수 효과도 취득."
+- **Date**: 2026-05-25
+
+---
+
 ### DEC-036: FAILED 미션 통계 분리 — dispatcher 상태 시퀀스 추론 (done 2026-05-22)
 - **Context**: GUIDING 실패 후 FAILED → RETURNING → IDLE 시퀀스를 거쳐 홈으로 복귀하는데, 기존 `wego_dispatcher._check_completions`는 "ACTIVE 미션의 로봇이 IDLE이면 완료"로만 판정. 정상 완료와 실패 후 복귀를 구분 없이 `PATCH /assign/{id}/complete`로 일괄 처리 → DB logs 테이블에 모든 미션이 `mission_complete`로만 기록되어 **임무 실패가 임무 완료로 둔갑하는 문제**.
 - **Options**:

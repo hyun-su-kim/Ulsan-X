@@ -112,9 +112,13 @@
 - [x] **GUIDING 실패 처리 — FAILED 상태 추가** — done (2026-05-21). DEC-033 참고
   - GUIDING failed → FAILED(TTS "관리자를 기다려 주세요" + 10초 대기) → RETURNING
   - 관제 UI FAILED 빨간 색상 추가. 실기기 검증 필요.
-- [x] **PoseProgressChecker 교체** — done (2026-05-21). DEC-031 참고
+- [x] **PoseProgressChecker 교체** — done (2026-05-21), **Spin 방식으로 대체 (2026-05-25)**. DEC-031·DEC-037 참고
   - SimpleProgressChecker → PoseProgressChecker: 선형+각도 변화 모두 진행으로 인정
   - required_movement_angle: 0.5rad(~28°) 추가 — 홈 출발 180° 회전 시 recovery 루프 해결
+  - ※ 2026-05-25: 주행 중 stuck 감지 정확도 저하 문제로 Spin 방식 전환, SimpleProgressChecker 복원 (DEC-037)
+- [x] **홈 출발 Spin 선실행 + SimpleProgressChecker 복원** — done (2026-05-25). DEC-037 참고
+  - `GuidingState`: 홈 출발(`from_home=True`) 시 `navigator.spin(math.pi)` 선실행 → AMCL 파티클 수렴 + 출발 방향 전환
+  - `SimpleProgressChecker` 복원 → 주행 중 제자리 회전 stuck 정확히 감지. 실기기 검증 필요.
 - [x] **RemovePassedGoals radius 0.5 → 0.2** — done (2026-05-21)
   - 유리 구간 경유 포인트 통과 판정 범위 축소 — 경유지 근처를 실제로 통과해야 판정
 - [x] **robot_status 1초 주기 재발행** — done (2026-05-21)
