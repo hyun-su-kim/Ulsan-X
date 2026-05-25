@@ -5,61 +5,47 @@
 | 항목 | 선택 | 이유 |
 |------|------|------|
 | DDS 구현체 | CycloneDDS | 소규모 Wi-Fi 환경에 최적화, 안정성 검증됨 |
-| 통신 방식 | 유니캐스트 | 학원 내 소규모 네트워크, 멀티캐스트 불필요 |
+| 통신 방식 | 멀티캐스트 (CycloneDDS 기본) | cyclone_peers.xml 제거 — 동일 AP 환경에서 자동 discovery로 충분 |
 | Domain 분리 | ros2-domain-bridge | 필요한 토픽만 선택적 브릿징, 트래픽 최소화 |
 
 ---
 
-## CycloneDDS 유니캐스트 설정
+## CycloneDDS 설정
 
-`cyclonedds_peers.xml` 위치: `/home/wego/Ulsan-X/cyclone_peers.xml` (이미 존재)
+`cyclone_peers.xml` **삭제됨** (2026-05-25). CycloneDDS 기본 멀티캐스트 auto-discovery 사용.
 
-```xml
-<!-- cyclonedds_peers.xml 기본 구조 -->
-<?xml version="1.0" encoding="UTF-8"?>
-<CycloneDDS>
-  <Domain>
-    <General>
-      <Interfaces>
-        <NetworkInterface name="wlan0" multicast="false"/>
-      </Interfaces>
-      <AllowMulticast>none</AllowMulticast>
-    </General>
-    <Discovery>
-      <Peers>
-        <!-- 리더 로봇 IP -->
-        <Peer address="192.168.X.X"/>
-        <!-- 서브 로봇 IP -->
-        <Peer address="192.168.X.X"/>
-        <!-- 서버 노트북 IP -->
-        <Peer address="192.168.X.X"/>
-      </Peers>
-    </Discovery>
-  </Domain>
-</CycloneDDS>
-```
-
-> 실제 IP 주소는 네트워크 환경에 맞게 채워야 함. 각 기기의 `/etc/hosts` 또는 고정 IP 권장.
-
-**환경변수 설정** (각 기기 `.bashrc` 또는 launch 파일):
 ```bash
-export CYCLONEDDS_URI=file:///home/wego/Ulsan-X/cyclone_peers.xml
+# CYCLONEDDS_URI 환경변수 설정 불필요
+# RMW_IMPLEMENTATION만 설정
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
+
+> 동일 AP(공유기)에 연결된 기기 간에는 CycloneDDS 기본 멀티캐스트 discovery로 자동 연결됨.
+> 멀티캐스트 지원 AP 사용 필수. 5GHz 대역 권장 (TS-001 참고).
 
 ---
 
 ## Domain ID 설정 (확정)
 
-| 기기 | IP | DOMAIN_ID | 비고 |
-|------|----|-----------|------|
-| 노트북 1 (관제) | 192.168.0.115 | **5** | 개발자 1 |
-| 노트북 2 (관제) | 192.168.0.116 | **5** | 개발자 2 (기능 동일) |
-| LIMO 1 | 192.168.0.101 | **6** | |
-| LIMO 2 | 192.168.0.102 | **7** | |
-
-> 노트북 2대는 동일한 관제 UI 역할. 개발자가 2명이라 2대이며 기능·설정 동일.
+| 기기 | DOMAIN_ID | 실행 내용 |
+|------|-----------|-----------|
+| 데스크탑 | **6** | Nav2 + behaviour + aruco + voice + bridge (LIMO 1 담당) |
+| 데스크탑 | **7** | Nav2 + behaviour + aruco + voice + bridge (LIMO 2 담당) |
+| 데스크탑 | **5** | traffic + dispatcher + FastAPI(MySQL) |
+| 노트북 | **5** | wego_ui (관제 GUI) 또는 ulsan-visitor-ui (방문자 UI) |
+| LIMO 1 | **6** | 드라이버만 |
+| LIMO 2 | **7** | 드라이버만 |
 
 ```bash
+# 데스크탑 — LIMO 1 담당 터미널
+export ROS_DOMAIN_ID=6
+
+# 데스크탑 — LIMO 2 담당 터미널
+export ROS_DOMAIN_ID=7
+
+# 데스크탑 — 공통 서비스 터미널
+export ROS_DOMAIN_ID=5
+
 # 노트북 ~/.bashrc
 export ROS_DOMAIN_ID=5
 
@@ -149,19 +135,15 @@ scp ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map.pgm \
 
 ```
 □ 각 기기 DOMAIN_ID 확인: echo $ROS_DOMAIN_ID
-  → 노트북=5, LIMO 1=6, LIMO 2=7
+  → 데스크탑=5/6/7(터미널별), LIMO 1=6, LIMO 2=7, 노트북=5
 
-□ cyclonedds_peers.xml에 실제 IP 주소 입력 — done (LIMO1=192.168.0.101, LIMO2=192.168.0.102, 노트북1=192.168.0.115, 노트북2=192.168.0.116)
-□ 각 기기에서 CYCLONEDDS_URI 환경변수 설정 확인
+□ RMW_IMPLEMENTATION=rmw_cyclonedds_cpp 확인 (각 기기 .bashrc)
+  ※ cyclone_peers.xml 삭제됨 — CYCLONEDDS_URI 설정 불필요
 
-■ Domain Bridge 실행 후 토픽 브릿징 확인 (노트북에서) — done (2026-04-22)
+■ Domain Bridge 실행 후 토픽 브릿징 확인 (데스크탑 domain 5 터미널) — done (2026-04-22)
   → ros2 topic echo /limo_1/amcl_pose   # LIMO 1 위치 수신 확인 ✓
-  → ros2 topic echo /limo_2/amcl_pose   # LIMO 2 위치 수신 확인 (미실시)
+  → ros2 topic echo /limo_2/amcl_pose   # LIMO 2 위치 수신 확인
   ※ /map은 브릿징 없음 — 각 기기 로컬 map_server에서 발행 (DEC-012)
-
-□ 로봇 간 amcl_pose 수신 확인 (각 LIMO에서)
-  → LIMO 1: ros2 topic echo /limo_2/amcl_pose
-  → LIMO 2: ros2 topic echo /limo_1/amcl_pose
 
 □ 주행 중 토픽 끊김 없는지 확인: ros2 topic hz /limo_1/amcl_pose
 ```

@@ -41,17 +41,16 @@ ulsan_ws/src/
 
 ## 소스코드 현황 (2026-05-14 기준)
 
-### 아키텍처 — 기기별 역할 (2026-05-14 확정)
+### 아키텍처 — 기기별 역할 (2026-05-25 확정)
 
 | 기기 | 도메인 | 실행 내용 |
 |------|--------|-----------|
 | LIMO 1 | 6 | 드라이버(limo_base, ydlidar, orbbec, EKF) |
 | LIMO 2 | 7 | 드라이버(limo_base, ydlidar, orbbec, EKF) |
-| 서버 노트북 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_bridge (LIMO 1 담당) |
-| 서버 노트북 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_bridge (LIMO 2 담당) |
-| 서버 노트북 | 5 | wego_traffic, wego_dispatcher |
-| 관제 노트북 | 5 | wego_ui, ulsan_reservation(FastAPI) |
-| 태블릿 PC | — | ulsan-visitor-ui (브라우저, HTTP only, ROS 없음) |
+| 데스크탑 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_bridge (LIMO 1 담당) |
+| 데스크탑 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_bridge (LIMO 2 담당) |
+| 데스크탑 | 5 | wego_traffic, wego_dispatcher, ulsan_reservation(FastAPI+MySQL) |
+| 노트북 | 5 | wego_ui (관제 GUI) 또는 ulsan-visitor-ui (방문자 UI, 브라우저) |
 
 ```bash
 # LIMO 1 (domain 6) — 드라이버만
@@ -62,7 +61,7 @@ ros2 launch wego teleop_launch.py
 export ROS_DOMAIN_ID=7
 ros2 launch wego teleop_launch.py
 
-# 서버 노트북 — LIMO 1 담당 터미널 (domain 6)
+# 데스크탑 — LIMO 1 담당 터미널 (domain 6)
 export ROS_DOMAIN_ID=6
 ros2 launch wego navigation_diff_launch.py use_rviz:=false   # Nav2 전체 (localization + navigation)
 ros2 launch wego_behaviour behaviour_launch.py
@@ -70,7 +69,7 @@ ros2 launch wego_bridge bridge_launch.py                     # bridge_robot.yaml
 ros2 launch wego_aruco aruco_corrector_launch.py
 ros2 launch wego_voice voice_launch.py
 
-# 서버 노트북 — LIMO 2 담당 터미널 (domain 7)
+# 데스크탑 — LIMO 2 담당 터미널 (domain 7)
 export ROS_DOMAIN_ID=7
 ros2 launch wego navigation_diff_launch.py use_rviz:=false
 ros2 launch wego_behaviour behaviour_launch.py
@@ -78,18 +77,18 @@ ros2 launch wego_bridge bridge_launch.py                     # bridge_robot.yaml
 ros2 launch wego_aruco aruco_corrector_launch.py
 ros2 launch wego_voice voice_launch.py
 
-# 서버 노트북 — domain 5 터미널
+# 데스크탑 — domain 5 터미널
 export ROS_DOMAIN_ID=5
 ros2 launch wego_traffic traffic_launch.py
 ros2 launch wego_dispatcher dispatcher_launch.py
-
-# 관제 노트북 (domain 5)
-export ROS_DOMAIN_ID=5
-ros2 launch wego_ui gui_launch.py
 uvicorn ulsan_reservation.main:app --host 0.0.0.0 --port 8000
 
-# 태블릿 PC — 브라우저에서 ulsan-visitor-ui 접속 (ROS 불필요)
-# http://192.168.0.115:3000  (또는 배포된 포트)
+# 노트북 (domain 5) — 관제 GUI
+export ROS_DOMAIN_ID=5
+ros2 launch wego_ui gui_launch.py
+
+# 노트북 — 방문자 UI (브라우저에서 접속, ROS 불필요)
+# http://<데스크탑IP>:3000
 ```
 
 ### 존재하는 패키지
@@ -102,12 +101,12 @@ uvicorn ulsan_reservation.main:app --host 0.0.0.0 --port 8000
 | `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — IDLE/GUIDING/RETURNING/WAITING |
 | `wego_aruco` | pose_corrector.py | passive corrector. 주행 중 마커 감지 → /initialpose 자동 발행 |
 | `wego_voice` | voice_node.py, tts | TTS only (DEC-024). /speak_text 구독 → edge-tts + mpg123 |
-| `wego_traffic` | traffic_node.py | 서버 노트북 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
-| `wego_dispatcher` | dispatcher_node.py | 서버 노트북 domain 5. FastAPI 폴링 → IDLE 로봇에 goal/speak 배정 (DEC-027) |
+| `wego_traffic` | traffic_node.py | 데스크탑 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
+| `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 goal/speak 배정 (DEC-027) |
 | `ulsan_obstacle_layer` | PeerObstacleLayer | **폐기 (DEC-022)**: 우선순위 FSM pause 방식으로 대체 |
-| `ulsan_reservation` | main.py (FastAPI) | 관제 노트북. 예약 CRUD + 로봇 임무 배정 API. MySQL + APScheduler |
+| `ulsan_reservation` | main.py (FastAPI) | 데스크탑. 예약 CRUD + 로봇 임무 배정 API. MySQL + APScheduler |
 | `ulsan-web-ui` | React | 외부 방문자용 예약 웹 UI |
-| `ulsan-visitor-ui` | React (HTTP only) | **태블릿 PC** 방문자 UI. 예약 조회/현장방문 → /assign → wego_dispatcher 폴링. rosbridge 없음 (DEC-027) |
+| `ulsan-visitor-ui` | React (HTTP only) | 노트북(브라우저) 방문자 UI. 예약 조회/현장방문 → /assign → wego_dispatcher 폴링. rosbridge 없음 (DEC-027) |
 
 ### 멀티로봇 충돌 회피 (DEC-022, 2026-05-11 확정)
 - **PeerObstacleLayer 폐기**: global costmap 기반 동적 회피의 구조적 한계 확인
