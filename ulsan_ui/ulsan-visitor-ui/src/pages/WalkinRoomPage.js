@@ -36,7 +36,7 @@ function WalkinRoomPage() {
         const data = await getAvailableRoom();
         setRoom(data.room);
       } catch (err) {
-        if (err.response?.status === 404) {
+        if (err.response?.status === 503) {
           // 현재 시간대 상담실 4개 모두 예약됨
           setNoRoom(true);
         } else {

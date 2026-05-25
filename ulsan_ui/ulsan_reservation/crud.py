@@ -296,12 +296,30 @@ def create_walkin_reservation(db: Session, room: str, time_slot: int):
 
 # ── 미션 CRUD ────────────────────────────────────────────────────────────────
 
+def get_active_mission_for_reservation(db: Session, reservation_id: int):
+    """예약에 연결된 PENDING/ACTIVE 미션 조회 — 중복 배정 방지용."""
+    return (
+        db.query(models.Mission)
+        .filter(
+            and_(
+                models.Mission.reservation_id == reservation_id,
+                models.Mission.status.in_([
+                    models.MissionStatus.PENDING,
+                    models.MissionStatus.ACTIVE,
+                ]),
+            )
+        )
+        .first()
+    )
+
+
 def create_mission(db: Session, data: schemas.MissionCreate):
     """새 미션 생성 (PENDING 상태). 방문자 UI [안내 시작] 클릭 시 호출."""
     mission = models.Mission(
         reservation_id=data.reservation_id,
         destination=data.destination,
         tts_text=data.tts_text,
+        robot_assigned=data.robot_assigned,
     )
     db.add(mission)
     db.commit()

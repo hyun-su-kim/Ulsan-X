@@ -81,6 +81,7 @@ def assign_walkin(db: Session = Depends(get_db)):
         reservation_id=reservation.id,
         destination=room,
         tts_text=tts_text,
+        robot_assigned=robot,
     )
     mission = crud.create_mission(db, mission_data)
 

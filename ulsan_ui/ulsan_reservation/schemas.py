@@ -112,6 +112,7 @@ class MissionCreate(BaseModel):
     reservation_id: Optional[int] = None
     destination:    str
     tts_text:       str
+    robot_assigned: Optional[str] = None
 
 
 class MissionResponse(BaseModel):

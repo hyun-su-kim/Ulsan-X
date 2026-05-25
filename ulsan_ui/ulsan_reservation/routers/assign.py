@@ -53,6 +53,10 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
     if not reservation:
         raise HTTPException(status_code=404, detail="예약을 찾을 수 없음")
 
+    existing = crud.get_active_mission_for_reservation(db, body.reservation_id)
+    if existing:
+        raise HTTPException(status_code=409, detail="이미 진행 중인 안내가 있습니다")
+
     robot = _pick_idle_robot(robot_status)
     if not robot:
         raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
@@ -64,6 +68,7 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
         reservation_id=body.reservation_id,
         destination=reservation.room,
         tts_text=tts_text,
+        robot_assigned=robot,
     ))
 
     crud.create_log(db, log_type="mission_start",
