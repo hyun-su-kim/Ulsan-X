@@ -1,10 +1,12 @@
 # 임무 배정 라우터
 #
-# POST  /assign                — 예약 체크인 후 로봇 임무 배정
+# POST  /assign                — 예약 체크인 후 로봇 임무 배정 (중복 시 409)
 # POST  /assign/classroom      — 강의실 안내 배정 (DB 기록 없음)
 # GET   /assign/pending        — wego_dispatcher 폴링용 미결 미션 조회
+# GET   /assign/today/by-robot — 관제 GUI용 금일 로봇별 임무 카운트
 # PATCH /assign/{id}/start     — wego_dispatcher: PENDING → ACTIVE
 # PATCH /assign/{id}/complete  — wego_dispatcher: ACTIVE → COMPLETED
+# PATCH /assign/{id}/fail      — wego_dispatcher: ACTIVE → COMPLETED (실패 로그)
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -13,25 +15,9 @@ import crud
 import models
 import schemas
 from database import get_db
+from constants import ROOM_LABELS, CLASSROOM_LABELS, pick_idle_robot
 
 router = APIRouter(prefix="/assign", tags=["assign"])
-
-# 상담실 키 → TTS 표시명
-ROOM_LABELS = {
-    "counseling_1":           "상담실 1",
-    "counseling_2":           "상담실 2",
-    "intensive_counseling_1": "집중상담실 1",
-    "intensive_counseling_2": "집중상담실 2",
-}
-
-# 강의실 키 → TTS 표시명
-CLASSROOM_LABELS = {
-    "classroom_1": "1강의실",
-    "classroom_2": "2강의실",
-    "classroom_3": "3강의실",
-    "classroom_4": "4강의실",
-    "classroom_5": "5강의실",
-}
 
 
 @router.post("", response_model=schemas.AssignResponse)
@@ -40,7 +26,9 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
     예약 체크인 후 로봇 임무 배정.
 
     CheckinResultPage에서 [안내 시작] 클릭 시 호출된다.
-    IDLE 로봇을 즉시 선택하고 missions 테이블에 PENDING 미션을 생성한다.
+    같은 예약에 PENDING/ACTIVE 미션이 이미 있으면 409 반환 (중복 안내 방지).
+    IDLE 로봇을 즉시 선택해 missions 테이블에 PENDING 미션으로 생성한다.
+    robot_assigned를 생성 시점에 기록해 GuidingPage 폴링 대상 로봇을 확정한다.
     wego_dispatcher는 폴링으로 이 미션을 수락한다.
     """
     from routers.robots import robot_status
@@ -57,7 +45,7 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
     if existing:
         raise HTTPException(status_code=409, detail="이미 진행 중인 안내가 있습니다")
 
-    robot = _pick_idle_robot(robot_status)
+    robot = pick_idle_robot(robot_status)
     if not robot:
         raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
 
@@ -92,7 +80,7 @@ def assign_classroom(body: schemas.AssignClassroomRequest, db: Session = Depends
     if body.classroom not in CLASSROOM_LABELS:
         raise HTTPException(status_code=400, detail=f"알 수 없는 강의실: {body.classroom}")
 
-    robot = _pick_idle_robot(robot_status)
+    robot = pick_idle_robot(robot_status)
     if not robot:
         raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
 
@@ -182,9 +170,3 @@ def fail_mission(mission_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-def _pick_idle_robot(status: dict) -> str | None:
-    """limo1 우선으로 IDLE 로봇 반환."""
-    for robot in ("limo1", "limo2"):
-        if status.get(robot) == "IDLE":
-            return robot
-    return None

@@ -71,15 +71,6 @@ def get_all_reservations(db: Session = Depends(get_db)):
     return crud.get_all_reservations(db)
 
 
-@router.get("/today", response_model=list[schemas.ReservationResponse])
-def get_today_reservations(db: Session = Depends(get_db)):
-    """
-    오늘 예약 전체 조회 (관제 GUI용)
-
-    관제 GUI에서 오늘의 예약 목록과 각 예약의 진행 상태를 테이블로 표시할 때 사용
-    """
-    return crud.get_today_reservations(db, date.today())
-
 
 @router.get("/my", response_model=list[schemas.ReservationResponse])
 def get_my_reservations(name: str, phone: str, db: Session = Depends(get_db)):

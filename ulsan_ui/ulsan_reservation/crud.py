@@ -98,19 +98,6 @@ def get_all_reservations(db: Session):
     )
 
 
-def get_today_reservations(db: Session, today: date):
-    """
-    오늘 날짜 예약 전체 조회 (관제 GUI용)
-
-    관제 GUI에서 오늘의 예약 현황과 각 예약의 진행 상태를 표시할 때 사용
-    """
-    return (
-        db.query(models.Reservation)
-        .filter(models.Reservation.date == today)
-        .order_by(models.Reservation.time_slot)
-        .all()
-    )
-
 
 def get_my_reservations(db: Session, name: str, phone_last4: str, today: date):
     """
