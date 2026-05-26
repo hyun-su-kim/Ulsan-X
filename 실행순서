@@ -6,6 +6,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 # 터미널 2 — wego_dispatcher
 ros2 launch wego_dispatcher dispatcher_launch.py
 
+# 터미널 3 — 충돌 방지
+ros2 launch wego_traffic traffic_launch.py
+
 # 터미널 3 — 방문자 UI
 cd /home/yechan/Ulsan-X/ulsan_ui/ulsan-visitor-ui
 npm start
@@ -14,7 +17,7 @@ npm start
 cd /home/yechan/Ulsan-X/ulsan_ui/ulsan-web-ui
 npm start
 
-# 터미널 5 — 관제 GUI (GUI + wego_dispatcher + FastAPI)
+# 터미널 5 — 관제 GUI (GUI + map_server + FastAPI)
 ros2 launch ulsan_gui gui_launch.py
 -------------------------------------------------------------
 서버 (domain 6, 7)

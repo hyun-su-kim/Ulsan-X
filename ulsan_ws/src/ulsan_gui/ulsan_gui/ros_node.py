@@ -39,6 +39,7 @@ class RobotState:
     pose: object = None
     dest: str = ''
     last_recv: float = 0.0
+    last_status_recv: float = 0.0  # robot_status 수신 시각 — 연결 판정 전용
 
 
 class GuiSignals(QObject):
@@ -129,7 +130,9 @@ class RosNode(Node):
     def _status_cb(self, robot: str, msg: String) -> None:
         st = self.robots[robot]
         st.status = msg.data
-        st.last_recv = time.time()
+        now = time.time()
+        st.last_recv = now
+        st.last_status_recv = now
         self.signals.sig_status.emit(robot, msg.data)
 
         if msg.data != st.prev_status:
@@ -187,8 +190,9 @@ class RosNode(Node):
 
     # ── 유틸 ─────────────────────────────────────────────────────────
 
-    def is_connected(self, robot: str, timeout_sec: float = 3.0) -> bool:
-        return (time.time() - self.robots[robot].last_recv) < timeout_sec
+    def is_connected(self, robot: str, timeout_sec: float = 5.0) -> bool:
+        # amcl_pose가 아닌 robot_status 기준으로 판정 — AMCL은 정지 중 퍼블리시 중단하므로 제외
+        return (time.time() - self.robots[robot].last_status_recv) < timeout_sec
 
     @staticmethod
     def pose_to_xyyaw(pose_msg: PoseWithCovarianceStamped) -> tuple[float, float, float]:

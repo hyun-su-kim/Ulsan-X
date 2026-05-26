@@ -256,7 +256,8 @@ class MapCanvas(QWidget):
             color = self._robot_colors[robot]
             painter.save()
             painter.translate(px, py)
-            painter.rotate(-math.degrees(ryaw))
+            # ROS yaw=0 → +x(오른쪽), Qt 화살표 기본방향=위(-y) → +90° 오프셋으로 정렬
+            painter.rotate(-math.degrees(ryaw) + 90)
 
             R = 13
             # 흰색 외곽선으로 배경과 구분
@@ -666,6 +667,13 @@ class MapView(QWidget):
 
         if self.ros.latest_map is not None:
             self._canvas.update_map(self.ros.latest_map)
+        # 로그인 전에 수신된 상태·위치를 뷰 생성 후 즉시 반영
+        for robot in ROBOTS:
+            state = self.ros.robots[robot]
+            if state.status != 'UNKNOWN':
+                self._on_status(robot, state.status)
+            if state.pose is not None:
+                self._canvas.update_pose(robot, state.pose)
 
     def _on_status(self, robot: str, status: str) -> None:
         card = self._cards.get(robot)

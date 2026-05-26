@@ -56,20 +56,21 @@ class TrafficNode(Node):
     def _tick(self) -> None:
         now = self.get_clock().now().nanoseconds * 1e-9
 
+        s1, s2 = self._status['limo1'], self._status['limo2']
+
+        # 둘 중 하나라도 IDLE이면 개입 불필요 — pose 유효성 검사 생략 (AMCL 정지 중 퍼블리시 안 함)
+        if s1 not in ACTIVE_STATES or s2 not in ACTIVE_STATES:
+            if self._paused_robot is not None:
+                self._do_resume(self._paused_robot)
+            return
+
+        # 두 로봇 모두 active일 때만 pose 유효성 확인
         for r in ('limo1', 'limo2'):
             if self._pose[r] is None:
                 return
             if now - self._last_pose_time[r] > self.STALE_SEC:
                 self.get_logger().warn(f'{r} amcl_pose 오래됨 — 스킵', throttle_duration_sec=5.0)
                 return
-
-        s1, s2 = self._status['limo1'], self._status['limo2']
-
-        # 둘 중 하나라도 IDLE이면 개입 안 함
-        if s1 not in ACTIVE_STATES or s2 not in ACTIVE_STATES:
-            if self._paused_robot is not None:
-                self._do_resume(self._paused_robot)
-            return
 
         dist = self._distance()
 
