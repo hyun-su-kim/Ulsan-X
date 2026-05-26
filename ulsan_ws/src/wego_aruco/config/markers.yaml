@@ -4,16 +4,16 @@
 # map_x/y/z  : 마커 중심의 map 좌표 (m)
 # map_qx/y/z/w : 마커 방향 quaternion (full 3D — 캘리브레이션 출력값 그대로 입력)
 markers:
-  0:                  # 로봇1 홈 마커
+  0:                  # 로봇1 홈 마커 (2026-05-26 재측정 — 마커 이동 후)
     size: 0.20
     calibrated: true
-    map_x: -0.0463
-    map_y: -0.4014
-    map_z:  0.0518
-    map_qx: 0.0161
-    map_qy: 0.7426
-    map_qz: 0.6695
-    map_qw: 0.0009
+    map_x:  0.0124
+    map_y: -0.6620
+    map_z:  0.0547
+    map_qx: 0.0237
+    map_qy: 0.7295
+    map_qz: 0.6835
+    map_qw: 0.0072
   1:                  # 로봇2 홈 마커
     size: 0.20
     calibrated: false # 미측정

@@ -127,7 +127,9 @@ def main():
     sm.add_state('WAITING',   WaitingState(node),             transitions={'resume_guiding': 'GUIDING', 'resume_returning': 'RETURNING'})
 
     try:
-        sm(Blackboard())
+        bb = Blackboard()
+        bb['from_home'] = False
+        sm(bb)
     except KeyboardInterrupt:
         pass
     finally:

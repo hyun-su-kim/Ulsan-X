@@ -4,6 +4,23 @@
 
 ---
 
+### DEC-038: IBVS 홈 도킹 제어기 재설계 — 극좌표 vs 단계분리 비교 후 staged 채택 (done 2026-05-26)
+- **Context**: 기존 `aruco_home_dock`의 3DOF 제어가 목표 근처에서 수렴 실패. `angular.z = -Kp_w·lateral - Kp_yaw·yaw_error`로 lateral·yaw 보정을 단순 합산했는데, 실기기 로그에서 두 항이 ω 하나를 공유하며 서로 상쇄(fight)하는 것을 확인. depth=0.279m에서 v≈0.002, w≈-0.002로 교착 → 도킹 타임아웃.
+- **근본 원인 진단**: 차동구동(비홀로노믹) 로봇은 제어 입력 (v, ω) 2개인데 도킹 목표는 depth·lateral·yaw 3개 → **과소구동(underactuated) 자세 정밀화 문제**. 옆으로 평행이동(strafe)이 불가능해 lateral을 고치려면 반드시 ω로 회전해야 하고, 그게 yaw 보정과 충돌. 두 오차를 독립적으로 0에 보낼 수 없음.
+- **공통 해법**: lateral·yaw를 따로 더하지 말고, **도킹 목표점(마커 법선 위 target_dist 지점)의 로봇 기준 기하 (ρ, α, θ_g)** 로 통합. `_compute_geometry()`가 마커 위치 + 법선으로 셋을 산출.
+- **A/B 두 제어기 구현 + 실기기 비교** (`dock_mode` 파라미터로 전환):
+  - **A) 극좌표 자세 제어기** (`_ctrl_polar`, Lyapunov 안정, Siegwart 3.6.2.4): `v=k_ρ·ρ, ω=k_α·α+k_β·β`. 결과: 수렴은 하나(lateral 1.4cm) **ω가 ±0.3에 상시 포화 → 심한 S자 사행**. 노이즈 심한 마커 법선을 고게인(k_α=2.0)으로 추종한 게 원인.
+  - **B) 단계 분리** (`_ctrl_staged`, turn→drive→turn): 조준 회전 → 직진(+약한 조향) → 정면 정렬. 결과: **매끄럽고 포화 없음**, lateral 0.8~1.7cm. 채택.
+- **Decision**: **방법 B (staged) 채택.** 안정적인 lateral(위치)은 직진으로, 자세는 단계 회전으로 분리하면 노이즈 심한 마커 법선에 과민반응하지 않음.
+- **추가 문제 — 목표 근처 α 폭발**: staged phase 1의 조향 `kp_steer·α`에서 `α=atan2(Ty,Tx)`가 ρ→0일 때 분자·분모 모두 0에 수렴해 노이즈로 폭발(ρ=0.06m, lat 4cm → α=35.8°). 마지막 순간 급조향(머리 틀림)으로 yaw가 -90°를 15° 초과. **해결**: `ρ < steer_freeze(0.15m)` 구간은 조향 끄고 직진만(lateral 잔차 수용). 차동구동은 마지막 6cm에서 4cm lateral을 급회전 없이 못 지우므로 잔차를 받아들이는 게 옳음.
+- **단일 평면 마커 한계 확인**: 정면 근처에서 마커 법선(out-of-plane 회전) 관측성이 낮아 θ_g 신뢰 제한 → 로봇이 비스듬히 멈춰도 θ_g≈0으로 오판(실기기에서 AMCL 리셋 yaw가 -47°·-61°·132° 등으로 흔들림). staged가 lateral 위주 제어로 우회. 더 높은 정밀도 필요 시 **마커 2개 자세 삼각측량** 권장(미적용, 향후 과제).
+- **부수 작업**: 마커 이동 후 재캘리브레이션(markers.yaml ID 0, std 0.0002로 안정), `target_dist` 0.271→0.432, `home_robot1_staging` x=-0.13 보정, IBVS 속도 0.15→0.08m/s.
+- **구현 위치**: `wego_aruco/aruco_home_dock.py` (`_compute_geometry`, `_ctrl_polar`, `_ctrl_staged`), `aruco_corrector_launch.py` (`dock_mode` 런치 인자)
+- **면접 어필**: "도킹 수렴 실패를 비홀로노믹 과소구동 문제로 진단. 단순 합산 P제어가 lateral·yaw를 ω 하나로 충돌시킨다는 걸 로그로 확인하고, 목표점 기하(ρ,α,θ_g)로 통합. Lyapunov 극좌표 제어와 단계분리 제어를 둘 다 구현해 실기기 비교 후, 노이즈 심한 단일 마커 법선 환경에선 단계분리가 우월함을 입증. 목표 근처 atan2 특이점(α 폭발)까지 잡아 정밀 정차 달성."
+- **Date**: 2026-05-26
+
+---
+
 ### DEC-037: 홈 출발 180° 회전 문제 — Spin 선실행 + SimpleProgressChecker 복원 (done 2026-05-25)
 - **Context**: PoseProgressChecker(`required_movement_angle: 0.5rad`) 적용으로 홈 출발 180° 회전 시 `Failed to make progress`는 해결됐으나, 부작용 발견. PoseProgressChecker는 각도 변화도 "진행"으로 인정하므로, 주행 중 로봇이 제자리 회전하며 실제로 stuck된 상황에서도 실패 판정이 내려지지 않음 → 복구 동작(recovery) 미발동 → stuck 방치 위험.
 - **Options**:

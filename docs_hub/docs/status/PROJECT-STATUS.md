@@ -11,7 +11,7 @@
 | # | 작업 | 상태 | 비고 |
 |---|------|------|------|
 | 1 | **TTS(wego_voice) 재작업** | `done (2026-05-18)` | mpg123 오디오 장치 미지정 문제. `-a plughw:1,3` (HDMI 0) 고정, `audio_device` 파라미터화 |
-| 2 | **마커 기반 홈 정밀 복귀 구현** | `in_progress` | 3DOF IBVS 구현 완료 (2026-05-20): yaw 보정 추가, staging pose, IBVS 완료 후 AMCL 보정 통합. 실기기 검증 필요. |
+| 2 | **마커 기반 홈 정밀 복귀 구현** | `done (2026-05-26)` | 단계분리(staged) 도킹 제어기 실기기 검증 완료 — lateral ~1cm 정밀 정차. 비홀로노믹 과소구동 진단 → ρ/α/θ_g 통합 + 극좌표 vs 단계분리 A/B 비교 → staged 채택 + α 폭발 보정. DEC-038 참고 |
 | 3 | **Nav2 BT 커스텀 노드 설계** | `todo` | 취업 어필 포인트. 유리구간 등 커스텀 후보 조사 |
 | 4 | **유리문 구간 중앙 웨이포인트 경유 방식 조사** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. classroom은 goToPose, 나머지는 goThroughPoses([entry, exit, dest]). 복귀 시 순서 반전. DEC-030 참고 |
 | 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `done (2026-05-22)` | 지도·로봇 상태·카드·긴급 제어·이벤트 로그·미션 로그·확장성 리팩토링 완료. DEC-034·DEC-035·DEC-036 참고 |
@@ -250,7 +250,11 @@
   - 이유: idle 중 마커 감지 → /initialpose 발행 → Nav2 경로 재계획 → 출발 타임아웃(DEC-031)
   - pose_corrector.py 파일은 캘리브레이션 도구로 보존 (end-to-end 완료 후 삭제 예정)
 - [ ] markers.yaml ID 1 map 좌표 측정 — LIMO 2 홈 마커 미측정
-- [ ] **IBVS 홈 도킹 실기기 검증** — classroom_1 왕복 후 /aruco_home_dock 서비스 호출 → 정밀 정차 확인
+- [x] **마커 0 재캘리브레이션** — done (2026-05-26): 마커 이동 후 재측정 (map_y=-0.662 등, std 0.0002). target_dist 0.271→0.432 동기화
+- [x] **IBVS 홈 도킹 제어기 재설계 + 실기기 검증** — done (2026-05-26): staged(단계분리) 채택, lateral ~1cm 정밀 정차. DEC-038 참고
+  - 비홀로노믹 과소구동 진단 → ρ/α/θ_g 통합 기하 + 극좌표(A)/단계분리(B) A/B 비교 → staged 채택
+  - 목표 근처 α(atan2) 폭발 → steer_freeze(0.15m) 구간 조향 정지로 마지막 급조향 제거
+  - 단일 평면 마커 법선 관측성 한계 확인 → 더 높은 정밀도 필요 시 마커 2개 자세 삼각측량 (향후)
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI
@@ -304,6 +308,24 @@
 | AMCL 파라미터 미최적화 | 장시간 운영 시 drift 가능성 — 진행 중 |
 
 > 상세 엔지니어링 판단 기록: `docs/ref/NAVIGATION.md` — "Nav2 주행 문제 해결 과정" 섹션
+
+---
+
+## 환경 설정 — 신규 기기 apt 설치 목록
+
+새 기기에 환경 구성 시 설치 필요한 패키지 목록.
+
+### 데스크탑 (server)
+```bash
+# Nav2 전체 스택
+sudo apt install ros-humble-nav2-bringup ros-humble-nav2-common
+
+# wego_behaviour 의존성
+sudo apt install ros-humble-yasmin ros-humble-nav2-simple-commander
+
+# 관제 GUI (노트북에서 실행 시)
+sudo apt install ros-humble-nav2-map-server ros-humble-nav2-lifecycle-manager ros-humble-nav2-rviz-plugins
+```
 
 ---
 

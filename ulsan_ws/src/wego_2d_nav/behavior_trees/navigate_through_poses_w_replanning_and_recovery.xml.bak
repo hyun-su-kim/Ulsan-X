@@ -1,21 +1,18 @@
 
 <!--
-  navigate_to_pose 기반. 유리 구간 경유(glass_entry/glass_exit) 통과용.
-  RemovePassedGoals radius: 0.7 → 0.5 → 0.2 → 0.1 → 0.2 (현재).
-  [구조 변경] RemovePassedGoals를 RateController(0.333Hz) 밖으로 분리.
-    이유: RateController 안에 있으면 3초에 1번만 로봇 위치를 체크 → 주행 중
-          경유지를 휙 지나쳐 그 순간 경유지에서 멀어 제거 실패 → 플래너가 이미
-          통과한 경유지를 계속 경로에 포함. 밖으로 빼 매 틱 체크해 통과 즉시 제거.
-    ComputePathThroughPoses(무거운 경로 계산)만 RateController로 0.333Hz 유지.
+  navigate_to_pose 기반 동일 구조.
+  RemovePassedGoals radius 0.7 → 0.5 → 0.2 → 0.1 으로 조정 (유리 구간 경유 포인트 통과 판정 범위 축소).
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
       <PipelineSequence name="NavigateWithReplanning">
-        <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.2"/>
         <RateController hz="0.333">
           <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
-            <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+            <ReactiveSequence>
+              <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.1"/>
+              <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+            </ReactiveSequence>
             <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
           </RecoveryNode>
         </RateController>
