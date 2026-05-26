@@ -81,11 +81,11 @@ waypoints:
     yaw: -2.6607
   glass_entry:
     label: 유리구간 진입
-    x: 0.0
-    y: 0.0
+    x: 0.0276
+    y: 2.486
     yaw: 0.0
   glass_exit:
     label: 유리구간 탈출
-    x: 0.0
-    y: 0.0
+    x: 2.471
+    y: 2.653
     yaw: 0.0
