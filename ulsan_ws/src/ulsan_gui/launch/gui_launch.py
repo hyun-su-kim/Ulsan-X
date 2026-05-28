@@ -2,7 +2,6 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess
 from launch_ros.actions import Node, LifecycleNode
 
 
@@ -22,7 +21,6 @@ def generate_launch_description():
         parameters=[{'yaml_filename': MAP_YAML}],
     )
 
-    # autostart=True → configure + activate 자동 처리
     lifecycle_manager = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
@@ -41,10 +39,4 @@ def generate_launch_description():
         output='screen',
     )
 
-    fastapi = ExecuteProcess(
-        cmd=['uvicorn', 'main:app', '--host', '0.0.0.0', '--port', '8000'],
-        cwd='/home/server/Ulsan-X/ulsan_ui/ulsan_reservation',
-        output='screen',
-    )
-
-    return LaunchDescription([map_server, lifecycle_manager, fastapi, gui])
+    return LaunchDescription([map_server, lifecycle_manager, gui])

@@ -1,7 +1,7 @@
 관제 노트북 (domain 5)
 # 터미널 1 — FastAPI
 cd /home/yechan/Ulsan-X/ulsan_ui/ulsan_reservation
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 8000
 
 # 터미널 2 — wego_dispatcher
 ros2 launch wego_dispatcher dispatcher_launch.py
@@ -17,7 +17,7 @@ npm start
 cd /home/yechan/Ulsan-X/ulsan_ui/ulsan-web-ui
 npm start
 
-# 터미널 5 — 관제 GUI (GUI + map_server + FastAPI)
+# 터미널 5 — 관제 GUI (GUI + map_server)
 export FASTAPI_URL=http://192.168.0.XXX:8000
 ros2 launch ulsan_gui gui_launch.py
 -------------------------------------------------------------
