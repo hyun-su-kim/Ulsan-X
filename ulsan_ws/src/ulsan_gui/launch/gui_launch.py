@@ -43,7 +43,7 @@ def generate_launch_description():
 
     fastapi = ExecuteProcess(
         cmd=['uvicorn', 'main:app', '--host', '0.0.0.0', '--port', '8000'],
-        cwd='/home/yechan/Ulsan-X/ulsan_ui/ulsan_reservation',
+        cwd='/home/server/Ulsan-X/ulsan_ui/ulsan_reservation',
         output='screen',
     )
 
