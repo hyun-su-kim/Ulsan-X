@@ -95,7 +95,7 @@ class GuidingState(State):
         # 목적: (1) AMCL 파티클 수렴 — 제자리 회전으로 다양한 각도 스캔 수집
         #        (2) Nav2 출발 직후 180° 회전 부담 제거 — SimpleProgressChecker 실패 방지
         # WAITING resume 재진입 시에는 from_home=False이므로 이중 Spin 없음
-        if blackboard['from_home']:
+        if blackboard.get('from_home'):
             blackboard['from_home'] = False  # 재진입 시 이중 Spin 방지 — 즉시 초기화
             self._node.get_logger().info('홈 출발 — 180° Spin 시작 (AMCL 수렴)')
             self._navigator.spin(spin_dist=math.pi)  # 180° 회전
