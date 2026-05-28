@@ -1,21 +1,20 @@
 
 <!--
-  navigate_to_pose 기반. 유리 구간 경유(glass_entry/glass_exit) 통과용.
-  RemovePassedGoals radius: 0.7 → 0.5 → 0.2 → 0.1 → 0.2 (현재).
-  [구조 변경] RemovePassedGoals를 RateController(0.333Hz) 밖으로 분리.
-    이유: RateController 안에 있으면 3초에 1번만 로봇 위치를 체크 → 주행 중
-          경유지를 휙 지나쳐 그 순간 경유지에서 멀어 제거 실패 → 플래너가 이미
-          통과한 경유지를 계속 경로에 포함. 밖으로 빼 매 틱 체크해 통과 즉시 제거.
-    ComputePathThroughPoses(무거운 경로 계산)만 RateController로 0.333Hz 유지.
+  navigate_to_pose 기반. 강의실 등 유리 구간 미통과 목적지용.
+  Nav2 기본값 대비 변경:
+    - GoalUpdated 제거 (우리 프로젝트에서 goal은 출발 시 1회만 설정, 항상 FAILURE)
+    - RoundRobin 복구 동작 변경: Spin/Wait/ClearCostmap → BackUp+ClearCostmap+Wait
+      이유: 유리 난반사 phantom 장애물은 가까울수록 증가.
+            BackUp으로 유리에서 멀어진 뒤 ClearCostmap하면 phantom 실질적으로 감소.
+            Spin은 새로운 각도 난반사를 유발해 오히려 phantom 증가 → 제거.
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
       <PipelineSequence name="NavigateWithReplanning">
-        <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.2"/>
-        <RateController hz="0.333">
-          <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
-            <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
             <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
           </RecoveryNode>
         </RateController>

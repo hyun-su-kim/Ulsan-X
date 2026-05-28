@@ -1,6 +1,11 @@
 **/.vscode/
 .ros_env.sh
 
+# Python 캐시
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
 # ROS2 빌드 산출물
 ulsan_ws/build/
 ulsan_ws/install/

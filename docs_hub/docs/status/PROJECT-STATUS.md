@@ -1,21 +1,69 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 3 — 1차 데모 준비 (2026-05-21)**
-핵심 기능 구현 완료. 1차 데모 목표: TTS 수정, ArUco 정밀도 검토, BT 커스텀, 유리문 경로 안정화, 관제 UI, 사람 감지 정지 기능.
+**Phase 3 — 1차 데모 준비 (2026-05-28)**
+핵심 기능 구현 완료. 실기기 검증 진행 중. 잔여: 실기기 테스트 5단계 + 사람 감지 정지 기능.
 
 ---
 
-## 1차 데모 완성 체크리스트 (2026-05-18 기준)
+## 1차 데모 완성 체크리스트 (2026-05-28 기준)
 
 | # | 작업 | 상태 | 비고 |
 |---|------|------|------|
 | 1 | **TTS(wego_voice) 재작업** | `done (2026-05-18)` | mpg123 오디오 장치 미지정 문제. `-a plughw:1,3` (HDMI 0) 고정, `audio_device` 파라미터화 |
-| 2 | **마커 기반 홈 정밀 복귀 구현** | `done (2026-05-26)` | 단계분리(staged) 도킹 제어기 실기기 검증 완료 — lateral ~1cm 정밀 정차. 비홀로노믹 과소구동 진단 → ρ/α/θ_g 통합 + 극좌표 vs 단계분리 A/B 비교 → staged 채택 + α 폭발 보정. DEC-038 참고 |
-| 3 | **Nav2 BT 커스텀 노드 설계** | `todo` | 취업 어필 포인트. 유리구간 등 커스텀 후보 조사 |
-| 4 | **유리문 구간 중앙 웨이포인트 경유 방식 조사** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. classroom은 goToPose, 나머지는 goThroughPoses([entry, exit, dest]). 복귀 시 순서 반전. DEC-030 참고 |
-| 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `done (2026-05-22)` | 지도·로봇 상태·카드·긴급 제어·이벤트 로그·미션 로그·확장성 리팩토링 완료. DEC-034·DEC-035·DEC-036 참고 |
-| 6 | **사람 발견 시 정지 기능** | `todo` | 사전학습 or 커스텀 모델 선택 필요. 이것까지 완료 시 1차 데모 완성 |
+| 2 | **마커 기반 홈 정밀 복귀 구현** | `done (2026-05-26)` | 단계분리(staged) 도킹 제어기 실기기 검증 완료 — lateral ~1cm 정밀 정차. DEC-038 참고 |
+| 3 | **Nav2 BT 커스텀** | `in-progress (2026-05-28)` | XML 2개 커스텀 완료(DEC-039). PersonClearCondition C++ 노드는 사람 감지 구현 후 진행 |
+| 4 | **유리문 구간 중앙 웨이포인트 경유** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. DEC-030 참고 |
+| 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `done (2026-05-22)` | 지도·로봇 상태·카드·긴급 제어·이벤트 로그·미션 로그·확장성 리팩토링 완료. DEC-034~036 참고 |
+| 6 | **사람 발견 시 정지 기능** | `todo` | YOLO 모델 선택 → PersonClearCondition BT 노드 → XML 수정. 완료 시 1차 데모 완성 |
+
+---
+
+## 1차 데모 완성을 위한 실기기 검증 계획 (2026-05-28)
+
+### 1단계 — LIMO 1 단독 주행
+
+| # | 항목 | 상태 |
+|---|------|------|
+| 1-1 | 유리 구간 경유지 통과 주행 | `todo` |
+| 1-2 | FSM 각 상태 동작 (IDLE/GUIDING/RETURNING/WAITING/FAILED) | `todo` |
+| 1-3 | BT 수정 사항 동작 (BackUp+ClearCostmap 복구, RemovePassedGoals) | `todo` |
+| 1-4 | IBVS 홈 도킹 | `done (2026-05-26)` |
+
+### 2단계 — LIMO 2 단독 주행
+
+| # | 항목 | 상태 |
+|---|------|------|
+| 2-1 | 유리 구간 경유지 통과 주행 | `todo` |
+| 2-2 | FSM 각 상태 동작 | `todo` |
+| 2-3 | BT 수정 사항 동작 | `todo` |
+| 2-4 | IBVS 홈 도킹 (markers.yaml ID 1 측정 완료 2026-05-28) | `todo` |
+
+### 3단계 — 2대 통합
+
+| # | 항목 | 상태 |
+|---|------|------|
+| 3-1 | 협동 임무 할당 (dispatcher → 두 로봇 순차 배정) | `todo` |
+| 3-2 | 충돌 회피 (wego_traffic pause/resume) | `todo` |
+
+### 4단계 — 관제 UI 전체 테스트
+
+| # | 항목 | 상태 |
+|---|------|------|
+| 4-1 | 지도 + 두 로봇 실시간 위치 | `todo` |
+| 4-2 | 긴급 제어 (pause/resume/abort) | `todo` |
+| 4-3 | 이벤트·미션 로그 | `todo` |
+| 4-4 | 시스템 상태 모니터링 | `todo` |
+
+### 5단계 — 사람 감지 정지
+
+| # | 항목 | 상태 |
+|---|------|------|
+| 5-1 | YOLO 모델 선택 + 사람 감지 노드 구현 | `todo` |
+| 5-2 | PersonClearCondition C++ BT 노드 작성 | `todo` |
+| 5-3 | BT XML 수정 (ReactiveSequence 삽입) | `todo` |
+
+> **5단계 완료 = 1차 데모 완성**
 
 ---
 
@@ -249,7 +297,7 @@
   - AMCL 보정을 IBVS 정밀 정차 완료 후 1회로 통합
   - 이유: idle 중 마커 감지 → /initialpose 발행 → Nav2 경로 재계획 → 출발 타임아웃(DEC-031)
   - pose_corrector.py 파일은 캘리브레이션 도구로 보존 (end-to-end 완료 후 삭제 예정)
-- [ ] markers.yaml ID 1 map 좌표 측정 — LIMO 2 홈 마커 미측정
+- [x] markers.yaml ID 1 map 좌표 측정 — done (2026-05-28)
 - [x] **마커 0 재캘리브레이션** — done (2026-05-26): 마커 이동 후 재측정 (map_y=-0.662 등, std 0.0002). target_dist 0.271→0.432 동기화
 - [x] **IBVS 홈 도킹 제어기 재설계 + 실기기 검증** — done (2026-05-26): staged(단계분리) 채택, lateral ~1cm 정밀 정차. DEC-038 참고
   - 비홀로노믹 과소구동 진단 → ρ/α/θ_g 통합 기하 + 극좌표(A)/단계분리(B) A/B 비교 → staged 채택

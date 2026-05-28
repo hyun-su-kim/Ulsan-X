@@ -4,6 +4,46 @@
 
 ---
 
+### DEC-039: Nav2 BT XML 커스텀 — GoalUpdated 제거 + 복구 행동 재설계 + navigate_to_pose 커스텀 추가 (done 2026-05-28)
+- **Context**: Nav2 기본 BT XML 2개(navigate_to_pose, navigate_through_poses)를 분석하여 우리 프로젝트에 맞게 3가지 개선.
+- **변경 1 — GoalUpdated 제거**:
+  - 기존: `ReactiveFallback`의 첫 번째 자식으로 `GoalUpdated` 조건 노드 존재
+  - 문제: `GoalUpdated`는 주행 중 새 goal이 들어오면 SUCCESS 반환해 복구 중단 용도. 우리 프로젝트는 goal을 출발 시 1회만 설정(`goToPose`/`goThroughPoses`)하고 절대 변경 안 함 → 항상 FAILURE → 사실상 dead code
+  - 결정: 제거. `ReactiveFallback`에 `RoundRobin`만 남김
+- **변경 2 — 복구 행동 재설계 (BackUp+ClearCostmap)**:
+  - 기존: `ClearEntireCostmap → Spin(1.57rad) → Wait(5s) → BackUp(0.3m)` 순서
+  - 문제: 유리 난반사 phantom 장애물이 주요 실패 원인. 유리와 가까울수록 LiDAR 빔이 더 넓은 각도로 난반사 → phantom 증가. `Spin`은 새로운 각도 난반사 유발 → 오히려 phantom 악화. `ClearEntireCostmap`은 유리 근처에서 즉시 재생성. `BackUp`이 유리에서 멀어지게 해 phantom 감소.
+  - 결정: `Spin` 제거, `BackUp → ClearLocal → ClearGlobal`을 Sequence로 묶어 한 세트 실행 후 `Wait`으로 폴백
+    ```xml
+    <RoundRobin>
+      <Sequence name="BackUpAndClear">
+        <BackUp backup_dist="0.30" backup_speed="0.05"/>
+        <ClearEntireCostmap (local)/>
+        <ClearEntireCostmap (global)/>
+      </Sequence>
+      <Wait wait_duration="5"/>
+    </RoundRobin>
+    ```
+  - BackUp이 실제 장애물에도 안전한 이유: 장애물 반대 방향으로 이동 → 충돌 없음
+- **변경 3 — navigate_to_pose 커스텀 파일 추가**:
+  - 기존: `navigate_to_pose`는 Nav2 기본값(`/opt/ros/humble/...`) 사용. `navigate_through_poses`만 커스텀 관리
+  - 결정: `wego_2d_nav/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml` 신규 생성. 변경 1·2 동일 적용. `navigation_only_launch.py`에 `default_nav_to_pose_bt_xml` 오버라이드 추가
+  - 이유: 두 BT가 같은 복구 정책을 공유해야 일관성 유지. wego_2d_nav 패키지에서 단일 관리
+- **RemovePassedGoals 분리 (기존 작업, navigate_through_poses 전용)**:
+  - Nav2 기본값: `RemovePassedGoals`가 `RateController(0.333Hz)` 안 → 3초에 1번 경유지 통과 체크
+  - 변경: `PipelineSequence` 직속 자식으로 분리 → 매 틱 체크 → glass_entry/exit 통과 즉시 제거
+  - `navigate_to_pose`는 단일 목적지라 `RemovePassedGoals` 해당 없음
+- **향후 계획 — PersonClearCondition 커스텀 C++ BT 노드**:
+  - 사람 감지 정지 기능을 위한 커스텀 조건 노드. 사람 감지 구현(YOLO 모델 선택) 후 진행
+  - 구조: `ReactiveSequence` → [PersonClearCondition, RecoveryNode(FollowPath)]
+  - 반환값: 사람 없음 → SUCCESS, 사람 감지 → RUNNING (FAILURE 없음 — 복구 동작 미발동)
+  - 경로 재계획(ComputePathThroughPoses)은 RUNNING 중에도 PipelineSequence에 의해 계속 실행됨
+- **구현 위치**: `wego_2d_nav/behavior_trees/`, `wego_2d_nav/launch/navigation_only_launch.py`
+- **면접 어필**: "Nav2 기본 BT XML의 GoalUpdated가 우리 프로젝트에서 항상 FAILURE임을 소스코드 분석으로 확인하고 제거. 유리 난반사의 물리적 특성(근거리일수록 phantom 증가)을 분석해 Spin 제거 + BackUp 선행 복구 정책 설계. 두 BT XML을 wego_2d_nav 패키지에서 통합 관리."
+- **Date**: 2026-05-28
+
+---
+
 ### DEC-038: IBVS 홈 도킹 제어기 재설계 — 극좌표 vs 단계분리 비교 후 staged 채택 (done 2026-05-26)
 - **Context**: 기존 `aruco_home_dock`의 3DOF 제어가 목표 근처에서 수렴 실패. `angular.z = -Kp_w·lateral - Kp_yaw·yaw_error`로 lateral·yaw 보정을 단순 합산했는데, 실기기 로그에서 두 항이 ω 하나를 공유하며 서로 상쇄(fight)하는 것을 확인. depth=0.279m에서 v≈0.002, w≈-0.002로 교착 → 도킹 타임아웃.
 - **근본 원인 진단**: 차동구동(비홀로노믹) 로봇은 제어 입력 (v, ω) 2개인데 도킹 목표는 depth·lateral·yaw 3개 → **과소구동(underactuated) 자세 정밀화 문제**. 옆으로 평행이동(strafe)이 불가능해 lateral을 고치려면 반드시 ω로 회전해야 하고, 그게 yaw 보정과 충돌. 두 오차를 독립적으로 0에 보낼 수 없음.

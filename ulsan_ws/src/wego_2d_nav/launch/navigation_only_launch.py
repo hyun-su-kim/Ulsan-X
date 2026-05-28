@@ -74,10 +74,14 @@ def generate_launch_description():
                         plugin='nav2_bt_navigator::BtNavigator',
                         name='bt_navigator',
                         parameters=[ParameterFile(params_file), {
+                            'default_nav_to_pose_bt_xml': os.path.join(
+                                wego_share_dir, 'behavior_trees',
+                                'navigate_to_pose_w_replanning_and_recovery.xml'
+                            ),
                             'default_nav_through_poses_bt_xml': os.path.join(
                                 wego_share_dir, 'behavior_trees',
                                 'navigate_through_poses_w_replanning_and_recovery.xml'
-                            )
+                            ),
                         }],
                         remappings=remappings
                     ),
