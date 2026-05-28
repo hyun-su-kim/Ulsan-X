@@ -463,12 +463,13 @@ class MapView(QWidget):
         self._connect_signals()
 
         # FastAPI 핑 체크 스레드 — 단일 인스턴스 재사용
-        self._api_checker = HttpGetThread(f'{FASTAPI_URL}/logs', timeout=0.5)
+        self._api_checker = HttpGetThread(f'{FASTAPI_URL}/health', timeout=1.0)
         self._api_checker.done.connect(self._on_fastapi_result)
 
         self._conn_timer = QTimer()
         self._conn_timer.timeout.connect(self._check_connections)
         self._conn_timer.start(2000)
+        QTimer.singleShot(0, self._check_connections)  # 첫 체크 즉시 실행
 
     def _build_ui(self) -> None:
         hbox = QHBoxLayout(self)

@@ -22,6 +22,7 @@
 #   ACTIVE 미션의 배정 로봇이 IDLE로 복귀하면
 #     → PATCH /assign/{id}/complete 호출 (ACTIVE → COMPLETED)
 
+import os
 import threading
 import time
 
@@ -30,8 +31,9 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-# FastAPI 서버 주소 (관제 노트북)
-API_BASE = "http://192.168.0.115:8000"
+# FastAPI 서버 주소 — 환경변수 FASTAPI_URL로 오버라이드 가능
+# 예) export FASTAPI_URL=http://192.168.0.XXX:8000
+API_BASE = os.environ.get('FASTAPI_URL', 'http://localhost:8000')
 
 POLL_INTERVAL   = 0.5   # PENDING 미션 폴링 간격 (초)
 STATUS_INTERVAL = 1.0   # 완료 감지 폴링 간격 (초)

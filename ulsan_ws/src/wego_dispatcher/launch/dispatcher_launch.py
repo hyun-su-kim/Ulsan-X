@@ -1,3 +1,5 @@
+import os
+
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
@@ -10,7 +12,7 @@ def generate_launch_description():
             name='wego_dispatcher',
             output='screen',
             parameters=[{
-                'api_base': 'http://192.168.0.115:8000',
+                'api_base': os.environ.get('FASTAPI_URL', 'http://localhost:8000'),
             }],
         ),
     ])

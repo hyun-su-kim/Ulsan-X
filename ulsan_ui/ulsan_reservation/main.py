@@ -95,3 +95,8 @@ app.include_router(walkin.router)    # /walkin/*
 app.include_router(assign.router)    # /assign/*
 app.include_router(robots.router)    # /robots/*
 app.include_router(logs.router)      # /logs
+
+
+@app.get('/health')
+def health():
+    return {'status': 'ok'}
