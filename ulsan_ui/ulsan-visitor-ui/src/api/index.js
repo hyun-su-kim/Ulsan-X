@@ -1,13 +1,13 @@
 // FastAPI 서버와 통신하는 함수 모음
 // 모든 HTTP 요청을 이 파일에서 관리한다 — URL 변경 시 여기만 수정하면 됨
 //
-// 서버 주소는 .env의 REACT_APP_API_URL에서 읽는다
-// 태블릿과 관제 노트북이 같은 WiFi에 연결되어 있어야 한다
+// 서버 주소: .env의 REACT_APP_API_URL > 브라우저 접속 hostname:8000 순으로 결정
+// React 앱과 FastAPI가 같은 서버에서 실행되므로 IP가 바뀌어도 자동으로 맞춰진다
 
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://192.168.0.115:8000',
+  baseURL: process.env.REACT_APP_API_URL || `http://${window.location.hostname}:8000`,
 });
 
 // ── 예약 조회 흐름 ──────────────────────────────────────────────────────────

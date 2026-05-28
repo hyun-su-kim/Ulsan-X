@@ -3,9 +3,9 @@
 
 import axios from "axios";
 
-// .env의 REACT_APP_API_URL을 기본 주소로 사용
+// 서버 주소: .env의 REACT_APP_API_URL > 브라우저 접속 hostname:8000 순으로 결정
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL,
+  baseURL: process.env.REACT_APP_API_URL || `http://${window.location.hostname}:8000`,
 });
 
 /**

@@ -1,4 +1,5 @@
 import math
+import os
 import time
 import threading
 from dataclasses import dataclass
@@ -23,6 +24,10 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 # 로봇 목록 — 단일 정본. 로봇 추가 시 이 튜플만 수정하면 GUI 전체가 자동 확장
 ROBOTS: tuple[str, ...] = ('limo1', 'limo2')
+
+# FastAPI 서버 주소 — 환경변수 FASTAPI_URL로 오버라이드 가능
+# 예) export FASTAPI_URL=http://192.168.0.115:8000
+FASTAPI_URL: str = os.environ.get('FASTAPI_URL', 'http://localhost:8000')
 
 
 def robot_label(robot: str) -> str:

@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QPen, QBrush, QPolygon
 
-from ulsan_gui.ros_node import ROBOTS, robot_label
+from ulsan_gui.ros_node import ROBOTS, robot_label, FASTAPI_URL
 from ulsan_gui.http_thread import HttpGetThread
 
 STATUS_COLOR = {
@@ -463,7 +463,7 @@ class MapView(QWidget):
         self._connect_signals()
 
         # FastAPI 핑 체크 스레드 — 단일 인스턴스 재사용
-        self._api_checker = HttpGetThread('http://localhost:8000/logs', timeout=0.5)
+        self._api_checker = HttpGetThread(f'{FASTAPI_URL}/logs', timeout=0.5)
         self._api_checker.done.connect(self._on_fastapi_result)
 
         self._conn_timer = QTimer()

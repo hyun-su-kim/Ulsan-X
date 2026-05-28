@@ -11,8 +11,9 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
 
 from ulsan_gui.http_thread import HttpGetThread
+from ulsan_gui.ros_node import FASTAPI_URL
 
-API_URL = 'http://localhost:8000/logs'
+API_URL = f'{FASTAPI_URL}/logs'
 
 _COMBO_STYLE = (
     'QComboBox { border:1px solid #d1d5db; border-radius:6px; padding:4px 10px;'

@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QRect, QVariantAnimation
 from PyQt5.QtGui import QFont, QImage, QPixmap, QKeyEvent, QPainter, QPen, QColor
 
-from ulsan_gui.ros_node    import ROBOTS, robot_label
+from ulsan_gui.ros_node    import ROBOTS, robot_label, FASTAPI_URL
 from ulsan_gui.http_thread import HttpGetThread
 
 STATUS_COLOR = {
@@ -834,7 +834,7 @@ class RobotView(QWidget):
     def _fetch_today_tasks(self) -> None:
         if hasattr(self, '_today_thread') and self._today_thread.isRunning():
             return
-        self._today_thread = HttpGetThread('http://localhost:8000/assign/today/by-robot')
+        self._today_thread = HttpGetThread(f'{FASTAPI_URL}/assign/today/by-robot')
         self._today_thread.done.connect(self._on_today_tasks)
         self._today_thread.start()
 

@@ -13,8 +13,9 @@ from PyQt5.QtGui import QFont, QColor, QTextCharFormat
 from PyQt5.QtWidgets import QApplication
 
 from ulsan_gui.http_thread import HttpGetThread
+from ulsan_gui.ros_node import FASTAPI_URL
 
-API_BASE = 'http://localhost:8000'
+API_BASE = FASTAPI_URL
 
 STATUS_LABEL = {
     'PENDING':     '대기',
