@@ -3,7 +3,7 @@
 <package format="3">
   <name>wego_voice</name>
   <version>0.1.0</version>
-  <description>Voice pipeline for wego guide robot: VAD → Wake Word → STT → NLU</description>
+  <description>TTS 전용 음성 노드 — edge-tts + mpg123 (DEC-024)</description>
   <maintainer email="rpehd2904@gmail.com">yechan</maintainer>
   <license>Apache-2.0</license>
 

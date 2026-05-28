@@ -12,7 +12,7 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
-  <exec_depend>wego_msgs</exec_depend>
+  <exec_depend>limo_msgs</exec_depend>
   <exec_depend>python3-pyqt5</exec_depend>
   <exec_depend>python3-cv-bridge</exec_depend>
   <exec_depend>python3-requests</exec_depend>
