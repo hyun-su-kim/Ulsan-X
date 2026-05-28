@@ -745,13 +745,15 @@ class MapView(QWidget):
             self._api_checker.start()
 
         try:
-            node_names = self.ros.get_node_names()
-            for key, node_name in (
-                ('dispatcher', 'wego_dispatcher'),
-                ('traffic',    'wego_traffic'),
+            existing_topics = {
+                name for name, _ in self.ros.get_topic_names_and_types()
+            }
+            for key, topic in (
+                ('dispatcher', '/limo1/goal_destination'),
+                ('traffic',    '/limo1/pause'),
             ):
                 val = self._sys_vals[key]
-                if node_name in node_names:
+                if topic in existing_topics:
                     val.setText('● 연결')
                     val.setStyleSheet('color:#059669; border:none;')
                 else:
