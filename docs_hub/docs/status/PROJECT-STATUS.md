@@ -312,6 +312,13 @@
   - 긴급 제어 카드: 로봇 선택 토글 + 일시정지/재개/임무중단 버튼
   - 이벤트 로그: 상태 전이/버튼 조작 실시간 기록
   - 시스템 상태 패널: 연결·맵서버·FastAPI·dispatcher·traffic 모니터링
+- [x] **관제 GUI 코드 정리** — done (2026-05-29)
+  - 죽은 코드 제거: `RobotState.last_recv/last_status_recv` (diagnostics 전환으로 미사용), `publish_goal()` (호출처 없음)
+  - `LogView`: 불필요한 `ros_node` 의존성 제거, `_fetch` 스레드 중복 실행 방지, `noshow` 필터 추가 (기존 누락)
+- [x] **시스템 상태 패널 연결 판단 방식 교체 — ROS2 Diagnostics 표준 채택** — done (2026-05-29). DEC-038 참고
+  - 기존: 토픽 존재 여부(`get_topic_names_and_types()`) → GUI 자신이 퍼블리셔를 생성해 항상 연결됨으로 표시되는 버그
+  - 수정: `diagnostic_updater` 추가(wego_behaviour/dispatcher/traffic) + `/diagnostics` 수신 시간 기반 판단
+  - `bridge_robot.yaml`: `/diagnostics` → `/ROBOT_NAME/diagnostics` 브릿징 추가 (wego_behaviour domain 6/7→5)
 
 #### 전체 통합 테스트
 - [ ] LIMO 2대 + 노트북 전체 파이프라인 실기기 검증

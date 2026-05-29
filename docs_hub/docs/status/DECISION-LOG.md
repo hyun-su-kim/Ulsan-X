@@ -4,6 +4,31 @@
 
 ---
 
+### DEC-040: 관제 GUI 시스템 상태 패널 연결 판단 방식 — ROS2 Diagnostics 표준 채택 (done 2026-05-29)
+- **Context**: 관제 GUI 시스템 상태 패널에서 dispatcher/traffic 노드를 켜지 않아도 "연결됨"으로 표시되는 버그 발견. 기존 코드는 `get_topic_names_and_types()`로 `/limo1/goal_destination`, `/limo1/pause` 토픽 존재 여부로 연결을 판정했는데, GUI 자신이 시작 시 이 토픽들의 퍼블리셔를 생성하므로 항상 토픽이 존재 → 항상 연결됨으로 표시되는 구조적 결함.
+- **Options**:
+  - A) `count_publishers(topic) > 1` — GUI 자신 제외한 퍼블리셔 수 확인. 노드 등록 여부만 확인, 실제 데이터 기준 아님.
+  - B) `get_node_names()` — 노드 프로세스 존재 여부 확인. 노드가 hang 걸려도 연결됨으로 표시.
+  - C) Heartbeat 토픽 — 노드가 주기적으로 토픽 발행, GUI에서 수신 시간 체크. 구현 간단하나 비표준.
+  - D) **ROS2 Diagnostics (`diagnostic_updater`)** — `/diagnostics` 토픽에 노드 상태 주기 발행. Nav2, MoveIt, ros2_control 등 ROS2 메이저 패키지 표준 방식.
+- **Decision**: **D — ROS2 Diagnostics 표준 채택**
+  - `wego_behaviour`, `wego_dispatcher`, `wego_traffic` 각 노드에 `diagnostic_updater.Updater` 추가
+  - 각 노드가 `/diagnostics`에 1초 주기로 상태 발행 (`DiagnosticStatus.hardware_id` = 노드명)
+  - `wego_behaviour`(domain 6/7): `bridge_robot.yaml`에 `/diagnostics` → `/ROBOT_NAME/diagnostics` 브릿징 추가
+  - GUI `ros_node.py`: `/limo1/diagnostics`, `/limo2/diagnostics`, `/diagnostics` 구독 → `_diag_recv` 수신 시각 갱신
+  - `is_connected()` → `is_node_ok(key)` 교체 — `_diag_recv[key]` 기준 5초 timeout
+  - `map_view._check_connections()`: 기존 토픽 존재 체크 완전 제거, `is_node_ok()` 기반으로 교체
+- **구현 시 발견된 버그**: `diagnostic_updater`가 발행하는 `DiagnosticStatus.name`은 `"hardware_id: task_name"` 복합 형식. `status.name`으로 매칭하면 항상 실패 → `status.hardware_id`로 매칭해야 함.
+- **변경 파일**: `wego_behaviour/behaviour_node.py`, `wego_dispatcher/dispatcher_node.py`, `wego_traffic/traffic_node.py`, `wego_bridge/config/bridge_robot.yaml`, `ulsan_gui/ros_node.py`, `ulsan_gui/views/map_view.py`, 4개 `package.xml`
+- **Rationale**:
+  - topic existence 체크: GUI 자신이 퍼블리셔를 생성하면 항상 true → 구조적으로 올바른 연결 판단 불가
+  - `count_publishers > 1` / `get_node_names()`: 실제 데이터 기준이 아닌 등록 여부만 확인
+  - Diagnostics: 노드가 실제로 동작 중일 때만 주기 발행 → 데이터 수신 시간 기반 판단. Nav2 등 외부 패키지 상태도 추가 코드 없이 동일하게 모니터링 가능
+- **면접 어필**: "ROS2 Diagnostics 표준 방식을 채택해 Nav2, MoveIt과 동일한 노드 헬스 모니터링 구조를 구현. topic 존재 여부라는 잘못된 지표 대신 실제 데이터 수신 시간 기반으로 판단 기준을 교체."
+- **Date**: 2026-05-29
+
+---
+
 ### DEC-039: Nav2 BT XML 커스텀 — GoalUpdated 제거 + 복구 행동 재설계 + navigate_to_pose 커스텀 추가 (done 2026-05-28)
 - **Context**: Nav2 기본 BT XML 2개(navigate_to_pose, navigate_through_poses)를 분석하여 우리 프로젝트에 맞게 3가지 개선.
 - **변경 1 — GoalUpdated 제거**:

@@ -215,6 +215,12 @@ class MapCanvas(QWidget):
         self._poses[robot] = (p.x, p.y, yaw)
         self.update()
 
+    def clear_pose(self, robot: str) -> None:
+        # 로봇 미연결 시 마커 제거 — diagnostics 타임아웃과 연동
+        if self._poses.get(robot) is not None:
+            self._poses[robot] = None
+            self.update()
+
     def update_status(self, robot: str, status: str) -> None:
         self._statuses[robot] = status
         lbl = self._legend_rows.get(robot)
@@ -724,15 +730,19 @@ class MapView(QWidget):
         self._flash_btn(self._abort_btn, _ABORT_FLASH, _ABORT_NORMAL)
 
     def _check_connections(self) -> None:
+        # 로봇 연결: /ROBOT_NAME/diagnostics 수신 시각 기준
+        # 미연결 시 맵 마커도 즉시 제거
         for robot in ROBOTS:
             val = self._sys_vals[f'{robot}_conn']
-            if self.ros.is_connected(robot):
+            if self.ros.is_node_ok(robot):
                 val.setText('● 연결')
                 val.setStyleSheet('color:#059669; border:none;')
             else:
                 val.setText('● 미연결')
                 val.setStyleSheet('color:#ef4444; border:none;')
+                self._canvas.clear_pose(robot)
 
+        # 맵 서버: /map 수신 여부 기준 (Nav2 map_server가 diagnostics 미보장)
         val = self._sys_vals['map_server']
         if self.ros.latest_map is not None:
             val.setText('● 연결')
@@ -741,26 +751,22 @@ class MapView(QWidget):
             val.setText('● 미연결')
             val.setStyleSheet('color:#ef4444; border:none;')
 
+        # FastAPI: HTTP ping 기준 (비동기 — _on_fastapi_result에서 업데이트)
         if not self._api_checker.isRunning():
             self._api_checker.start()
 
-        try:
-            node_names = {
-                name for name, _ in self.ros.get_node_names_and_namespaces()
-            }
-            for key, node_name in (
-                ('dispatcher', 'wego_dispatcher'),
-                ('traffic',    'wego_traffic'),
-            ):
-                val = self._sys_vals[key]
-                if node_name in node_names:
-                    val.setText('● 연결')
-                    val.setStyleSheet('color:#059669; border:none;')
-                else:
-                    val.setText('● 미연결')
-                    val.setStyleSheet('color:#ef4444; border:none;')
-        except Exception:
-            pass
+        # dispatcher/traffic: /diagnostics 수신 시각 기준
+        for key, node_key in (
+            ('dispatcher', 'wego_dispatcher'),
+            ('traffic',    'wego_traffic'),
+        ):
+            val = self._sys_vals[key]
+            if self.ros.is_node_ok(node_key):
+                val.setText('● 연결')
+                val.setStyleSheet('color:#059669; border:none;')
+            else:
+                val.setText('● 미연결')
+                val.setStyleSheet('color:#ef4444; border:none;')
 
     def _on_fastapi_result(self, response) -> None:
         ok = response is not None

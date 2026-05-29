@@ -12,6 +12,7 @@ from std_msgs.msg import String, Empty
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from sensor_msgs.msg import CompressedImage
 from nav_msgs.msg import OccupancyGrid
+from diagnostic_msgs.msg import DiagnosticArray
 try:
     from limo_msgs.msg import LimoStatus as _LimoStatus
     _LIMO_MSGS_OK = True
@@ -43,8 +44,6 @@ class RobotState:
     prev_status: str = ''
     pose: object = None
     dest: str = ''
-    last_recv: float = 0.0
-    last_status_recv: float = 0.0  # robot_status 수신 시각 — 연결 판정 전용
 
 
 class GuiSignals(QObject):
@@ -59,8 +58,14 @@ class GuiSignals(QObject):
     sig_gui_log  = pyqtSignal(str, str, str)    # (log_type, robot_label, message)
 
 
-# /map 토픽은 transient_local (latched)로 발행되므로 구독도 맞춰야 함
+# /map, /amcl_pose 모두 Nav2가 TRANSIENT_LOCAL로 발행 — 구독도 맞춰야 GUI 시작 시점에 관계없이 즉시 수신
 _MAP_QOS = QoSProfile(
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    reliability=ReliabilityPolicy.RELIABLE,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
+_AMCL_QOS = QoSProfile(
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
     reliability=ReliabilityPolicy.RELIABLE,
     history=HistoryPolicy.KEEP_LAST,
@@ -78,6 +83,12 @@ class RosNode(Node):
         self.robots: dict[str, RobotState] = {r: RobotState() for r in ROBOTS}
         self.latest_map: OccupancyGrid | None = None
 
+        # 노드별 최근 /diagnostics 수신 시각 — is_node_ok() 판정 기준
+        # 로봇(limo1/limo2): bridge를 통해 /ROBOT_NAME/diagnostics로 수신
+        # domain 5 노드(wego_dispatcher/wego_traffic): /diagnostics에서 name 필드로 구분
+        self._diag_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
+        self._diag_recv.update({'wego_dispatcher': 0.0, 'wego_traffic': 0.0})
+
         # 구독 — 로봇별 루프
         for robot in ROBOTS:
             self.create_subscription(
@@ -86,7 +97,7 @@ class RosNode(Node):
             )
             self.create_subscription(
                 PoseWithCovarianceStamped, f'/{robot}/amcl_pose',
-                lambda m, r=robot: self._pose_cb(r, m), 10,
+                lambda m, r=robot: self._pose_cb(r, m), _AMCL_QOS,
             )
             self.create_subscription(
                 CompressedImage, f'/{robot}/camera/image/compressed',
@@ -104,6 +115,15 @@ class RosNode(Node):
 
         # /map 토픽은 transient_local QoS로 구독 (GUI 실행 전 발행된 맵도 수신)
         self.create_subscription(OccupancyGrid, '/map', self._map_cb, _MAP_QOS)
+
+        # 로봇 diagnostics: bridge가 /ROBOT_NAME/diagnostics 로 remap해서 전달
+        for robot in ROBOTS:
+            self.create_subscription(
+                DiagnosticArray, f'/{robot}/diagnostics',
+                lambda m, r=robot: self._robot_diag_cb(r, m), 10,
+            )
+        # domain 5 노드(dispatcher, traffic) diagnostics: 브릿징 없이 직접 수신
+        self.create_subscription(DiagnosticArray, '/diagnostics', self._domain5_diag_cb, 10)
 
         # 발행 — 로봇별 dict
         self._cmd_vel_pubs = {
@@ -135,9 +155,6 @@ class RosNode(Node):
     def _status_cb(self, robot: str, msg: String) -> None:
         st = self.robots[robot]
         st.status = msg.data
-        now = time.time()
-        st.last_recv = now
-        st.last_status_recv = now
         self.signals.sig_status.emit(robot, msg.data)
 
         if msg.data != st.prev_status:
@@ -154,7 +171,6 @@ class RosNode(Node):
     def _pose_cb(self, robot: str, msg: PoseWithCovarianceStamped) -> None:
         st = self.robots[robot]
         st.pose = msg
-        st.last_recv = time.time()
         self.signals.sig_pose.emit(robot, msg)
 
     def _map_cb(self, msg: OccupancyGrid) -> None:
@@ -171,6 +187,17 @@ class RosNode(Node):
     def _battery_cb(self, robot: str, msg) -> None:
         self.signals.sig_battery.emit(robot, msg.battery_voltage)
 
+    def _robot_diag_cb(self, robot: str, msg: DiagnosticArray) -> None:
+        self._diag_recv[robot] = time.time()
+
+    def _domain5_diag_cb(self, msg: DiagnosticArray) -> None:
+        # 여러 노드가 /diagnostics 하나에 발행 — hardware_id 필드로 노드 구분
+        # (status.name은 'hardware_id: task_name' 형식이므로 hardware_id 사용)
+        now = time.time()
+        for status in msg.status:
+            if status.hardware_id in self._diag_recv:
+                self._diag_recv[status.hardware_id] = now
+
     # ── 발행 ─────────────────────────────────────────────────────────
 
     def publish_cmd_vel(self, robot: str, linear_x: float, angular_z: float) -> None:
@@ -178,11 +205,6 @@ class RosNode(Node):
         msg.linear.x  = linear_x
         msg.angular.z = angular_z
         self._cmd_vel_pubs[robot].publish(msg)
-
-    def publish_goal(self, robot: str, destination_key: str) -> None:
-        msg = String()
-        msg.data = destination_key
-        self._goal_pubs[robot].publish(msg)
 
     def publish_pause(self, robot: str) -> None:
         self._pause_pubs[robot].publish(Empty())
@@ -195,9 +217,9 @@ class RosNode(Node):
 
     # ── 유틸 ─────────────────────────────────────────────────────────
 
-    def is_connected(self, robot: str, timeout_sec: float = 5.0) -> bool:
-        # amcl_pose가 아닌 robot_status 기준으로 판정 — AMCL은 정지 중 퍼블리시 중단하므로 제외
-        return (time.time() - self.robots[robot].last_status_recv) < timeout_sec
+    def is_node_ok(self, key: str, timeout_sec: float = 5.0) -> bool:
+        # /diagnostics 수신 시각 기준 — key: 로봇명(limo1/limo2) 또는 노드명(wego_dispatcher/wego_traffic)
+        return (time.time() - self._diag_recv.get(key, 0.0)) < timeout_sec
 
     @staticmethod
     def pose_to_xyyaw(pose_msg: PoseWithCovarianceStamped) -> tuple[float, float, float]:

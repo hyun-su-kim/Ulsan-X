@@ -30,6 +30,8 @@ import requests
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from diagnostic_updater import Updater
+from diagnostic_msgs.msg import DiagnosticStatus
 
 # FastAPI 서버 주소 — 환경변수 FASTAPI_URL로 오버라이드 가능
 # 예) export FASTAPI_URL=http://192.168.0.XXX:8000
@@ -60,6 +62,12 @@ class DispatcherNode(Node):
         # FAILED 상태를 거친 미션 — IDLE 복귀 시 /complete 대신 /fail 호출
         self._failed: set[int] = set()
         self._lock = threading.Lock()
+        self._api_ok = False  # 마지막 FastAPI 폴링 성공 여부 — diagnostics 보고용
+
+        # /diagnostics 발행 — GUI 시스템 상태 패널에서 연결 확인용
+        self._diag_updater = Updater(self)
+        self._diag_updater.setHardwareID('wego_dispatcher')
+        self._diag_updater.add('wego_dispatcher', self._diag_check)
 
         # 상태 구독
         self.create_subscription(String, '/limo1/robot_status', self._status_cb('limo1'), 10)
@@ -80,6 +88,13 @@ class DispatcherNode(Node):
         self.create_timer(STATUS_INTERVAL, self._check_completions)
 
         self.get_logger().info(f'wego_dispatcher 시작 — API: {self._api}')
+
+    def _diag_check(self, stat: DiagnosticStatus) -> DiagnosticStatus:
+        if self._api_ok:
+            stat.summary(DiagnosticStatus.OK, '정상 동작 중')
+        else:
+            stat.summary(DiagnosticStatus.ERROR, 'FastAPI 연결 끊김')
+        return stat
 
     def _status_cb(self, robot: str):
         """클로저로 로봇별 구독 콜백 생성."""
@@ -114,9 +129,12 @@ class DispatcherNode(Node):
         try:
             resp = requests.get(f'{self._api}/assign/pending', timeout=1.0)
             if resp.status_code != 200:
+                self._api_ok = False
                 return
             missions = resp.json()
+            self._api_ok = True
         except Exception:
+            self._api_ok = False
             return
 
         for mission in missions:

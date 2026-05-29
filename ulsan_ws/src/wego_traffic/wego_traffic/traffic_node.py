@@ -4,6 +4,8 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from std_msgs.msg import Empty, String
+from diagnostic_updater import Updater
+from diagnostic_msgs.msg import DiagnosticStatus
 
 # wego_behaviour가 발행하는 상태값 중 주행 중인 상태
 ACTIVE_STATES = {'BUSY', 'RETURNING', 'WAITING'}
@@ -37,10 +39,19 @@ class TrafficNode(Node):
         self._pause_pub  = {r: self.create_publisher(Empty, f'/{r}/pause',  10) for r in ('limo1', 'limo2')}
         self._resume_pub = {r: self.create_publisher(Empty, f'/{r}/resume', 10) for r in ('limo1', 'limo2')}
 
+        # /diagnostics 발행 — GUI 시스템 상태 패널에서 연결 확인용
+        self._diag_updater = Updater(self)
+        self._diag_updater.setHardwareID('wego_traffic')
+        self._diag_updater.add('wego_traffic', self._diag_check)
+
         self.create_timer(0.2, self._tick)  # 5 Hz
         self.get_logger().info(
             f'wego_traffic 시작  pause={self._pause_dist}m  resume={self._resume_dist}m'
         )
+
+    def _diag_check(self, stat: DiagnosticStatus) -> DiagnosticStatus:
+        stat.summary(DiagnosticStatus.OK, '정상 동작 중')
+        return stat
 
     def _pose_cb(self, robot: str, msg: PoseWithCovarianceStamped) -> None:
         self._pose[robot] = msg

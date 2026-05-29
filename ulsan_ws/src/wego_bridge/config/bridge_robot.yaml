@@ -23,6 +23,12 @@ topics:
     to_domain: 5
     remap: /ROBOT_NAME/robot_status   # wego_traffic, wego_dispatcher가 구독
 
+  /diagnostics:
+    type: diagnostic_msgs/msg/DiagnosticArray
+    from_domain: ROBOT_DOMAIN
+    to_domain: 5
+    remap: /ROBOT_NAME/diagnostics    # ulsan_gui 시스템 상태 패널에서 로봇 연결 확인용
+
   /limo_status:
     type: limo_msgs/msg/LimoStatus
     from_domain: ROBOT_DOMAIN

@@ -31,9 +31,8 @@ COLUMNS = ['시각', '유형', '내용']
 
 
 class LogView(QWidget):
-    def __init__(self, ros_node):
+    def __init__(self):
         super().__init__()
-        self.ros = ros_node
         self._all_logs: list[dict] = []
         self._build_ui()
 
@@ -66,7 +65,7 @@ class LogView(QWidget):
         toolbar.addWidget(self._search)
 
         self._type_combo = QComboBox()
-        self._type_combo.addItems(['전체', '임무시작', '임무완료', '임무실패', '대기', '시스템'])
+        self._type_combo.addItems(['전체', '임무시작', '임무완료', '임무실패', '노쇼', '시스템'])
         self._type_combo.setStyleSheet(_COMBO_STYLE)
         self._type_combo.currentIndexChanged.connect(self._apply_filter)
         toolbar.addWidget(self._type_combo)
@@ -117,6 +116,8 @@ class LogView(QWidget):
     # ── 데이터 ────────────────────────────────────────────────────────
 
     def _fetch(self) -> None:
+        if hasattr(self, '_thread') and self._thread.isRunning():
+            return
         self._thread = HttpGetThread(API_URL)
         self._thread.done.connect(self._on_fetched)
         self._thread.start()
@@ -132,7 +133,7 @@ class LogView(QWidget):
         type_idx = self._type_combo.currentIndex()
 
         type_map = {1: 'mission_start', 2: 'mission_complete',
-                    3: 'mission_fail',  4: 'waiting', 5: 'system'}
+                    3: 'mission_fail',  4: 'noshow',  5: 'system'}
 
         filtered = []
         for log in self._all_logs:

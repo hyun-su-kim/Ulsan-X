@@ -242,7 +242,7 @@ class MainWindow(QMainWindow):
         if key == 'map':         return MapView(self.ros, switch_view_cb=self._navigate_to_robot)
         if key == 'robot':       return RobotView(self.ros)
         if key == 'reservation': return ReservationView()
-        if key == 'log':         return LogView(self.ros)
+        if key == 'log':         return LogView()
         return QLabel(key)
 
     # ── 뷰 전환 ──────────────────────────────────────────────────────

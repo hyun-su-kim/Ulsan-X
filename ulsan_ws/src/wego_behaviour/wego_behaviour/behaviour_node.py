@@ -11,6 +11,8 @@ from std_msgs.msg import String, Empty
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from yasmin import StateMachine, Blackboard
+from diagnostic_updater import Updater
+from diagnostic_msgs.msg import DiagnosticStatus
 
 from wego_behaviour.states import FailedState, GuidingState, IdleState, ReturningState, WaitingState
 from nav2_simple_commander.robot_navigator import BasicNavigator
@@ -32,6 +34,12 @@ class BehaviourNode(Node):
         self._pause_flag  = False
         self._resume_flag = False
         self._abort_flag  = False
+        self._fsm_status  = 'UNKNOWN'
+
+        # /diagnostics 발행 — GUI 시스템 상태 패널에서 연결 확인용
+        self._diag_updater = Updater(self)
+        self._diag_updater.setHardwareID('wego_behaviour')
+        self._diag_updater.add('wego_behaviour', self._diag_check)
 
         self._status_pub = self.create_publisher(String, '/robot_status', 10)
         self._speak_pub  = self.create_publisher(String, '/speak_text', 10)
@@ -73,9 +81,21 @@ class BehaviourNode(Node):
                 self.get_logger().warn(f'알 수 없는 목적지 키: {msg.data}')
 
 
+    # ── diagnostics ──────────────────────────────────────────────────
+
+    def _diag_check(self, stat: DiagnosticStatus) -> DiagnosticStatus:
+        if self._fsm_status == 'UNKNOWN':
+            stat.summary(DiagnosticStatus.ERROR, self._fsm_status)
+        elif self._fsm_status == 'FAILED':
+            stat.summary(DiagnosticStatus.WARN, self._fsm_status)
+        else:
+            stat.summary(DiagnosticStatus.OK, self._fsm_status)
+        return stat
+
     # ── 발행 헬퍼 ────────────────────────────────────────────────────
 
     def publish_status(self, status: str) -> None:
+        self._fsm_status = status
         msg = String()
         msg.data = status
         self._status_pub.publish(msg)
