@@ -29,6 +29,45 @@
 
 ---
 
+### DEC-041: home_robot1 좌표 재측정 + AMCL 리셋 방식 변경 + 유리 구간 경유지 튜닝 (done 2026-05-29)
+
+- **Context**: 마커 위치 이동 후 home_robot1 좌표, markers.yaml, target_dist, glass 경유지가 모두 구버전 값으로 남아있어 전체 동기화 필요. 또한 IBVS 도킹 후 AMCL 리셋이 yaw 140° 오차로 완전히 틀리는 문제 발견.
+
+- **변경 1 — home_robot1 좌표 재측정**:
+  - AMCL pose 실측: x=-0.1111, y=0.0123, yaw=-1.5708 (마커 정면 90° 확인)
+  - home_robot1_staging: x=-0.1111 (동일), y=0.5123 (home 기준 +0.5m), yaw=-1.5708
+  - staging x를 home과 동일하게 맞춰 IBVS 진입 시 정면 직진만으로 수렴 가능
+
+- **변경 2 — markers.yaml ID 0 재캘리브레이션 + target_dist 동기화**:
+  - 마커 위치: map_x=-0.0949, map_y=-0.7307, map_z=0.0786, qx=-0.0026, qy=0.7567, qz=0.6537, qw=-0.0059
+  - aruco_pose_corrector로 실측한 camera depth=0.513m → target_dist 0.432→0.513
+
+- **변경 3 — AMCL 리셋 방식 변경 (핵심)**:
+  - 기존: 도킹 후 마커 rvec/tvec으로 T_map_base 역산 → /initialpose 발행
+  - 문제: 단일 평면 마커 정면 근처에서 yaw 관측성(out-of-plane rotation) 낮음 → rvec 노이즈 → yaw 140° 오차 (실기기 확인: x=0.005, y=-0.114, yaw=+50.9° vs 예상 x=-0.111, y=0.012, yaw=-90°)
+  - 결정: `_publish_initialpose()`에서 waypoints.yaml의 home_key 좌표 직접 발행. IBVS 성공 = 로봇이 home에 있다는 사실을 활용.
+  - TF buffer/listener, _tf_to_matrix 제거. markers.yaml의 map_pose는 캘리브레이션 도구 전용으로만 유지.
+  - 면접 어필: "단일 평면 마커의 yaw 관측성 한계를 실기기 로그로 정량화(140° 오차)하고, 도킹 성공이라는 사실 자체를 AMCL 리셋 근거로 활용하는 방식으로 전환."
+
+- **변경 4 — 유리 구간 경유지 튜닝**:
+  - glass_entry: (0.0276, 2.486) → (-0.2, 2.65). 로봇 복도 주행 경로(x≈-0.1)에 맞게 조정
+  - glass_exit: (2.471, 2.653) → (2.2158, 2.7579). 실측 재측정
+  - RemovePassedGoals radius: 0.2 → 0.7. 경유지 0.2m 이내 미통과 시 제거 안 되어 로봇이 경유지로 되돌아가는 문제 해결
+  - BackUp dist: 0.30 → 0.10m. 유리 구간 좁은 공간에서 0.3m 후진이 맵 경계 이탈 → "Pose Goes Off Grid" 해결
+  - 유리 구간 경유지 통과 실기기 검증 완료
+
+- **구현 위치**:
+  - `wego_behaviour/config/waypoints.yaml` (home_robot1, staging, glass_entry, glass_exit)
+  - `wego_aruco/config/markers.yaml` (ID 0)
+  - `wego_aruco/launch/aruco_corrector_launch.py` (target_dist)
+  - `wego_aruco/wego_aruco/aruco_home_dock.py` (_publish_initialpose 재설계)
+  - `wego_2d_nav/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml` (radius, backup_dist)
+  - `wego_2d_nav/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml` (backup_dist)
+
+- **Date**: 2026-05-29
+
+---
+
 ### DEC-039: Nav2 BT XML 커스텀 — GoalUpdated 제거 + 복구 행동 재설계 + navigate_to_pose 커스텀 추가 (done 2026-05-28)
 - **Context**: Nav2 기본 BT XML 2개(navigate_to_pose, navigate_through_poses)를 분석하여 우리 프로젝트에 맞게 3가지 개선.
 - **변경 1 — GoalUpdated 제거**:

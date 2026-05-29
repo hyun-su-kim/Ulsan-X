@@ -1,8 +1,8 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 3 — 1차 데모 준비 (2026-05-28)**
-핵심 기능 구현 완료. 실기기 검증 진행 중. 잔여: 실기기 테스트 5단계 + 사람 감지 정지 기능.
+**Phase 3 — 1차 데모 준비 (2026-05-29)**
+핵심 기능 구현 완료. 실기기 검증 진행 중. 잔여: FSM 통합 테스트 + LIMO 2 검증 + 사람 감지 정지 기능.
 
 ---
 
@@ -25,7 +25,7 @@
 
 | # | 항목 | 상태 |
 |---|------|------|
-| 1-1 | 유리 구간 경유지 통과 주행 | `todo` |
+| 1-1 | 유리 구간 경유지 통과 주행 | `done (2026-05-29)` |
 | 1-2 | FSM 각 상태 동작 (IDLE/GUIDING/RETURNING/WAITING/FAILED) | `todo` |
 | 1-3 | BT 수정 사항 동작 (BackUp+ClearCostmap 복구, RemovePassedGoals) | `todo` |
 | 1-4 | IBVS 홈 도킹 | `done (2026-05-26)` |
@@ -303,6 +303,18 @@
   - 비홀로노믹 과소구동 진단 → ρ/α/θ_g 통합 기하 + 극좌표(A)/단계분리(B) A/B 비교 → staged 채택
   - 목표 근처 α(atan2) 폭발 → steer_freeze(0.15m) 구간 조향 정지로 마지막 급조향 제거
   - 단일 평면 마커 법선 관측성 한계 확인 → 더 높은 정밀도 필요 시 마커 2개 자세 삼각측량 (향후)
+- [x] **home_robot1 좌표 재측정 + 관련 파라미터 전체 동기화** — done (2026-05-29). DEC-041 참고
+  - home_robot1: x=-0.1111, y=0.0123, yaw=-1.5708 (AMCL 실측)
+  - home_robot1_staging: x=-0.1111, y=0.5123, yaw=-1.5708 (home 기준 +0.5m)
+  - markers.yaml ID 0 재캘리브레이션: map_x=-0.0949, map_y=-0.7307 등
+  - target_dist 0.432 → 0.513 (실측 camera depth 0.513m)
+  - aruco_home_dock AMCL 리셋: 마커 역산 → home 좌표 직접 발행 (단일 마커 yaw 관측성 한계로 140° 오차 확인)
+- [x] **유리 구간 경유지 좌표 재조정 + RemovePassedGoals 튜닝** — done (2026-05-29). DEC-041 참고
+  - glass_entry: x=-0.2, y=2.65 (로봇 복도 경로에 맞게 조정)
+  - glass_exit: x=2.2158, y=2.7579 (재측정)
+  - RemovePassedGoals radius: 0.2 → 0.7 (경유지 미제거로 로봇 되돌아가는 문제 해결)
+  - BackUp dist: 0.30 → 0.10m (유리 구간 맵 경계 이탈 방지)
+  - 유리 구간 경유지 통과 실기기 검증 완료
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI

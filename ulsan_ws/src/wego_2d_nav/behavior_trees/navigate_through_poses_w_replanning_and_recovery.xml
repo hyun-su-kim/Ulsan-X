@@ -12,7 +12,7 @@
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
       <PipelineSequence name="NavigateWithReplanning">
-        <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.2"/>
+        <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
         <RateController hz="0.333">
           <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
             <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
@@ -27,7 +27,7 @@
       <ReactiveFallback name="RecoveryFallback">
         <RoundRobin name="RecoveryActions">
           <Sequence name="BackUpAndClear">
-            <BackUp backup_dist="0.30" backup_speed="0.05"/>
+            <BackUp backup_dist="0.10" backup_speed="0.05"/>
             <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
             <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
           </Sequence>

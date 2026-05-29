@@ -30,8 +30,8 @@ staged 핵심 보정:
     필요하면 마커 2개로 자세 삼각측량 권장.
 
 정차 후:
-  - 마커 절대 좌표로 T_map_base 역산 → /initialpose 발행 (AMCL 리셋)
-  - 변환 체인: T_map_base = T_map_marker × inv(T_cam_marker) × inv(T_base_cam)
+  - waypoints.yaml의 home_key 좌표를 /initialpose 로 직접 발행 (AMCL 리셋)
+  - 단일 평면 마커 역산 방식은 yaw 관측성이 낮아 140° 오차 발생 확인 → 폐기
 """
 
 import math
@@ -50,7 +50,6 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
 from std_srvs.srv import Trigger
-from tf2_ros import Buffer, TransformListener
 
 
 ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
@@ -122,15 +121,15 @@ class ArucoHomeDock(Node):
         self._marker_id   = int(home_marker_map.get(home_key, 0))
         marker_info       = data['markers'].get(str(self._marker_id), {})
         self._marker_size = float(marker_info.get('size', 0.20))
-        self._marker_map_pose = {
-            'map_x':  float(marker_info.get('map_x',  0.0)),
-            'map_y':  float(marker_info.get('map_y',  0.0)),
-            'map_z':  float(marker_info.get('map_z',  0.0)),
-            'map_qx': float(marker_info.get('map_qx', 0.0)),
-            'map_qy': float(marker_info.get('map_qy', 0.0)),
-            'map_qz': float(marker_info.get('map_qz', 0.0)),
-            'map_qw': float(marker_info.get('map_qw', 1.0)),
-        }
+
+        # AMCL 리셋용 home 좌표 — waypoints.yaml 정본에서 직접 로드
+        waypoints_file = str(get_package_share_directory('wego_behaviour')) + '/config/waypoints.yaml'
+        with open(waypoints_file) as f:
+            waypoints = yaml.safe_load(f)['waypoints']
+        home = waypoints[home_key]
+        self._home_x   = float(home['x'])
+        self._home_y   = float(home['y'])
+        self._home_yaw = float(home['yaw'])
 
         self.get_logger().info(
             f'home_key={home_key} → marker_id={self._marker_id}, '
@@ -145,9 +144,6 @@ class ArucoHomeDock(Node):
         self._latest_rvec   = None
         self._tvec_lock     = threading.Lock()
         self._docking       = False
-
-        self._tf_buffer   = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self)
 
         cb = ReentrantCallbackGroup()
         self._cmd_pub          = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -277,7 +273,7 @@ class ArucoHomeDock(Node):
                 if rho < self._rho_tol and abs(theta_g) < self._yaw_tol:
                     self._cmd_pub.publish(Twist())   # 정차
                     time.sleep(0.1)                  # 완전 정지 대기
-                    self._publish_initialpose(rvec, tvec)  # 정차 후 AMCL 보정
+                    self._publish_initialpose()      # 정차 후 AMCL 보정
                     self.get_logger().info(
                         f'도킹 완료 [{self._dock_mode}] — depth={depth:.3f}m '
                         f'lateral={lateral:.3f}m yaw={math.degrees(yaw_error):.1f}° '
@@ -401,64 +397,28 @@ class ArucoHomeDock(Node):
 
     # ── AMCL 리셋 ───────────────────────────────────────────────────────
 
-    def _publish_initialpose(self, rvec: np.ndarray, tvec: np.ndarray) -> None:
-        """정차 완료 위치에서 마커 절대 좌표로 AMCL 리셋."""
-        R_cm, _ = cv2.Rodrigues(rvec)
-        T_cam_marker = np.eye(4)
-        T_cam_marker[:3, :3] = R_cm
-        T_cam_marker[:3, 3]  = tvec.flatten()
+    def _publish_initialpose(self) -> None:
+        """도킹 완료 후 waypoints.yaml의 home 좌표를 /initialpose 로 직접 발행.
 
-        try:
-            tf = self._tf_buffer.lookup_transform(
-                'base_link', self._cam_frame, rclpy.time.Time()
-            )
-        except Exception as e:
-            self.get_logger().warn(f'TF lookup 실패 — /initialpose 발행 건너뜀: {e}')
-            return
-
-        t, q = tf.transform.translation, tf.transform.rotation
-        T_base_cam   = self._tf_to_matrix(t.x, t.y, t.z, q.x, q.y, q.z, q.w)
-        T_map_marker = self._tf_to_matrix(
-            self._marker_map_pose['map_x'], self._marker_map_pose['map_y'],
-            self._marker_map_pose['map_z'], self._marker_map_pose['map_qx'],
-            self._marker_map_pose['map_qy'], self._marker_map_pose['map_qz'],
-            self._marker_map_pose['map_qw'],
-        )
-        T_map_base = T_map_marker @ np.linalg.inv(T_cam_marker) @ np.linalg.inv(T_base_cam)
-
-        robot_x   = T_map_base[0, 3]
-        robot_y   = T_map_base[1, 3]
-        robot_yaw = math.atan2(T_map_base[1, 0], T_map_base[0, 0])
-
+        단일 평면 마커 역산 방식은 yaw 관측성 한계로 140° 오차 발생 확인(실기기).
+        IBVS 도킹이 성공했으면 로봇은 반드시 home 위치에 있으므로 직접 발행이 정확.
+        """
         msg = PoseWithCovarianceStamped()
         msg.header.stamp    = self.get_clock().now().to_msg()
         msg.header.frame_id = 'map'
-        msg.pose.pose.position.x    = robot_x
-        msg.pose.pose.position.y    = robot_y
-        msg.pose.pose.orientation.z = math.sin(robot_yaw / 2.0)
-        msg.pose.pose.orientation.w = math.cos(robot_yaw / 2.0)
+        msg.pose.pose.position.x    = self._home_x
+        msg.pose.pose.position.y    = self._home_y
+        msg.pose.pose.orientation.z = math.sin(self._home_yaw / 2.0)
+        msg.pose.pose.orientation.w = math.cos(self._home_yaw / 2.0)
         msg.pose.covariance[0]  = 0.05
         msg.pose.covariance[7]  = 0.05
         msg.pose.covariance[35] = 0.05
 
         self._initialpose_pub.publish(msg)
         self.get_logger().info(
-            f'[AMCL 리셋] x={robot_x:.3f} y={robot_y:.3f} yaw={math.degrees(robot_yaw):.1f}°'
+            f'[AMCL 리셋] x={self._home_x:.3f} y={self._home_y:.3f} '
+            f'yaw={math.degrees(self._home_yaw):.1f}°'
         )
-
-    # ── 유틸 ────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _tf_to_matrix(tx, ty, tz, qx, qy, qz, qw) -> np.ndarray:
-        R = np.array([
-            [1 - 2*(qy**2 + qz**2),  2*(qx*qy - qz*qw),  2*(qx*qz + qy*qw)],
-            [2*(qx*qy + qz*qw),  1 - 2*(qx**2 + qz**2),  2*(qy*qz - qx*qw)],
-            [2*(qx*qz - qy*qw),  2*(qy*qz + qx*qw),  1 - 2*(qx**2 + qy**2)],
-        ])
-        T = np.eye(4)
-        T[:3, :3] = R
-        T[:3, 3]  = [tx, ty, tz]
-        return T
 
 
 def main(args=None):

@@ -41,13 +41,13 @@ waypoints:
     yaw: -3.0682
   home_robot1:
     label: 로봇1 홈
-    x: 0.0
-    y: 0.0
+    x: -0.1111
+    y: 0.0123
     yaw: -1.5708
   home_robot1_staging:
     label: 로봇1 홈 스테이징
-    x: -0.13
-    y: 0.6
+    x: -0.1111
+    y: 0.5123
     yaw: -1.5708
   home_robot2:
     label: 로봇2 홈
@@ -81,11 +81,11 @@ waypoints:
     yaw: -2.6607
   glass_entry:
     label: 유리구간 진입
-    x: 0.0276
-    y: 2.486
+    x: -0.2
+    y: 2.65
     yaw: 0.0
   glass_exit:
     label: 유리구간 탈출
-    x: 2.471
-    y: 2.653
+    x: 2.2158
+    y: 2.7579
     yaw: 0.0
