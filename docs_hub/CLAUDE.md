@@ -136,7 +136,7 @@ ros2 launch ulsan_gui gui_launch.py
 | SLAM & Nav2 | `docs/ref/NAVIGATION.md` | 경로 계획, waypoints 작업 시 |
 | 통신 설정 | `docs/ref/COMMUNICATION.md` | CycloneDDS, Domain Bridge 작업 시 |
 | UI 구조 | `docs/ref/UI-ARCHITECTURE.md` | 방문자 UI / 관제 GUI(ulsan_gui) / 예약 백엔드 작업 시 |
-| ArUco 홈 도킹 | `docs/ref/ARUCO-LOCALIZER.md` | 현행 설계는 DEC-038/041 + NODE-TOPOLOGY. 본 문서는 구 localizer(2-Phase VS) 폐기 스텁 |
+| ArUco 홈 도킹 | `docs/ref/ARUCO-LOCALIZER.md` | PBVS staged 홈 도킹 **현행 설계 정본** (DEC-038/041/042) — 목표점 기하(ρ·α·θ_g)·3단계 제어·polar A/B·home 좌표 AMCL 리셋 |
 | Fleet 충돌 회피 | `docs/ref/FLEET-COLLISION.md` | **폐기 이력**(PeerObstacleLayer). 현행은 NAVIGATION.md pause/resume |
 
 ## 문서 관리 커맨드

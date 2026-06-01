@@ -242,8 +242,8 @@
   - rosbridge 없음. HTTP only. (DEC-027)
 
 #### 멀티로봇 코디네이터
-- [x] `wego_traffic` 패키지: 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) — done
-- [x] `wego_behaviour` WAITING 상태 추가 및 연동 — done
+- [x] `wego_traffic` 패키지: 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) — done (2026-05-13)
+- [x] `wego_behaviour` WAITING 상태 추가 및 연동 — done (2026-05-13)
 - [x] `wego_bridge` goal_destination + speak_text 브릿지 추가 — done (2026-05-13)
   - `/limo1/goal_destination` (domain 5→6), `/limo1/speak_text` (domain 5→6)
   - `/limo2/goal_destination` (domain 5→7), `/limo2/speak_text` (domain 5→7)
