@@ -355,9 +355,9 @@
 - [ ] 초음파 센서 → local costmap range_sensor_layer 연동 (유리문 닫힘 감지) — 유리문 닫힘 시 경로 생성 불가 → TTS "유리문을 열어주세요" + WAIT 상태
 - [ ] YOLO 사람 감지 → 방향 회전 + 안내 멘트
 - [ ] 다국어 안내 검토
-- [ ] **유리 구간 주행 버벅임 개선** — Keepout+DenoiseLayer 적용 후에도 간헐적 버벅임 잔존. 추가 해결책 탐색 (local costmap phantom 근본 억제 또는 경로 설계 개선)
+- [x] **유리 구간 주행 버벅임 개선** — done (2026-05-29). 2026-04-30 미결 항목(Keepout+Denoise 후 잔존 버벅임)을 **경로 설계 개선**으로 해결: NavigateThroughPoses + glass_entry/exit 경유(DEC-030) → 중간 정지 제거, 경유지 재측정 + RemovePassedGoals 매틱 체크 + BackUp 튜닝(DEC-041). LIMO 1 검증 완료(1-1), LIMO 2 검증(2-1) 남음
 > ※ 음성 STT/NLU 관련 Phase 4 항목(NLU 백업 Gemma-2B, "추가 용무 확인" 대화, YOLO+faster-whisper GPU 프로파일링)은 **음성 인식 파이프라인 폐기(DEC-024)로 전량 제거**.
-- [ ] **2대 충돌 회피 완성도 개선** — 운용 중 간헐적 충돌 발생. 유추 원인: ① 네트워크 지연으로 상대 위치 업데이트 늦음 ② 양 로봇이 대칭으로 같은 방향 회피 → 교착. 정확한 원인 실기기 진단 후 해결
+- [x] **2대 충돌 회피 — 방식 재설계 완료** — done (2026-05-13, 구현). 2026-04-30에 기록된 "운용 중 간헐적 충돌"은 **폐기된 PeerObstacleLayer(global costmap 주입) 시절 현상**. 그 두 원인(① 네트워크 지연 ② 대칭 회피 교착)을 **DEC-022 우선순위 기반 pause/resume**으로 정조준 해결 — pause/resume은 단순 토픽이라 지연 영향 최소, 우선순위(GUIDING>RETURNING, 동순위 LIMO1)로 한 대가 물리 정지 → 충돌 구조적 불가. wego_traffic 구현 완료. **단, 2대 실기기 검증(3-2)은 미실시** → 최종 확인 필요
 
 ---
 
@@ -413,5 +413,5 @@ sudo apt install ros-humble-nav2-map-server ros-humble-nav2-lifecycle-manager ro
 | **홈 출발 시 Failed to make progress** | High | **해결 (2026-05-21)** — Spin 선실행 + SimpleProgressChecker 복원. DEC-031/037 참고 |
 | Orin Nano GPU 메모리 (로봇 로컬 YOLO 추론) | Medium | faster-whisper 폐기(DEC-024)로 OOM 리스크 해소. 드라이버+YOLOv8n 동시 가동 프로파일링은 DEC-043 후속 |
 | 두 로봇이 동시에 호출될 때 배정 | — | **해결**: wego_dispatcher LIMO1 우선, 둘 다 BUSY면 503 (DEC-027). on_duty 방식 폐기 |
-| 2대 충돌 회피 완성도 | Medium | 운용 중 간헐적 충돌 — Phase 4 "2대 충돌 회피 완성도 개선" 참고 |
+| 2대 충돌 회피 완성도 | Low | 폐기된 PeerObstacleLayer 시절 간헐 충돌 → DEC-022 pause/resume 재설계로 구조적 해결·구현 완료(2026-05-13). 2대 실기기 검증(3-2)에서 최종 확인 |
 > ※ openWakeWord 커스텀 모델 / Gemini API 지연 리스크는 음성 인식 파이프라인 폐기(DEC-024)로 무효.

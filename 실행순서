@@ -40,3 +40,16 @@ ros2 launch wego_bridge bridge_launch.py
 로봇 본체 (domain 6, 7)
 # 터미널 1 - 하드웨어 드라이버
 ros2 launch wego teleop_launch.py
+
+
+
+
+------------------------------------------------------------
+디버깅 용 rviz
+rviz2 -d ~/Ulsan-X/ulsan_ws/src/wego_ui/rviz/navigation_monitor.rviz
+
+
+
+
+
+
