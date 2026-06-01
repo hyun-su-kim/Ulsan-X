@@ -223,7 +223,7 @@ class ReturningState(State):
         staging_key = home_key + '_staging'
         waypoints   = self._node.waypoints
 
-        # staging이 있으면 staging까지 Nav2 이동 후 IBVS, 없으면 home으로 직접
+        # staging이 있으면 staging까지 Nav2 이동 후 PBVS, 없으면 home으로 직접
         nav_target = waypoints[staging_key] if staging_key in waypoints else waypoints[home_key]
         nav_label  = 'staging' if staging_key in waypoints else '홈(직접)'
 
@@ -251,7 +251,7 @@ class ReturningState(State):
                 self._node.publish_status('RETURNING')
 
         if self._navigator.getResult() == TaskResult.SUCCEEDED:
-            self._node.get_logger().info(f'{nav_label} 도착 — IBVS 도킹 시작')
+            self._node.get_logger().info(f'{nav_label} 도착 — PBVS 도킹 시작')
             self._node.call_home_dock()
             return 'succeeded'
 

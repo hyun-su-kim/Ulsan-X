@@ -107,7 +107,7 @@ ros2 launch ulsan_gui gui_launch.py
 | `limo_msgs` | msg/LimoStatus.msg | 도메인 브릿지용 로봇 상태 메시지. 코드 import: `from limo_msgs.msg import LimoStatus` (wego_msgs/Chalkak.srv는 현재 미존재) |
 | `wego_bridge` | bridge_robot.yaml(템플릿), bridge_launch.py | 서버 노트북 LIMO 도메인 터미널에서 실행. ROS_DOMAIN_ID로 자동 결정. amcl_pose/robot_status(6,7→5) + pause/resume/goal/speak(5→6,7) |
 | `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — IDLE/GUIDING/RETURNING/WAITING/FAILED (DEC-033). 데스크탑 domain 6/7 |
-| `wego_aruco` | aruco_home_dock.py | **LIMO 도메인 6/7(로봇)에서 실행 (DEC-043).** 홈 정밀 도킹 PBVS 서비스 `/aruco_home_dock`(staged 채택 DEC-038) → 정차 후 /initialpose AMCL 리셋. AMCL 리셋 좌표는 `wego_behaviour/config/waypoints.yaml`에서 로드(미선언 의존성 — 로봇도 wego_behaviour 빌드 필요). pose_corrector.py는 비활성(캘리브레이션 도구) |
+| `wego_aruco` | aruco_home_dock.py, pose_corrector.py | **LIMO 도메인 6/7(로봇) 실행 (DEC-043).** aruco_home_dock: PBVS staged 홈 도킹 서비스 `/aruco_home_dock` → 정차 후 waypoints.yaml home 좌표로 /initialpose AMCL 리셋 (DEC-038/041/042). waypoints.yaml은 wego_behaviour 소유(로봇도 해당 패키지 빌드 필요). pose_corrector.py: 마커 맵 좌표 측정용 캘리브레이션 도구(휴면, 운영 미사용) |
 | `wego_voice` | voice_node.py, tts | TTS only (DEC-024). /speak_text 구독 → edge-tts + mpg123 |
 | `wego_traffic` | traffic_node.py | 데스크탑 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
 | `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 goal/speak 배정 (DEC-027) |

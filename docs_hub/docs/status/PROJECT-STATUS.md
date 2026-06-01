@@ -318,6 +318,15 @@
   - RemovePassedGoals radius: 0.2 → 0.7 (경유지 미제거로 로봇 되돌아가는 문제 해결)
   - BackUp dist: 0.30 → 0.10m (유리 구간 맵 경계 이탈 방지)
   - 유리 구간 경유지 통과 실기기 검증 완료
+- [x] **PBVS 도킹 A/B 실험 종료 — polar 제어기 제거, staged 단독 채택** — done (2026-06-01). DEC-042 참고
+  - `_ctrl_polar`·`dock_mode`·polar 게인(k_rho/k_alpha/k_beta) 코드·런치에서 제거
+  - `dock_mode` 인자 누락 시 기각된 polar로 도킹되던 운영 리스크 제거
+- [x] **markers.yaml map_pose 트림** — done (2026-06-01). DEC-041 후속
+  - `map_x/y/z`·`map_q*`·`calibrated` 제거 (size + home_marker만 유지). 마커 역산 폐기로 운영 미사용 → 죽은 데이터 정리
+  - aruco_home_dock은 size/home_marker만 읽음 / pose_corrector calibration_mode는 영향 없음(보존)
+- [x] **IBVS → PBVS 용어 정정 + ARUCO-LOCALIZER 문서 갱신** — done (2026-06-01)
+  - 구현은 solvePnP 포즈 복원 → SE(2) 작업공간 제어 = PBVS(IBVS 아님). 코드/문서 전반의 IBVS 표기 정정
+  - ARUCO-LOCALIZER.md를 옛 설계(2-Phase P제어/마커 역산/aruco_localizer_launch)에서 현재 PBVS staged 기준으로 전면 재작성
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI

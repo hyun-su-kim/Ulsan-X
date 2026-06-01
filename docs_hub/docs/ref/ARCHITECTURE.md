@@ -56,7 +56,6 @@ LIMO 2, 노트북에 파일 복사
 | LiDAR | YDLidar (ydlidar_ros2_driver) |
 | 카메라 | Orbbec Dabai DCW (RGB 640×480 + Depth 640×400) — ArUco 도킹 + YOLO 사람 감지 |
 | 스피커 | TTS 출력 (edge-tts + mpg123, HDMI 오디오) |
-| 스피커 | TTS 출력용 |
 | 네트워크 | Wi-Fi (동일 AP 연결) |
 
 ---

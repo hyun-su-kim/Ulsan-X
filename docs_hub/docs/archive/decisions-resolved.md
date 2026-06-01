@@ -53,6 +53,20 @@
 
 ---
 
+### DEC-042: PBVS 도킹 제어기 A/B 실험 종료 — polar 제거, staged 단독 채택 (done 2026-06-01)
+- **Context**: DEC-038에서 극좌표(polar, A)와 단계분리(staged, B) 두 도킹 제어기를 `dock_mode` 파라미터로 전환하며 실기기 A/B 비교를 진행, staged가 우월함을 입증했다. 그러나 코드·런치에 polar가 그대로 남아 있고 런치 기본값이 `polar`로 설정되어 있어, 인자(`dock_mode:=staged`)를 빠뜨리면 기각된 polar로 도킹되는 운영 리스크가 있었다.
+- **Decision**: **polar 제어기 제거 + staged 단독 채택.** A/B 실험을 종료하고 `_ctrl_polar`, `dock_mode` 파라미터, polar 게인(`k_rho`/`k_alpha`/`k_beta`)을 코드·런치에서 모두 제거. 이제 `ros2 launch wego_aruco aruco_corrector_launch.py`만으로 항상 staged 동작.
+- **선택 이유 (staged)**:
+  - 실기기 비교(DEC-038)에서 staged가 lateral 0.8~1.7cm로 안정 정차. polar는 lateral 1.4cm까지 수렴하나 ω가 ±0.3에 상시 포화하며 심한 S자 사행 발생.
+  - 근본 원인: 단일 평면 마커의 법선(out-of-plane 회전) 관측성이 낮아 노이즈가 큼. polar는 이 노이즈 심한 법선을 고게인(k_α=2.0)으로 ω에 직접 추종 → 사행. staged는 위치(ρ)는 직진으로, 자세(θ_g)는 마지막 제자리 회전으로 분리해 노이즈 영향을 시간적으로 격리.
+  - 운영 안전성: 단일 제어기로 단순화하면 `dock_mode` 인자 누락 시 polar로 도킹되던 사고 경로가 구조적으로 사라짐.
+- **변경 파일**: `wego_aruco/wego_aruco/aruco_home_dock.py` (`_ctrl_polar` 삭제, `dock_mode`/`k_rho`/`k_alpha`/`k_beta` 파라미터 제거, 제어 루프 분기 제거, 로그 3곳 정리, docstring 정리), `wego_aruco/launch/aruco_corrector_launch.py` (`dock_mode` 인자 + polar 게인 제거)
+- **보존**: A/B 비교 과정 자체는 DEC-038에 기록 유지(면접 어필 포인트). `markers.yaml`/`target_dist`/staged 게인 등 운영 파라미터는 그대로.
+- **면접 어필**: "Lyapunov 극좌표 제어와 단계분리 제어를 실기기 A/B로 비교해 노이즈 심한 단일 마커 환경에서 단계분리의 우월성을 입증한 뒤, 실험을 종료하고 채택안만 남겨 운영 리스크(인자 누락 시 기각안 동작)를 제거. 실험 코드를 프로덕션에 방치하지 않고 정리하는 엔지니어링 규율."
+- **Date**: 2026-06-01
+
+---
+
 ### DEC-041: 1차 데모 마무리 통합 — (A) 사람 감지 정지 + (B) home_robot1 재측정·AMCL 리셋·유리 경유지 (done 2026-06-01)
 
 > 1차 데모 직전 두 갈래 작업을 한 번호로 통합(중복 DEC-041 정리). **A**: 사람 감지 정지(2026-06-01), **B**: home_robot1 좌표/마커/유리 경유지 동기화(2026-05-29).
@@ -94,6 +108,7 @@
   - 문제: 단일 평면 마커 정면 근처에서 yaw 관측성(out-of-plane rotation) 낮음 → rvec 노이즈 → yaw 140° 오차 (실기기 확인: x=0.005, y=-0.114, yaw=+50.9° vs 예상 x=-0.111, y=0.012, yaw=-90°)
   - 결정: `_publish_initialpose()`에서 waypoints.yaml의 home_key 좌표 직접 발행. PBVS 성공 = 로봇이 home에 있다는 사실을 활용.
   - TF buffer/listener, _tf_to_matrix 제거. markers.yaml의 map_pose는 캘리브레이션 도구 전용으로만 유지.
+  - **후속 (2026-06-01)**: 운영 경로에서 마커 맵 좌표를 전혀 안 쓰는 것이 확정되어 `markers.yaml`의 `map_x/y/z·map_q*·calibrated` 필드를 제거. 도킹 노드(`aruco_home_dock`)는 `size`+`home_marker`만 읽고, PBVS는 마커 상대 포즈만 사용하므로 죽은 데이터를 정리. `aruco_pose_corrector`는 calibration_mode(필드 미사용, 값 출력만)로 보존 — 필요 시 재측정 가능.
   - 면접 어필: "단일 평면 마커의 yaw 관측성 한계를 실기기 로그로 정량화(140° 오차)하고, 도킹 성공이라는 사실 자체를 AMCL 리셋 근거로 활용하는 방식으로 전환."
 - **변경 4 — 유리 구간 경유지 튜닝**:
   - glass_entry: (0.0276, 2.486) → (-0.2, 2.65). 로봇 복도 주행 경로(x≈-0.1)에 맞게 조정
@@ -185,6 +200,7 @@
 - **부수 작업**: 마커 이동 후 재캘리브레이션(markers.yaml ID 0, std 0.0002로 안정), `target_dist` 0.271→0.432, `home_robot1_staging` x=-0.13 보정, PBVS 속도 0.15→0.08m/s.
 - **구현 위치**: `wego_aruco/aruco_home_dock.py` (`_compute_geometry`, `_ctrl_polar`, `_ctrl_staged`), `aruco_corrector_launch.py` (`dock_mode` 런치 인자)
 - **면접 어필**: "도킹 수렴 실패를 비홀로노믹 과소구동 문제로 진단. 단순 합산 P제어가 lateral·yaw를 ω 하나로 충돌시킨다는 걸 로그로 확인하고, 목표점 기하(ρ,α,θ_g)로 통합. Lyapunov 극좌표 제어와 단계분리 제어를 둘 다 구현해 실기기 비교 후, 노이즈 심한 단일 마커 법선 환경에선 단계분리가 우월함을 입증. 목표 근처 atan2 특이점(α 폭발)까지 잡아 정밀 정차 달성."
+- **후속**: 2026-06-01 A/B 실험 종료 — polar 제어기 코드 제거, staged 단독 채택 (DEC-042 참고).
 - **Date**: 2026-05-26
 
 ---
