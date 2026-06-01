@@ -327,6 +327,14 @@
 - [x] **IBVS → PBVS 용어 정정 + ARUCO-LOCALIZER 문서 갱신** — done (2026-06-01)
   - 구현은 solvePnP 포즈 복원 → SE(2) 작업공간 제어 = PBVS(IBVS 아님). 코드/문서 전반의 IBVS 표기 정정
   - ARUCO-LOCALIZER.md를 옛 설계(2-Phase P제어/마커 역산/aruco_localizer_launch)에서 현재 PBVS staged 기준으로 전면 재작성
+- [x] **aruco_measure 신규 + pose_corrector.py 삭제** — done (2026-06-01)
+  - `aruco_measure`: 마커 상대 포즈(depth/lateral/yaw) 실시간 콘솔 출력 측정 도구 신규. target_dist 실측·튜닝용(`ros2 run`, 운영 비포함)
+  - `pose_corrector.py`: map_pose 트림(DEC-041)으로 비기능 상태였던 캘리브레이션 도구 삭제 + setup.py 진입점 제거. 측정 용도는 aruco_measure가 대체
+- [x] **정밀 정차 톨러런스 튜닝 — LIMO1 정밀주차 확인** — done (2026-06-01)
+  - aruco_measure로 home1 마커 실측 → `target_dist` 0.513 → 0.505 (이상적 정차 위치 depth)
+  - `yaw_tol` 0.10 → 0.02rad(≈1.15°): 차체 ~4° 틀어짐 → phase2 정렬 끝까지 수행. 측정 노이즈 ±0.5° 위 한계값
+  - `rho_tol` 0.03 → 0.01m: 위치 1cm 정밀. 실기기 정밀주차 완료 확인
+  - waypoints: home_robot1_staging x -0.1111→-0.18·y 0.5123→0.9123, counter y→3.0 (현장 조정)
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI

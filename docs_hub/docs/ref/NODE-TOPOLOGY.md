@@ -57,8 +57,8 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 ### wego_aruco 패키지 (LIMO 도메인 6/7 = 로봇에서 실행, DEC-043)
 | 노드 | 역할 |
 |------|------|
-| `aruco_pose_corrector` | 마커 맵 좌표 측정용 캘리브레이션 도구 (휴면 — 런치 미실행, 운영 미사용) |
 | `aruco_home_dock` | `/aruco_home_dock` 서비스 — PBVS로 홈 정밀 정차 (staged 채택 DEC-038, polar 제거 DEC-042). 카메라→cmd_vel 닫힌 루프라 로봇 로컬 실행 (DEC-043) |
+| `aruco_measure` | 마커 상대 포즈(거리·각도) 실시간 측정 도구 — `ros2 run`으로 수동 실행, target_dist 실측·튜닝용 (운영 비포함). 구 `pose_corrector` 대체 (2026-06-01) |
 
 ### ulsan_person_detect 패키지 (구현 완료, 2026-06-01)
 | 노드 | 역할 |

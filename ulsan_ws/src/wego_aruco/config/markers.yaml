@@ -5,7 +5,7 @@
 # 마커 맵 좌표(map_x/y/z·map_q*·calibrated)는 제거됨 (DEC-041): 마커 역산 기반
 # AMCL 보정을 폐기하고 도킹 성공 후 home 좌표를 직접 발행하므로 운영에 불필요.
 # PBVS 도킹은 마커 상대 포즈만 사용 → 마커의 맵 위치를 알 필요 없음.
-# 필요 시 `ros2 run wego_aruco aruco_pose_corrector -p calibration_mode:=true`로 재측정 가능.
+# 마커 상대 포즈(거리·각도) 측정이 필요하면 `ros2 run wego_aruco aruco_measure`.
 markers:
   0:                  # 로봇1 홈 마커
     size: 0.20

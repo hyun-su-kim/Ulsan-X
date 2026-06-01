@@ -37,7 +37,7 @@ waypoints:
   counter:
     label: 카운터
     x: 4.6206
-    y: 2.9
+    y: 3.0
     yaw: -3.0682
   home_robot1:
     label: 로봇1 홈
@@ -46,8 +46,8 @@ waypoints:
     yaw: -1.5708
   home_robot1_staging:
     label: 로봇1 홈 스테이징
-    x: -0.1111
-    y: 0.5123
+    x: -0.18
+    y: 0.9123
     yaw: -1.5708
   home_robot2:
     label: 로봇2 홈

@@ -26,8 +26,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'aruco_pose_corrector = wego_aruco.pose_corrector:main',
-            'aruco_home_dock      = wego_aruco.aruco_home_dock:main',
+            'aruco_home_dock = wego_aruco.aruco_home_dock:main',
+            'aruco_measure   = wego_aruco.aruco_measure:main',
         ],
     },
 )

@@ -91,7 +91,7 @@ Nav2로 staging 이동 (home 정면 ~0.5m)
 ulsan_ws/src/wego_aruco/
 ├── wego_aruco/
 │   ├── aruco_home_dock.py     # PBVS staged 도킹 서비스 노드 (운영)
-│   └── pose_corrector.py      # 마커 맵 좌표 측정용 캘리브레이션 도구 (휴면, 운영 미사용)
+│   └── aruco_measure.py       # 마커 상대 포즈(거리·각도) 실시간 측정 도구
 ├── config/
 │   └── markers.yaml           # 마커 ID / size + home_marker 매핑
 ├── launch/
@@ -116,9 +116,9 @@ ulsan_ws/src/wego_aruco/
 
 | 파라미터 | 값 | 설명 |
 |----------|-----|------|
-| `target_dist` | 0.513 | 마커 법선 위 도킹 목표점 거리(카메라 depth 실측, DEC-041) |
-| `rho_tol`     | 0.03  | 목표점 위치 수렴 허용오차 (m) |
-| `yaw_tol`     | 0.10  | 최종 자세 θ_g 수렴 허용오차 (rad) |
+| `target_dist` | 0.505 | 마커 법선 위 도킹 목표점 거리(카메라 depth 실측, `aruco_measure`로 재측정 2026-06-01) |
+| `rho_tol`     | 0.01  | 목표점 위치 수렴 허용오차 (m) — 1cm 정밀 (2026-06-01) |
+| `yaw_tol`     | 0.02  | 최종 자세 θ_g 수렴 허용오차 (rad) ≈1.15° (2026-06-01, 측정 노이즈 ±0.5° 위 한계값) |
 | `max_linear`  | 0.08  | 최대 선속도 (m/s) |
 | `max_angular` | 0.3   | 최대 각속도 (rad/s) |
 | `kp_turn`     | 0.8   | 제자리 회전 게인 (Phase 0·2) |
@@ -148,19 +148,25 @@ home_marker:          # home_key → marker_id 매핑
 - 도킹 노드(`aruco_home_dock`)가 읽는 필드는 **`size`와 `home_marker`뿐**.
 - **map 좌표(`map_x/y/z`·`map_q*`·`calibrated`)는 제거됨 (DEC-041)**: 마커 역산 기반 보정을 폐기하고 home 좌표를 직접 발행하므로 운영에 불필요.
 
-## aruco_pose_corrector (캘리브레이션 도구, 휴면)
+## aruco_measure (마커 상대 포즈 측정 도구)
 
-마커의 맵 좌표를 측정하는 보조 도구. **어떤 런치에서도 실행되지 않으며**(2026-05-20 런치에서 제거), 운영 AMCL 보정 경로가 아니다. calibration_mode로 수동 실행해 마커 맵 좌표/도킹 depth를 *측정·출력*하는 용도로만 보존.
+마커의 **카메라 기준 상대 포즈**(거리·각도)를 매 프레임 콘솔에 출력하는 측정 도구. PBVS 도킹은 마커 맵 좌표가 필요 없고 상대 포즈만 쓰므로(DEC-041/043), 마커를 옮겨가며 거리·정렬을 확인하거나 `target_dist`를 실측·튜닝할 때 쓴다. 별도 토픽 echo 불필요(노드 로그만 보면 됨).
 
 ```bash
-# 로봇이 알려진 map 위치에 정지한 상태에서 마커 맵 좌표 측정
-ros2 run wego_aruco aruco_pose_corrector --ros-args \
-  -p calibration_mode:=true \
-  -p calib_marker_id:=0 \
-  -p calib_x:=-0.1111 -p calib_y:=0.0123 -p calib_yaw:=-1.5708
+export ROS_DOMAIN_ID=6
+ros2 run wego_aruco aruco_measure
+# 다른 마커/크기: --ros-args -p marker_id:=1 -p marker_size:=0.20
 ```
 
-> 변환 체인: `T_map_marker = T_map_base × T_base_cam × T_cam_marker`. calib_samples 프레임 평균 후 결과 출력(필드 소비 없음). normal 모드는 map_pose에 의존하므로 markers.yaml 트림 후 비기능 상태(무동작).
+출력 (축·yaw 정의는 `aruco_home_dock`과 동일):
+```
+id=0  depth=0.505m  lateral=+0.004m  height=-0.017m  dist=0.505m  yaw=-0.6°
+=== 평균(30프레임) ===  depth=0.505±0.000  lateral=+0.004±0.000  ... yaw=-0.6±0.5° ===
+```
+- `depth` 전방거리(target_dist 기준) / `lateral` 좌우(우+, 0=정면) / `height` 상하(하+, 2D 도킹 무관)
+- `dist` 직선거리 / `yaw` 마커 정면 대비 각
+
+> 이전 `pose_corrector.py`(마커 맵 좌표 캘리브레이션 도구)는 DEC-041로 map_pose 경로가 폐기되어 비기능 상태였고, 2026-06-01 삭제됨. 측정 용도는 `aruco_measure`로 대체.
 
 ## 실행 방법
 
@@ -185,5 +191,7 @@ ros2 launch wego_aruco aruco_corrector_launch.py
 | polar 제어기 제거 (staged 단독) | 완료 (DEC-042, 2026-06-01) |
 | AMCL 리셋 = home 좌표 직접 발행 | 완료 (DEC-041) — 마커 역산 yaw 140° 오차 해결 |
 | markers.yaml map_pose 제거 | 완료 (2026-06-01) |
+| pose_corrector.py 삭제 + aruco_measure 신규 | 완료 (2026-06-01) |
+| 정밀 정차 튜닝 (target_dist 0.505·rho_tol 0.01·yaw_tol 0.02) | 완료 (2026-06-01, LIMO1 실기기 정밀주차 확인) |
 | LIMO1(ID 0) end-to-end 도킹 | 완료 |
 | LIMO2(ID 1) 도킹 검증 | **미완료** (LIMO 2 현장 검증 필요) |
