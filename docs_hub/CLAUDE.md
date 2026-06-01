@@ -99,7 +99,7 @@ ros2 launch wego_ui gui_launch.py
 | `wego_msgs` | srv/Chalkak.srv | 기본 서비스 |
 | `wego_bridge` | bridge_robot.yaml(템플릿), bridge_launch.py | 서버 노트북 LIMO 도메인 터미널에서 실행. ROS_DOMAIN_ID로 자동 결정. amcl_pose/robot_status(6,7→5) + pause/resume/goal/speak(5→6,7) |
 | `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — IDLE/GUIDING/RETURNING/WAITING |
-| `wego_aruco` | pose_corrector.py | passive corrector. 주행 중 마커 감지 → /initialpose 자동 발행 |
+| `wego_aruco` | aruco_home_dock.py, pose_corrector.py | aruco_home_dock: PBVS staged 도킹 서비스(`/aruco_home_dock`) → 정차 후 home 좌표로 AMCL 리셋 (DEC-038/041/042). pose_corrector: 마커 맵 좌표 측정용 캘리브레이션 도구(휴면, 운영 미사용) |
 | `wego_voice` | voice_node.py, tts | TTS only (DEC-024). /speak_text 구독 → edge-tts + mpg123 |
 | `wego_traffic` | traffic_node.py | 데스크탑 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
 | `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 goal/speak 배정 (DEC-027) |

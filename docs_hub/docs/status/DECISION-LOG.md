@@ -4,6 +4,20 @@
 
 ---
 
+### DEC-042: PBVS 도킹 제어기 A/B 실험 종료 — polar 제거, staged 단독 채택 (done 2026-06-01)
+- **Context**: DEC-038에서 극좌표(polar, A)와 단계분리(staged, B) 두 도킹 제어기를 `dock_mode` 파라미터로 전환하며 실기기 A/B 비교를 진행, staged가 우월함을 입증했다. 그러나 코드·런치에 polar가 그대로 남아 있고 런치 기본값이 `polar`로 설정되어 있어, 인자(`dock_mode:=staged`)를 빠뜨리면 기각된 polar로 도킹되는 운영 리스크가 있었다.
+- **Decision**: **polar 제어기 제거 + staged 단독 채택.** A/B 실험을 종료하고 `_ctrl_polar`, `dock_mode` 파라미터, polar 게인(`k_rho`/`k_alpha`/`k_beta`)을 코드·런치에서 모두 제거. 이제 `ros2 launch wego_aruco aruco_corrector_launch.py`만으로 항상 staged 동작.
+- **선택 이유 (staged)**:
+  - 실기기 비교(DEC-038)에서 staged가 lateral 0.8~1.7cm로 안정 정차. polar는 lateral 1.4cm까지 수렴하나 ω가 ±0.3에 상시 포화하며 심한 S자 사행 발생.
+  - 근본 원인: 단일 평면 마커의 법선(out-of-plane 회전) 관측성이 낮아 노이즈가 큼. polar는 이 노이즈 심한 법선을 고게인(k_α=2.0)으로 ω에 직접 추종 → 사행. staged는 위치(ρ)는 직진으로, 자세(θ_g)는 마지막 제자리 회전으로 분리해 노이즈 영향을 시간적으로 격리.
+  - 운영 안전성: 단일 제어기로 단순화하면 `dock_mode` 인자 누락 시 polar로 도킹되던 사고 경로가 구조적으로 사라짐.
+- **변경 파일**: `wego_aruco/wego_aruco/aruco_home_dock.py` (`_ctrl_polar` 삭제, `dock_mode`/`k_rho`/`k_alpha`/`k_beta` 파라미터 제거, 제어 루프 분기 제거, 로그 3곳 정리, docstring 정리), `wego_aruco/launch/aruco_corrector_launch.py` (`dock_mode` 인자 + polar 게인 제거)
+- **보존**: A/B 비교 과정 자체는 DEC-038에 기록 유지(면접 어필 포인트). `markers.yaml`/`target_dist`/staged 게인 등 운영 파라미터는 그대로.
+- **면접 어필**: "Lyapunov 극좌표 제어와 단계분리 제어를 실기기 A/B로 비교해 노이즈 심한 단일 마커 환경에서 단계분리의 우월성을 입증한 뒤, 실험을 종료하고 채택안만 남겨 운영 리스크(인자 누락 시 기각안 동작)를 제거. 실험 코드를 프로덕션에 방치하지 않고 정리하는 엔지니어링 규율."
+- **Date**: 2026-06-01
+
+---
+
 ### DEC-041: 사람 감지 정지 — YOLOv8 + Depth 게이팅 노드 + PersonClearCondition BT 플러그인 (done 2026-06-01)
 - **Context**: 안내 주행 중 전방에 사람이 들어오면 정지하는 안전 기능. DEC-039에서 "향후 계획"으로 남긴 PersonClearCondition C++ BT 노드를 실제 구현. 학습 없이 YOLOv8n COCO 사전학습 모델 사용.
 - **결정 1 — 패키지 분리 (`ulsan_person_detect` + `ulsan_bt_plugins`)**:
@@ -56,12 +70,12 @@
 
 ### DEC-041: home_robot1 좌표 재측정 + AMCL 리셋 방식 변경 + 유리 구간 경유지 튜닝 (done 2026-05-29)
 
-- **Context**: 마커 위치 이동 후 home_robot1 좌표, markers.yaml, target_dist, glass 경유지가 모두 구버전 값으로 남아있어 전체 동기화 필요. 또한 IBVS 도킹 후 AMCL 리셋이 yaw 140° 오차로 완전히 틀리는 문제 발견.
+- **Context**: 마커 위치 이동 후 home_robot1 좌표, markers.yaml, target_dist, glass 경유지가 모두 구버전 값으로 남아있어 전체 동기화 필요. 또한 PBVS 도킹 후 AMCL 리셋이 yaw 140° 오차로 완전히 틀리는 문제 발견.
 
 - **변경 1 — home_robot1 좌표 재측정**:
   - AMCL pose 실측: x=-0.1111, y=0.0123, yaw=-1.5708 (마커 정면 90° 확인)
   - home_robot1_staging: x=-0.1111 (동일), y=0.5123 (home 기준 +0.5m), yaw=-1.5708
-  - staging x를 home과 동일하게 맞춰 IBVS 진입 시 정면 직진만으로 수렴 가능
+  - staging x를 home과 동일하게 맞춰 PBVS 진입 시 정면 직진만으로 수렴 가능
 
 - **변경 2 — markers.yaml ID 0 재캘리브레이션 + target_dist 동기화**:
   - 마커 위치: map_x=-0.0949, map_y=-0.7307, map_z=0.0786, qx=-0.0026, qy=0.7567, qz=0.6537, qw=-0.0059
@@ -70,8 +84,9 @@
 - **변경 3 — AMCL 리셋 방식 변경 (핵심)**:
   - 기존: 도킹 후 마커 rvec/tvec으로 T_map_base 역산 → /initialpose 발행
   - 문제: 단일 평면 마커 정면 근처에서 yaw 관측성(out-of-plane rotation) 낮음 → rvec 노이즈 → yaw 140° 오차 (실기기 확인: x=0.005, y=-0.114, yaw=+50.9° vs 예상 x=-0.111, y=0.012, yaw=-90°)
-  - 결정: `_publish_initialpose()`에서 waypoints.yaml의 home_key 좌표 직접 발행. IBVS 성공 = 로봇이 home에 있다는 사실을 활용.
+  - 결정: `_publish_initialpose()`에서 waypoints.yaml의 home_key 좌표 직접 발행. PBVS 성공 = 로봇이 home에 있다는 사실을 활용.
   - TF buffer/listener, _tf_to_matrix 제거. markers.yaml의 map_pose는 캘리브레이션 도구 전용으로만 유지.
+  - **후속 (2026-06-01)**: 운영 경로에서 마커 맵 좌표를 전혀 안 쓰는 것이 확정되어 `markers.yaml`의 `map_x/y/z·map_q*·calibrated` 필드를 제거. 도킹 노드(`aruco_home_dock`)는 `size`+`home_marker`만 읽고, PBVS는 마커 상대 포즈만 사용하므로 죽은 데이터를 정리. `aruco_pose_corrector`는 calibration_mode(필드 미사용, 값 출력만)로 보존 — 필요 시 재측정 가능.
   - 면접 어필: "단일 평면 마커의 yaw 관측성 한계를 실기기 로그로 정량화(140° 오차)하고, 도킹 성공이라는 사실 자체를 AMCL 리셋 근거로 활용하는 방식으로 전환."
 
 - **변경 4 — 유리 구간 경유지 튜닝**:
@@ -133,7 +148,7 @@
 
 ---
 
-### DEC-038: IBVS 홈 도킹 제어기 재설계 — 극좌표 vs 단계분리 비교 후 staged 채택 (done 2026-05-26)
+### DEC-038: PBVS 홈 도킹 제어기 재설계 — 극좌표 vs 단계분리 비교 후 staged 채택 (done 2026-05-26)
 - **Context**: 기존 `aruco_home_dock`의 3DOF 제어가 목표 근처에서 수렴 실패. `angular.z = -Kp_w·lateral - Kp_yaw·yaw_error`로 lateral·yaw 보정을 단순 합산했는데, 실기기 로그에서 두 항이 ω 하나를 공유하며 서로 상쇄(fight)하는 것을 확인. depth=0.279m에서 v≈0.002, w≈-0.002로 교착 → 도킹 타임아웃.
 - **근본 원인 진단**: 차동구동(비홀로노믹) 로봇은 제어 입력 (v, ω) 2개인데 도킹 목표는 depth·lateral·yaw 3개 → **과소구동(underactuated) 자세 정밀화 문제**. 옆으로 평행이동(strafe)이 불가능해 lateral을 고치려면 반드시 ω로 회전해야 하고, 그게 yaw 보정과 충돌. 두 오차를 독립적으로 0에 보낼 수 없음.
 - **공통 해법**: lateral·yaw를 따로 더하지 말고, **도킹 목표점(마커 법선 위 target_dist 지점)의 로봇 기준 기하 (ρ, α, θ_g)** 로 통합. `_compute_geometry()`가 마커 위치 + 법선으로 셋을 산출.
@@ -143,9 +158,10 @@
 - **Decision**: **방법 B (staged) 채택.** 안정적인 lateral(위치)은 직진으로, 자세는 단계 회전으로 분리하면 노이즈 심한 마커 법선에 과민반응하지 않음.
 - **추가 문제 — 목표 근처 α 폭발**: staged phase 1의 조향 `kp_steer·α`에서 `α=atan2(Ty,Tx)`가 ρ→0일 때 분자·분모 모두 0에 수렴해 노이즈로 폭발(ρ=0.06m, lat 4cm → α=35.8°). 마지막 순간 급조향(머리 틀림)으로 yaw가 -90°를 15° 초과. **해결**: `ρ < steer_freeze(0.15m)` 구간은 조향 끄고 직진만(lateral 잔차 수용). 차동구동은 마지막 6cm에서 4cm lateral을 급회전 없이 못 지우므로 잔차를 받아들이는 게 옳음.
 - **단일 평면 마커 한계 확인**: 정면 근처에서 마커 법선(out-of-plane 회전) 관측성이 낮아 θ_g 신뢰 제한 → 로봇이 비스듬히 멈춰도 θ_g≈0으로 오판(실기기에서 AMCL 리셋 yaw가 -47°·-61°·132° 등으로 흔들림). staged가 lateral 위주 제어로 우회. 더 높은 정밀도 필요 시 **마커 2개 자세 삼각측량** 권장(미적용, 향후 과제).
-- **부수 작업**: 마커 이동 후 재캘리브레이션(markers.yaml ID 0, std 0.0002로 안정), `target_dist` 0.271→0.432, `home_robot1_staging` x=-0.13 보정, IBVS 속도 0.15→0.08m/s.
+- **부수 작업**: 마커 이동 후 재캘리브레이션(markers.yaml ID 0, std 0.0002로 안정), `target_dist` 0.271→0.432, `home_robot1_staging` x=-0.13 보정, PBVS 속도 0.15→0.08m/s.
 - **구현 위치**: `wego_aruco/aruco_home_dock.py` (`_compute_geometry`, `_ctrl_polar`, `_ctrl_staged`), `aruco_corrector_launch.py` (`dock_mode` 런치 인자)
 - **면접 어필**: "도킹 수렴 실패를 비홀로노믹 과소구동 문제로 진단. 단순 합산 P제어가 lateral·yaw를 ω 하나로 충돌시킨다는 걸 로그로 확인하고, 목표점 기하(ρ,α,θ_g)로 통합. Lyapunov 극좌표 제어와 단계분리 제어를 둘 다 구현해 실기기 비교 후, 노이즈 심한 단일 마커 법선 환경에선 단계분리가 우월함을 입증. 목표 근처 atan2 특이점(α 폭발)까지 잡아 정밀 정차 달성."
+- **후속**: 2026-06-01 A/B 실험 종료 — polar 제어기 코드 제거, staged 단독 채택 (DEC-042 참고).
 - **Date**: 2026-05-26
 
 ---
@@ -336,15 +352,15 @@
 
 ---
 
-### DEC-029: 홈 복귀 정밀 제어 방식 — 벽 마커 + IBVS (staging pose 방식)
+### DEC-029: 홈 복귀 정밀 제어 방식 — 벽 마커 + PBVS (staging pose 방식)
 - **Context**: 복도 구간 AMCL y drift로 인해 Nav2가 실제 홈 미도달 위치에서 false goal 판정하는 문제 확인. 로봇이 복도에서 홈 방향으로 주행 시 특징점 없는 복도만을 보고 y좌표를 홈에 도달했다고 추정. x,y가 tolerance(±10cm Euclidean) 안에 들어오면 Nav2가 goal 판정 후 yaw 회전 → 그제야 AMCL이 보정되지만 이미 틀린 위치에서 멈춘 상태.
-- **Decision**: **벽 마커 + IBVS (Image-Based Visual Servoing) — staging pose 전환 방식**
+- **Decision**: **벽 마커 + PBVS (Position-Based Visual Servoing) — staging pose 전환 방식**
   1. Nav2가 홈 전방 staging pose까지 주행 (xy_goal_tolerance 넓게 설정, AMCL 오차 흡수)
   2. Nav2 goal 완료(정지 상태) → 마커 기반 P제어로 전환
   3. 선속도 + 각속도 동시 발행: `angular = Kp_w × pixel_error_x`, `linear = Kp_v × (depth - target)`
   4. 로봇이 호(arc) 경로로 마커 정면에 수렴하며 접근 → 홈 정밀 정차
 - **마커 위치**: 바닥 아님, **벽 부착** — 전방 카메라로 멀리서부터 감지 가능, FOV 유지
-- **IBVS 선택 이유**:
+- **PBVS 선택 이유**:
   - 단순 이미지 P제어: x오프셋이 있으면 대각선 접근 문제
   - 제자리 회전 후 전진: 회전 중 마커 FOV 이탈 문제
   - 선속도+각속도 동시 제어: arc 경로로 마커가 항상 FOV 내 유지 + x오프셋 자동 수렴

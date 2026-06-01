@@ -28,7 +28,7 @@
 | 1-1 | 유리 구간 경유지 통과 주행 | `done (2026-05-29)` |
 | 1-2 | FSM 각 상태 동작 (IDLE/GUIDING/RETURNING/WAITING/FAILED) | `todo` |
 | 1-3 | BT 수정 사항 동작 (BackUp+ClearCostmap 복구, RemovePassedGoals) | `todo` |
-| 1-4 | IBVS 홈 도킹 | `done (2026-05-26)` |
+| 1-4 | PBVS 홈 도킹 | `done (2026-05-26)` |
 
 ### 2단계 — LIMO 2 단독 주행
 
@@ -37,7 +37,7 @@
 | 2-1 | 유리 구간 경유지 통과 주행 | `todo` |
 | 2-2 | FSM 각 상태 동작 | `todo` |
 | 2-3 | BT 수정 사항 동작 | `todo` |
-| 2-4 | IBVS 홈 도킹 (markers.yaml ID 1 측정 완료 2026-05-28) | `todo` |
+| 2-4 | PBVS 홈 도킹 (markers.yaml ID 1 측정 완료 2026-05-28) | `todo` |
 
 ### 3단계 — 2대 통합
 
@@ -284,24 +284,24 @@
   - home_robot1 yaw +90° → -90° 수정 후 재캘리브레이션
   - map_x=-0.0463, map_y=-0.4014, map_z=0.0518, qx=0.0161, qy=0.7426, qz=0.6695, qw=0.0009
 - [x] AMCL 보정 거리 임계값 추가 (2026-05-19) — max_correction_depth=0.40m
-  - 주행 중 원거리 마커 감지 오보정 방지. IBVS 도킹 구간(근거리)에서만 보정
-- [x] **aruco_home_dock 3DOF IBVS 재설계** (2026-05-20)
+  - 주행 중 원거리 마커 감지 오보정 방지. PBVS 도킹 구간(근거리)에서만 보정
+- [x] **aruco_home_dock 3DOF PBVS 재설계** (2026-05-20)
   - 기존 2DOF(depth+lateral) → 3DOF(depth+lateral+yaw) P 제어
   - yaw_error = atan2(R_cm[0][2], -R_cm[2][2]) — 마커 법선 기반 비틀림 추출
   - 수렴 조건: depth_tol=0.03m, lateral_tol=0.01m, yaw_tol=0.05rad
   - 후진 시 angular=0 (FOV 이탈 방지), 마커 미감지 즉시 정지
   - 수렴 완료 즉시 Twist() → sleep(0.1) → _publish_initialpose() (AMCL 리셋)
 - [x] **home_robot1_staging 웨이포인트 추가** (2026-05-20) — x=0.0, y=0.5, yaw=-1.5708
-  - Nav2는 staging까지만 이동. 나머지 0.5m는 IBVS 정밀 주행
+  - Nav2는 staging까지만 이동. 나머지 0.5m는 PBVS 정밀 주행
   - states.py ReturningState: staging_key 있으면 staging, 없으면 home 직접 (fallback)
 - [x] **pose_corrector passive 보정 비활성화** (2026-05-20)
   - aruco_corrector_launch.py에서 aruco_pose_corrector 노드 제거
-  - AMCL 보정을 IBVS 정밀 정차 완료 후 1회로 통합
+  - AMCL 보정을 PBVS 정밀 정차 완료 후 1회로 통합
   - 이유: idle 중 마커 감지 → /initialpose 발행 → Nav2 경로 재계획 → 출발 타임아웃(DEC-031)
   - pose_corrector.py 파일은 캘리브레이션 도구로 보존 (end-to-end 완료 후 삭제 예정)
 - [x] markers.yaml ID 1 map 좌표 측정 — done (2026-05-28)
 - [x] **마커 0 재캘리브레이션** — done (2026-05-26): 마커 이동 후 재측정 (map_y=-0.662 등, std 0.0002). target_dist 0.271→0.432 동기화
-- [x] **IBVS 홈 도킹 제어기 재설계 + 실기기 검증** — done (2026-05-26): staged(단계분리) 채택, lateral ~1cm 정밀 정차. DEC-038 참고
+- [x] **PBVS 홈 도킹 제어기 재설계 + 실기기 검증** — done (2026-05-26): staged(단계분리) 채택, lateral ~1cm 정밀 정차. DEC-038 참고
   - 비홀로노믹 과소구동 진단 → ρ/α/θ_g 통합 기하 + 극좌표(A)/단계분리(B) A/B 비교 → staged 채택
   - 목표 근처 α(atan2) 폭발 → steer_freeze(0.15m) 구간 조향 정지로 마지막 급조향 제거
   - 단일 평면 마커 법선 관측성 한계 확인 → 더 높은 정밀도 필요 시 마커 2개 자세 삼각측량 (향후)
@@ -317,6 +317,15 @@
   - RemovePassedGoals radius: 0.2 → 0.7 (경유지 미제거로 로봇 되돌아가는 문제 해결)
   - BackUp dist: 0.30 → 0.10m (유리 구간 맵 경계 이탈 방지)
   - 유리 구간 경유지 통과 실기기 검증 완료
+- [x] **PBVS 도킹 A/B 실험 종료 — polar 제어기 제거, staged 단독 채택** — done (2026-06-01). DEC-042 참고
+  - `_ctrl_polar`·`dock_mode`·polar 게인(k_rho/k_alpha/k_beta) 코드·런치에서 제거
+  - `dock_mode` 인자 누락 시 기각된 polar로 도킹되던 운영 리스크 제거
+- [x] **markers.yaml map_pose 트림** — done (2026-06-01). DEC-041 후속
+  - `map_x/y/z`·`map_q*`·`calibrated` 제거 (size + home_marker만 유지). 마커 역산 폐기로 운영 미사용 → 죽은 데이터 정리
+  - aruco_home_dock은 size/home_marker만 읽음 / pose_corrector calibration_mode는 영향 없음(보존)
+- [x] **IBVS → PBVS 용어 정정 + ARUCO-LOCALIZER 문서 갱신** — done (2026-06-01)
+  - 구현은 solvePnP 포즈 복원 → SE(2) 작업공간 제어 = PBVS(IBVS 아님). 코드/문서 전반의 IBVS 표기 정정
+  - ARUCO-LOCALIZER.md를 옛 설계(2-Phase P제어/마커 역산/aruco_localizer_launch)에서 현재 PBVS staged 기준으로 전면 재작성
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI

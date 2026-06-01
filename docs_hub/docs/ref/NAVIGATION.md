@@ -383,7 +383,7 @@ wego_dispatcher → /goal_destination (String 키, 예: "classroom_1")
       → 도달 시 RETURNING 전환
         → classroom_1~5 → navigate_to_pose(home_staging)
           나머지        → navigate_through_poses([glass_exit, glass_entry, home_staging])
-          → staging 도착 → IBVS 홈 도킹 (aruco_home_dock 서비스)
+          → staging 도착 → PBVS 홈 도킹 (aruco_home_dock 서비스)
           → 홈 정밀 정차 → IDLE 복귀
 ```
 

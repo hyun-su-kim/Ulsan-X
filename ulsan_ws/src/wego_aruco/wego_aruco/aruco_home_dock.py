@@ -13,11 +13,11 @@
     ρ   = 로봇→목표점 거리
     α   = 로봇 heading 대비 목표점 방향 (조준 오차)
     θ_g = 목표점에서 마커를 정면으로 보는 최종 heading 오차
-  두 제어기를 dock_mode 파라미터로 선택 (실기기 A/B 비교 결과 staged 채택):
-    A) _ctrl_polar  : Lyapunov 안정 극좌표 제어. 부드러우나 노이즈 심한 마커
-                      법선을 고게인 추종 → ω 포화·사행 발생 (실기기에서 확인)
-    B) _ctrl_staged : turn→drive→turn 3단계. 위치(안정적인 lateral)는 직진으로,
-                      자세는 단계 회전으로 분리. 노이즈 영향 적어 채택.
+  제어기 — _ctrl_staged (turn→drive→turn 3단계):
+    위치(안정적인 lateral)는 직진으로, 자세는 단계 회전으로 분리.
+    노이즈 심한 단일 평면 마커 법선에 둔감 → 정밀 정차.
+  ※ 극좌표(Lyapunov 안정) 제어기도 구현·실기기 비교했으나, 노이즈 심한 마커
+    법선을 고게인 추종해 ω 포화·사행 발생 → 기각 (A/B 비교 DEC-038, polar 제거 DEC-042).
 
 staged 핵심 보정:
   - 목표 근처(ρ < steer_freeze)에선 α = atan2(Ty,Tx)가 분모·분자 모두 0에
@@ -79,14 +79,8 @@ class ArucoHomeDock(Node):
         self.declare_parameter('timeout_sec',           30.0)
         self.declare_parameter('no_marker_timeout_sec', 5.0)
 
-        # 제어 모드: 'polar'(A 극좌표 자세제어) | 'staged'(B 단계 분리)
-        self.declare_parameter('dock_mode',             'polar')
         self.declare_parameter('rho_tol',               0.03)   # 목표점 위치 허용오차
-        # A) 극좌표 제어기 게인 (Lyapunov 안정 조건: k_rho>0, k_beta<0, k_alpha+5/3·k_beta-2/π·k_rho>0)
-        self.declare_parameter('k_rho',                 0.8)
-        self.declare_parameter('k_alpha',               2.0)
-        self.declare_parameter('k_beta',               -0.6)
-        # B) 단계 제어 게인 + 1단계 정렬 허용오차
+        # 단계 분리(staged) 제어 게인 + 1단계 정렬 허용오차
         self.declare_parameter('kp_turn',               0.8)    # 제자리 회전 게인
         self.declare_parameter('kp_drive',              0.4)    # 직진 게인
         self.declare_parameter('kp_steer',              0.6)    # 직진 중 조향 게인
@@ -101,17 +95,13 @@ class ArucoHomeDock(Node):
         self._timeout      = self.get_parameter('timeout_sec').get_parameter_value().double_value
         self._no_marker_to = self.get_parameter('no_marker_timeout_sec').get_parameter_value().double_value
 
-        self._dock_mode = self.get_parameter('dock_mode').get_parameter_value().string_value
         self._rho_tol   = self.get_parameter('rho_tol').get_parameter_value().double_value
-        self._k_rho     = self.get_parameter('k_rho').get_parameter_value().double_value
-        self._k_alpha   = self.get_parameter('k_alpha').get_parameter_value().double_value
-        self._k_beta    = self.get_parameter('k_beta').get_parameter_value().double_value
         self._kp_turn   = self.get_parameter('kp_turn').get_parameter_value().double_value
         self._kp_drive  = self.get_parameter('kp_drive').get_parameter_value().double_value
         self._kp_steer  = self.get_parameter('kp_steer').get_parameter_value().double_value
         self._alpha_tol    = self.get_parameter('alpha_tol').get_parameter_value().double_value
         self._steer_freeze = self.get_parameter('steer_freeze').get_parameter_value().double_value
-        self._phase        = 0   # 단계 제어 상태 (staged 전용)
+        self._phase        = 0   # 단계 제어 상태 (staged)
 
         markers_file = str(get_package_share_directory('wego_aruco')) + '/config/markers.yaml'
         with open(markers_file) as f:
@@ -216,7 +206,7 @@ class ArucoHomeDock(Node):
                 self._latest_tvec = None
                 self._latest_rvec = None
 
-    # ── IBVS 서비스 ─────────────────────────────────────────────────────
+    # ── PBVS 도킹 서비스 ─────────────────────────────────────────────────
 
     def _dock_cb(self, _request, response):
         if self._camera_matrix is None:
@@ -232,7 +222,7 @@ class ArucoHomeDock(Node):
         self._docking = True
         self._phase   = 0
         self.get_logger().info(
-            f'IBVS 도킹 시작 [{self._dock_mode}] — marker={self._marker_id}, target={self._target_dist}m'
+            f'PBVS 도킹 시작 — marker={self._marker_id}, target={self._target_dist}m'
         )
 
         start         = time.time()
@@ -275,7 +265,7 @@ class ArucoHomeDock(Node):
                     time.sleep(0.1)                  # 완전 정지 대기
                     self._publish_initialpose()      # 정차 후 AMCL 보정
                     self.get_logger().info(
-                        f'도킹 완료 [{self._dock_mode}] — depth={depth:.3f}m '
+                        f'도킹 완료 — depth={depth:.3f}m '
                         f'lateral={lateral:.3f}m yaw={math.degrees(yaw_error):.1f}° '
                         f'(ρ={rho:.3f} θg={math.degrees(theta_g):.1f}°)'
                     )
@@ -286,10 +276,7 @@ class ArucoHomeDock(Node):
                     )
                     return response
 
-                if self._dock_mode == 'staged':
-                    v, w = self._ctrl_staged(rho, alpha, theta_g)
-                else:
-                    v, w = self._ctrl_polar(rho, alpha, theta_g)
+                v, w = self._ctrl_staged(rho, alpha, theta_g)
 
                 # 전진만 허용 (후진 시 마커 FOV 이탈 방지)
                 v = float(np.clip(v, 0.0, self._max_linear))
@@ -301,7 +288,7 @@ class ArucoHomeDock(Node):
                 self._cmd_pub.publish(twist)
 
                 self.get_logger().info(
-                    f'[{self._dock_mode}] ρ={rho:.3f} α={math.degrees(alpha):.1f}° '
+                    f'ρ={rho:.3f} α={math.degrees(alpha):.1f}° '
                     f'θg={math.degrees(theta_g):.1f}° (d={depth:.3f} lat={lateral:.3f}) '
                     f'→ v={v:.3f} w={w:.3f}',
                     throttle_duration_sec=0.5,
@@ -344,36 +331,7 @@ class ArucoHomeDock(Node):
         theta_g = _norm(math.atan2(-n_y, -n_x)) # 목표점에서 마커 향하는 최종 heading
         return rho, alpha, theta_g
 
-    # ── A) 극좌표 자세 제어기 ────────────────────────────────────────────
-
-    def _ctrl_polar(self, rho, alpha, theta_g):
-        """Lyapunov 안정 극좌표 제어 (Siegwart 3.6.2.4).
-
-        목표(goal) 프레임 기준 로봇 자세 (x_r, y_r, θ_r)로 변환 후 표준 법칙 적용.
-        v = k_ρ·ρ,  ω = k_α·α + k_β·β
-        """
-        # 목표점의 로봇 기준 좌표
-        tx = rho * math.cos(alpha)
-        ty = rho * math.sin(alpha)
-        cg, sg = math.cos(theta_g), math.sin(theta_g)
-
-        # 로봇 자세를 goal 프레임으로 (goal: 목표점 원점, 마커 향하는 방향이 +x)
-        x_r = -( tx * cg + ty * sg)
-        y_r = -(-tx * sg + ty * cg)
-        theta_r = -theta_g
-
-        rr = math.hypot(x_r, y_r)
-        if rr < 1e-3:
-            a = _norm(-theta_r)                       # 목표 위 — 자세만 정렬
-        else:
-            a = _norm(-theta_r + math.atan2(-y_r, -x_r))
-        b = _norm(-theta_r - a)
-
-        v = self._k_rho * rr
-        w = self._k_alpha * a + self._k_beta * b
-        return v, w
-
-    # ── B) 단계 분리 제어 (turn → drive → turn) ─────────────────────────
+    # ── 단계 분리 제어 (turn → drive → turn) ────────────────────────────
 
     def _ctrl_staged(self, rho, alpha, theta_g):
         """LIMO 제자리 회전 활용 3단계: 목표 조준 → 직진 → 마커 정면 정렬."""
@@ -401,7 +359,7 @@ class ArucoHomeDock(Node):
         """도킹 완료 후 waypoints.yaml의 home 좌표를 /initialpose 로 직접 발행.
 
         단일 평면 마커 역산 방식은 yaw 관측성 한계로 140° 오차 발생 확인(실기기).
-        IBVS 도킹이 성공했으면 로봇은 반드시 home 위치에 있으므로 직접 발행이 정확.
+        PBVS 도킹이 성공했으면 로봇은 반드시 home 위치에 있으므로 직접 발행이 정확.
         """
         msg = PoseWithCovarianceStamped()
         msg.header.stamp    = self.get_clock().now().to_msg()
