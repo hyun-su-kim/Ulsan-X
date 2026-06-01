@@ -22,7 +22,7 @@ def generate_launch_description():
                 'home_key':     home_key,
                 'target_dist':  0.513,
                 'rho_tol':      0.03,
-                'yaw_tol':      0.10,
+                'yaw_tol':      0.04,
                 'max_linear':   0.08,
                 'max_angular':  0.3,
                 # 단계 분리(staged) 게인
