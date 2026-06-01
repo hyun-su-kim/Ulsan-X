@@ -103,6 +103,8 @@ ros2 launch wego_ui gui_launch.py
 | `wego_voice` | voice_node.py, tts | TTS only (DEC-024). /speak_text 구독 → edge-tts + mpg123 |
 | `wego_traffic` | traffic_node.py | 데스크탑 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
 | `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 goal/speak 배정 (DEC-027) |
+| `ulsan_person_detect` | person_detect_node.py | 데스크탑 domain 6/7. YOLOv8n + Depth 0.7m 게이팅 → /person_detected 발행 (DEC-041) |
+| `ulsan_bt_plugins` | person_clear_condition.cpp | Nav2 BT 커스텀 C++ 플러그인. PersonClearCondition: /person_detected 감지 시 RUNNING → FollowPath halt (DEC-041) |
 | `ulsan_obstacle_layer` | PeerObstacleLayer | **폐기 (DEC-022)**: 우선순위 FSM pause 방식으로 대체 |
 | `ulsan_reservation` | main.py (FastAPI) | 데스크탑. 예약 CRUD + 로봇 임무 배정 API. MySQL + APScheduler |
 | `ulsan-web-ui` | React | 외부 방문자용 예약 웹 UI |

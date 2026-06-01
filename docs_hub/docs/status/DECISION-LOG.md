@@ -4,6 +4,31 @@
 
 ---
 
+### DEC-041: 사람 감지 정지 — YOLOv8 + Depth 게이팅 노드 + PersonClearCondition BT 플러그인 (done 2026-06-01)
+- **Context**: 안내 주행 중 전방에 사람이 들어오면 정지하는 안전 기능. DEC-039에서 "향후 계획"으로 남긴 PersonClearCondition C++ BT 노드를 실제 구현. 학습 없이 YOLOv8n COCO 사전학습 모델 사용.
+- **결정 1 — 패키지 분리 (`ulsan_person_detect` + `ulsan_bt_plugins`)**:
+  - 처음엔 기존 `wego_aruco`(카메라 사용)에 사람 감지를 붙이는 안을 검토했으나, ArUco 마커 처리와 YOLO 사람 감지는 역할이 다름 → 패키지 응집도 위해 분리.
+  - Python 추론 노드(`ulsan_person_detect`)와 C++ BT 플러그인(`ulsan_bt_plugins`)도 언어·실행 맥락(rclpy 노드 vs Nav2 pluginlib)이 달라 별도 패키지.
+- **결정 2 — Depth 거리 게이팅 (0.7m)**:
+  - RGB만 쓰면 화면에 잡히는 모든 사람(멀리 지나가는 사람 포함)에 정지 → 안내 로봇이 못 움직임.
+  - YOLO 2D 박스 중심 40% 영역의 Depth 중앙값으로 거리 산출 → 0.7m 이내 사람만 정지 대상. (박스 중앙만 샘플링해 배경 픽셀 오염 방지, depth=0 무효 픽셀 제외)
+  - depth 토픽 없으면 화면 감지만으로 보수적 정지(fail-safe).
+- **결정 3 — BT 통합: ReactiveSequence + RUNNING 차단**:
+  - `<ReactiveSequence>[PersonClearCondition, FollowPath]</ReactiveSequence>` 구조. 사람 감지 시 PersonClearCondition이 **RUNNING** 반환 → ReactiveSequence가 형제 FollowPath에 `halt()` → controller_server cancelGoal → cmd_vel 정지.
+  - **FAILURE를 쓰지 않은 이유**: FAILURE면 RecoveryNode가 복구 동작(BackUp/ClearCostmap)을 발동 → 사람 앞에서 후진하는 오동작. RUNNING은 복구 미발동 + 단순 정지.
+  - 정지 중에도 `PipelineSequence`가 ComputePathToPose 재계획을 계속 수행 → 사람이 벗어나면 최신 경로로 즉시 재개.
+- **결정 4 — ConditionNode가 RUNNING 반환**:
+  - BT.CPP v3에서 `ConditionNode`는 RUNNING 반환 허용(SyncActionNode는 `LogicError`로 금지) → 조건 노드 의미를 유지하면서 차단 구현.
+  - ROS 연동은 Nav2 `IsBatteryLowCondition` 표준 패턴 채택: blackboard `"node"`로 공유 rclcpp 노드 획득 + 전용 callback group을 tick()에서 `spin_some()`으로 논블로킹 수집.
+  - 라이브러리명 = `plugin_lib_names` 항목명 규칙 → `diff_navigation_params.yaml`에 `ulsan_person_clear_condition_bt_node` 등록해야 bt_navigator가 `.so` 로드.
+- **결정 5 — numpy<2(1.26) 타깃**: 실행 데스크탑의 `cv_bridge`가 numpy 1.x로 컴파일됨(numpy 2.x에서 `imgmsg_to_cv2` → `_ARRAY_API not found`). ArUco 노드와 동일 런타임 공유 위해 코드를 numpy 1.26 기준으로 작성(numpy 2.x 전용 API 금지). ultralytics는 numpy≥1.23이라 호환.
+- **변경 파일**: `ulsan_person_detect/`(신규 패키지, person_detect_node.py), `ulsan_bt_plugins/`(신규 패키지, person_clear_condition.{hpp,cpp}, CMakeLists), `wego_2d_nav/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml`, `navigate_through_poses_w_replanning_and_recovery.xml`, `wego_2d_nav/params/diff_navigation_params.yaml`
+- **미완료**: 실기기 검증(사람 0.7m 진입→정지→이탈→재개), person_detect_node의 launch 통합(현재 수동 실행), 데스크탑 `pip install ultralytics`.
+- **면접 어필**: "Nav2 BT에서 사람 감지 정지를 '복구를 유발하는 FAILURE'가 아니라 'RUNNING으로 형제 노드를 halt'하는 ReactiveSequence 패턴으로 설계해, 사람 앞에서 후진하는 오동작을 구조적으로 배제. RGB만으로는 멀리 지나가는 사람도 멈추는 문제를 Depth 거리 게이팅으로 해결. BT.CPP의 ConditionNode/SyncActionNode RUNNING 허용 차이까지 근거로 노드 베이스를 선택."
+- **Date**: 2026-06-01
+
+---
+
 ### DEC-040: 관제 GUI 시스템 상태 패널 연결 판단 방식 — ROS2 Diagnostics 표준 채택 (done 2026-05-29)
 - **Context**: 관제 GUI 시스템 상태 패널에서 dispatcher/traffic 노드를 켜지 않아도 "연결됨"으로 표시되는 버그 발견. 기존 코드는 `get_topic_names_and_types()`로 `/limo1/goal_destination`, `/limo1/pause` 토픽 존재 여부로 연결을 판정했는데, GUI 자신이 시작 시 이 토픽들의 퍼블리셔를 생성하므로 항상 토픽이 존재 → 항상 연결됨으로 표시되는 구조적 결함.
 - **Options**:

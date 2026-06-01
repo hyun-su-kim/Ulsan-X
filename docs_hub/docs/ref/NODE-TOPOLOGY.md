@@ -48,6 +48,16 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 | `aruco_pose_corrector` | 주행 중 마커 감지 → `/initialpose` 발행 (passive AMCL 보정) |
 | `aruco_home_dock` | `/aruco_home_dock` 서비스 — IBVS로 홈 정밀 정차 (DEC-029) |
 
+### ulsan_person_detect 패키지 (구현 완료, 2026-06-01)
+| 노드 | 역할 |
+|------|------|
+| `person_detect_node` | YOLOv8n(COCO 사전학습) RGB 추론 + Depth 거리 게이팅. `/camera/color/image_raw` + `/camera/depth/image_raw` 구독 → 0.7m 이내 사람 감지 시 `/person_detected=true` 발행 (10Hz). 데스크탑 domain 6/7 |
+
+### ulsan_bt_plugins 패키지 (구현 완료, 2026-06-01)
+| 노드 | 역할 |
+|------|------|
+| `PersonClearCondition` | Nav2 BT 커스텀 C++ 조건 노드(plugin). `/person_detected` 구독 → 사람 없음=SUCCESS, 사람 감지=RUNNING. ReactiveSequence가 FollowPath를 halt → 정지. DEC-041 |
+
 ### wego_coordinator 패키지 (미구현)
 | 노드 | 역할 |
 |------|------|
@@ -61,7 +71,8 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 | `/stt_node` | faster-whisper (CUDA): 음성 → 텍스트 |
 | `/nlu_node` | If-else / Gemini API / Gemma-2B 의도 해석 |
 | `/tts_node` | Piper: 텍스트 → 음성 출력 |
-| `/yolo_node` | YOLOv8: 카메라 → 사람 감지 + 방향 추정 |
+
+> 사람 감지(YOLOv8)는 별도 `ulsan_person_detect` 패키지로 분리 구현 — 위 섹션 참고.
 
 ---
 
@@ -82,8 +93,7 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 | `/voice/stt_result` | `std_msgs/String` | stt_node | nlu_node |
 | `/voice/nlu_intent` | `std_msgs/String` | nlu_node | wego_behaviour |
 | `/voice/tts_request` | `std_msgs/String` | wego_behaviour | tts_node |
-| `/vision/person_detected` | `std_msgs/Bool` | yolo_node | wego_behaviour |
-| `/vision/person_direction` | `std_msgs/Float32` | yolo_node | wego_behaviour |
+| `/person_detected` | `std_msgs/Bool` | person_detect_node | PersonClearCondition (Nav2 BT) |
 
 ### 로봇 간 (Domain Bridge 경유)
 

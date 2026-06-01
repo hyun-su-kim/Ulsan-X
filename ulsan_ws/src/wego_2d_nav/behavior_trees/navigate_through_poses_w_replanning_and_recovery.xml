@@ -7,6 +7,10 @@
           경유지를 휙 지나쳐 그 순간 경유지에서 멀어 제거 실패 → 플래너가 이미
           통과한 경유지를 계속 경로에 포함. 밖으로 빼 매 틱 체크해 통과 즉시 제거.
     ComputePathThroughPoses(무거운 경로 계산)만 RateController로 0.333Hz 유지.
+  [추가] FollowPath를 ReactiveSequence(PersonClearCondition + FollowPath)로 래핑:
+    사람 감지(/person_detected=true) 시 PersonClearCondition이 RUNNING 반환 →
+    ReactiveSequence가 FollowPath를 halt() → cmd_vel 정지. 사람이 벗어나면 재개.
+    경로 재계획(ComputePathThroughPoses)은 PipelineSequence에 의해 정지 중에도 계속 수행.
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -19,10 +23,13 @@
             <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
           </RecoveryNode>
         </RateController>
-        <RecoveryNode number_of_retries="1" name="FollowPath">
-          <FollowPath path="{path}" controller_id="FollowPath"/>
-          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
-        </RecoveryNode>
+        <ReactiveSequence name="FollowPathWithPersonCheck">
+          <PersonClearCondition topic="/person_detected"/>
+          <RecoveryNode number_of_retries="1" name="FollowPath">
+            <FollowPath path="{path}" controller_id="FollowPath"/>
+            <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+          </RecoveryNode>
+        </ReactiveSequence>
       </PipelineSequence>
       <ReactiveFallback name="RecoveryFallback">
         <RoundRobin name="RecoveryActions">

@@ -12,10 +12,10 @@
 |---|------|------|------|
 | 1 | **TTS(wego_voice) 재작업** | `done (2026-05-18)` | mpg123 오디오 장치 미지정 문제. `-a plughw:1,3` (HDMI 0) 고정, `audio_device` 파라미터화 |
 | 2 | **마커 기반 홈 정밀 복귀 구현** | `done (2026-05-26)` | 단계분리(staged) 도킹 제어기 실기기 검증 완료 — lateral ~1cm 정밀 정차. DEC-038 참고 |
-| 3 | **Nav2 BT 커스텀** | `in-progress (2026-05-28)` | XML 2개 커스텀 완료(DEC-039). PersonClearCondition C++ 노드는 사람 감지 구현 후 진행 |
+| 3 | **Nav2 BT 커스텀** | `done (2026-06-01)` | XML 2개 커스텀(DEC-039) + PersonClearCondition C++ 노드 + ReactiveSequence 래핑 완료(DEC-041) |
 | 4 | **유리문 구간 중앙 웨이포인트 경유** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. DEC-030 참고 |
 | 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `done (2026-05-22)` | 지도·로봇 상태·카드·긴급 제어·이벤트 로그·미션 로그·확장성 리팩토링 완료. DEC-034~036 참고 |
-| 6 | **사람 발견 시 정지 기능** | `todo` | YOLO 모델 선택 → PersonClearCondition BT 노드 → XML 수정. 완료 시 1차 데모 완성 |
+| 6 | **사람 발견 시 정지 기능** | `in-progress (2026-06-01)` | 구현 완료(ulsan_person_detect + ulsan_bt_plugins + BT XML). 실기기 검증 남음. DEC-041 참고 |
 
 ---
 
@@ -59,11 +59,13 @@
 
 | # | 항목 | 상태 |
 |---|------|------|
-| 5-1 | YOLO 모델 선택 + 사람 감지 노드 구현 | `todo` |
-| 5-2 | PersonClearCondition C++ BT 노드 작성 | `todo` |
-| 5-3 | BT XML 수정 (ReactiveSequence 삽입) | `todo` |
+| 5-1 | YOLOv8n(COCO 사전학습) + Depth 거리 게이팅(0.7m) 노드 — `ulsan_person_detect` | `done (2026-06-01)` |
+| 5-2 | PersonClearCondition C++ BT 노드 — `ulsan_bt_plugins` | `done (2026-06-01)` |
+| 5-3 | BT XML 수정 (ReactiveSequence 삽입, navigate_to_pose + navigate_through_poses) | `done (2026-06-01)` |
+| 5-4 | 실기기 검증 (사람 0.7m 진입 → 정지 → 이탈 → 재개) | `todo` |
 
-> **5단계 완료 = 1차 데모 완성**
+> **5단계(실기기 검증 포함) 완료 = 1차 데모 완성**
+> 구현 3종 완료(2026-06-01). person_detect_node launch 통합은 미적용 — 현재 수동 실행.
 
 ---
 

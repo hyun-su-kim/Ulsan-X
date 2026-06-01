@@ -141,10 +141,10 @@ wego_coordinator (노트북)
           → wego_behaviour BT (목적지 결정)
             → Nav2 BT (경로 계획 + 실행)
 
-카메라 입력
-  → YOLOv8 (사람 감지 + 방향 추정)
-    → 주기적 안내 멘트 트리거 (10~20s)
-    → 호출 시 로봇 회전 방향 결정
+카메라 입력 (RGB + Depth)
+  → ulsan_person_detect (YOLOv8n + Depth 0.7m 게이팅) → /person_detected
+    → Nav2 BT PersonClearCondition (RUNNING) → FollowPath halt → 주행 정지 (DEC-041)
+    → (Phase 4) 방향 추정 → 회전 + 안내 멘트
 ```
 
 ---

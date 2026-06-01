@@ -96,6 +96,7 @@ bt_navigator:
       - nav2_assisted_teleop_cancel_bt_node
       - nav2_drive_on_heading_cancel_bt_node
       - nav2_is_battery_charging_condition_bt_node
+      - ulsan_person_clear_condition_bt_node    # [추가] 사람 감지 시 FollowPath halt (ulsan_bt_plugins)
 
 planner_server:
   ros__parameters:
