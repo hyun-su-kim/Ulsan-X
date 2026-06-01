@@ -29,12 +29,12 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 | 기기 | DOMAIN_ID | 실행 내용 |
 |------|-----------|-----------|
-| 데스크탑 | **6** | Nav2 + behaviour + aruco + voice + bridge (LIMO 1 담당) |
-| 데스크탑 | **7** | Nav2 + behaviour + aruco + voice + bridge (LIMO 2 담당) |
+| 데스크탑 | **6** | Nav2 + behaviour + voice + bridge (LIMO 1 담당) |
+| 데스크탑 | **7** | Nav2 + behaviour + voice + bridge (LIMO 2 담당) |
 | 데스크탑 | **5** | traffic + dispatcher + FastAPI(MySQL) |
-| 노트북 | **5** | wego_ui (관제 GUI) 또는 ulsan-visitor-ui (방문자 UI) |
-| LIMO 1 | **6** | 드라이버만 |
-| LIMO 2 | **7** | 드라이버만 |
+| 노트북 | **5** | ulsan_gui (관제 GUI, PyQt) 또는 ulsan-visitor-ui (방문자 UI) |
+| LIMO 1 | **6** | 드라이버 + aruco + 사람감지 (perception 엣지, DEC-043) |
+| LIMO 2 | **7** | 드라이버 + aruco + 사람감지 (perception 엣지, DEC-043) |
 
 ```bash
 # 데스크탑 — LIMO 1 담당 터미널
@@ -79,12 +79,20 @@ ros2 launch wego_bridge robot_bridge_launch.py
 
 ### 브릿지 토픽
 
-| 토픽 | 방향 | 목적 |
-|------|------|------|
-| `/amcl_pose` | robot domain → 5 | 관제 UI 위치 마커 표시 |
-| `/amcl_pose` | robot domain → peer domain | 상대 로봇 FleetObstacleLayer 입력 |
+`bridge_robot.yaml` 단일 템플릿 (ROBOT_DOMAIN/ROBOT_NAME 치환, DEC-028). **로봇↔domain 5만 브릿징** — 로봇↔로봇 peer 브릿징은 FleetObstacleLayer 폐기(DEC-022)로 제거됨.
 
-> **제거된 브릿지**: `/tf`, `/tf_static`, `/map` — 모두 브릿징 불필요. 각 기기가 로컬 데이터 사용.
+| 토픽 | 방향 | 목적 (구독자) |
+|------|------|--------------|
+| `/amcl_pose` | robot → 5 | wego_traffic 거리감지, ulsan_gui 위치 마커 |
+| `/robot_status` | robot → 5 | wego_traffic, wego_dispatcher |
+| `/diagnostics` | robot → 5 | ulsan_gui 시스템 상태 패널 (노드 연결 판단, DEC-040) |
+| `/limo_status` | robot → 5 | ulsan_gui 배터리 표시 (`limo_msgs/LimoStatus`) |
+| `/camera/image/compressed` | robot → 5 | ulsan_gui 카메라 뷰 |
+| `/pause`, `/resume` | 5 → robot | wego_traffic → wego_behaviour |
+| `/goal_destination`, `/speak_text` | 5 → robot | wego_dispatcher → wego_behaviour/voice |
+| `/abort`, `/cmd_vel` | 5 → robot | ulsan_gui (임무중단/텔레옵) |
+
+> **제거된 브릿지**: `/tf`, `/tf_static`, `/map` — 브릿징 불필요(각 기기 로컬 데이터). 로봇↔로봇 `/amcl_pose` peer 브릿지 — FleetObstacleLayer 폐기로 제거.
 
 ### 맵 배포 절차 (domain bridge 대신 scp)
 
@@ -115,10 +123,10 @@ scp ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map.pgm \
 
 | 발신 | 수신측 토픽명 | 비고 |
 |------|--------------|------|
-| LIMO 1 `/amcl_pose` → domain 5 | `/limo_1/amcl_pose` | 노트북 시각화용 |
-| LIMO 1 `/amcl_pose` → domain 7 | `/limo_1/amcl_pose` | LIMO 2 FleetObstacleLayer 입력 |
-| LIMO 2 `/amcl_pose` → domain 5 | `/limo_2/amcl_pose` | 노트북 시각화용 |
-| LIMO 2 `/amcl_pose` → domain 6 | `/limo_2/amcl_pose` | LIMO 1 FleetObstacleLayer 입력 |
+| LIMO 1 `/amcl_pose` → domain 5 | `/limo1/amcl_pose` | 관제 GUI 시각화 + wego_traffic 거리감지 |
+| LIMO 2 `/amcl_pose` → domain 5 | `/limo2/amcl_pose` | 관제 GUI 시각화 + wego_traffic 거리감지 |
+
+> wego_traffic이 domain 5에서 두 로봇 pose를 모두 받아 거리를 계산하므로, 로봇↔로봇 직접 브릿징 불필요.
 
 ---
 
@@ -208,4 +216,6 @@ Cyclone DDS 선택 이유:
 
 **결과**: `/map` 갱신 속도 크게 개선, RViz 실시간 시각화 가능 수준으로 회복.
 
-**교훈**: Wi-Fi 환경에서는 DDS multicast 대신 unicast peer 설정 필수. 대용량 토픽(`/map`, `/pointcloud`)일수록 효과 큼.
+**교훈**: Wi-Fi 환경에서 Fast DDS 기본 멀티캐스트 discovery는 대용량 토픽(`/map`, `/pointcloud`)에서 취약 → DDS 구현체로 **Cyclone DDS 채택**(경량·저지연).
+
+> **후속 정정 (2026-05-25)**: 이후 운용에서 **`/map`은 도메인 브릿지 없이 각 기기 로컬 map_server가 독립 발행**(DEC-012)하도록 바뀌어 대용량 토픽이 Wi-Fi를 건너지 않게 됨. 그 결과 unicast peer 설정의 필요성이 사라져 **`cyclone_peers.xml`을 폐기하고 도메인 분리(5/6/7) + Cyclone DDS 기본 멀티캐스트 auto-discovery**로 단순화함. 현재는 동일 AP 내 자동 discovery로 충분(이 문서 상단 "CycloneDDS 설정" 섹션이 정본). 즉 "unicast 필수" 교훈은 `/map` 로컬 발행 전환으로 무효화됨.

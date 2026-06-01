@@ -122,7 +122,7 @@ Cartographer 1차 매핑 시 발생한 문제와 해결 절차. SLAM Toolbox 재
 | 파라미터 파일 | `diff_navigation_params.yaml` | `slam_toolbox_localization_params.yaml` |
 
 > **SLAM Toolbox localization 주의**: `/amcl_pose`를 발행하지 않음.
-> `wego_bridge`·`ulsan_obstacle_layer`는 `/amcl_pose` 의존. 비교 실험은 단일 로봇으로 진행하므로 문제 없음.
+> `wego_bridge`·`wego_traffic`은 `/amcl_pose` 의존. 비교 실험은 단일 로봇으로 진행하므로 문제 없음.
 > 최종 선택 후 멀티로봇 단계에서 `/tf → /amcl_pose` republisher 노드 추가 예정 (SLAM Toolbox 선택 시).
 
 ### 측정 프로토콜
@@ -198,16 +198,11 @@ ros2 launch wego_bridge robot_bridge_launch.py  # ROS_DOMAIN_ID 읽어 자동 �
 ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=<path>/map.yaml
 ```
 
-### 상대 로봇 충돌 회피 (ulsan_obstacle_layer)
+### 상대 로봇 충돌 회피 — 우선순위 pause/resume (DEC-022)
 
-```
-상대방 /amcl_pose 수신 (domain bridge 경유)
-  → PeerObstacleLayer: 해당 좌표에 반경 0.35m 원형 가상 장애물 생성
-  → global costmap LETHAL_OBSTACLE 주입
-  → Nav2 글로벌 플래너(A*)가 자동 우회 경로 생성
-```
+> **폐기**: `ulsan_obstacle_layer`(PeerObstacleLayer) — 상대 로봇 `/amcl_pose`를 global costmap에 원형 가상 장애물로 주입하는 방식. global costmap은 경로 계획 시에만 참조되어 주행 중 동적 회피가 불가(구조적 한계) → 삭제.
 
-Nav2 플래너 수정 없이 적용 가능. `peer_pose_topic`을 비워두면 `ROS_DOMAIN_ID`로 자동 결정 (domain 6 → limo_2, domain 7 → limo_1).
+현재 방식: `wego_traffic`(domain 5)이 두 로봇 `/amcl_pose` 거리를 감지 → 우선순위(GUIDING>RETURNING, 동순위 LIMO1 우선)에 따라 `/pause`·`/resume` 발행 → 후순위 로봇이 `wego_behaviour` **WAITING** 상태로 대기.
 
 ---
 
@@ -383,7 +378,7 @@ wego_dispatcher → /goal_destination (String 키, 예: "classroom_1")
       → 도달 시 RETURNING 전환
         → classroom_1~5 → navigate_to_pose(home_staging)
           나머지        → navigate_through_poses([glass_exit, glass_entry, home_staging])
-          → staging 도착 → IBVS 홈 도킹 (aruco_home_dock 서비스)
+          → staging 도착 → PBVS 홈 도킹 (aruco_home_dock 서비스)
           → 홈 정밀 정차 → IDLE 복귀
 ```
 
@@ -399,19 +394,9 @@ export ROS_DOMAIN_ID=7 && ros2 launch wego_behaviour behaviour_launch.py  # LIMO
 
 ---
 
-## Fleet 충돌 회피 (ulsan_obstacle_layer)
+## Fleet 충돌 회피
 
-상대 로봇을 동적 장애물로 인식시키는 방식.
-
-```
-/limo_N/amcl_pose 수신 (Domain Bridge 경유)
-  → ulsan_obstacle_layer (PeerObstacleLayer): 해당 좌표에 반경 R의 원형 가상 장애물 생성
-  → global costmap에 LETHAL_OBSTACLE로 주입
-  → Nav2 글로벌 플래너(NavFn/A*)가 자동으로 우회 경로 생성
-```
-
-**장점**: Nav2 기존 플래너 수정 없이 충돌 회피 가능.
-**고려사항**: 로봇 실제 크기 + 안전 마진을 반경 R에 반영할 것.
+**폐기 (DEC-022)**: 상대 로봇을 동적 장애물로 costmap에 주입하는 `ulsan_obstacle_layer` 방식은 구조적 한계(global costmap은 경로 계획 시에만 참조 → 주행 중 동적 회피 불가)로 삭제. 현재는 **우선순위 기반 pause/resume**(`wego_traffic` → `wego_behaviour` WAITING) — 위 "상대 로봇 충돌 회피" 섹션 참조.
 
 ---
 
@@ -419,14 +404,12 @@ export ROS_DOMAIN_ID=7 && ros2 launch wego_behaviour behaviour_launch.py  # LIMO
 
 ```
 목적지 도달 (Nav2 action 성공)
-  → TTS: "다른 도움이 필요하시면 말씀해 주세요"  (구현 예정)
-  → STT 짧게 대기 (타임아웃: ~10s)              (구현 예정)
-    ├── 추가 요청 있음 → 새 목적지로 안내
-    └── 없음 / 타임아웃
-          → RETURNING: navigate_to_pose(home_robotN)
-              → 홈 도착
-                → wego_aruco 서비스 호출 → ArUco 마커 감지 → /initialpose 보정
-                → IDLE 복귀
+  → RETURNING: navigate(home_robotN_staging)        # 유리 구간이면 goThroughPoses
+      → 홈 근처(staging) 도착
+        → wego_aruco /aruco_home_dock PBVS 정밀 정차 (staged, DEC-038)
+        → 정차 후 /initialpose 로 home 좌표 직접 발행 → AMCL 리셋 (DEC-041)
+        → IDLE 복귀
 ```
 
-ArUco 보정은 홈에만 적용 (DEC-016). 목적지 도착 시 보정 없음 — Nav2 정밀도로 충분.
+ArUco 보정은 홈에만 적용. 목적지 도착 시 보정 없음 — Nav2 정밀도로 충분.
+※ STT 기반 "추가 용무 확인 대화"는 음성 인식 파이프라인 폐기(DEC-024)로 미적용.

@@ -20,18 +20,23 @@ Claude가 새 세션을 시작할 때 **아래 순서대로** 수행한 뒤 현�
 
 ```
 ulsan_ws/src/
-├── wego/
+├── wego/                  # LIMO 드라이버 + 런치 (teleop / cartographer / navigation_diff)
 │   ├── launch/cartographer_launch.py      # SLAM 진입점
 │   ├── launch/navigation_diff_launch.py   # Nav2 통합 진입점
 │   └── config/limo_lds_2d.lua             # Cartographer 설정
-├── wego_2d_nav/
+├── wego_2d_nav/           # Nav2 스택
 │   ├── launch/localization_launch.py      # AMCL 위치추정
 │   ├── launch/navigation_only_launch.py   # Nav2 스택
-│   ├── maps/map.yaml                      # 저장된 맵 (존재 여부 확인)
+│   ├── behavior_trees/*.xml               # 커스텀 BT (DEC-039, DEC-041)
+│   ├── maps/map.yaml                      # 저장된 맵
 │   └── params/diff_navigation_params.yaml # Nav2 파라미터
-├── wego_msgs/
-│   └── srv/Chalkak.srv                    # 서비스 정의
-└── (wego_behaviour / wego_voice — 미생성 시 신규 작업 대상)
+├── limo_msgs/             # msg/LimoStatus.msg (도메인 브릿지용 로봇 상태)
+├── wego_behaviour/        # Yasmin FSM (states.py, behaviour_node.py)
+├── wego_aruco/            # 홈 도킹 PBVS (aruco_home_dock.py) — 로봇 실행 (DEC-043)
+├── ulsan_person_detect/   # YOLOv8 사람 감지 (person_detect_node.py) — 로봇 실행 (DEC-043)
+├── ulsan_bt_plugins/      # Nav2 BT C++ 플러그인 (PersonClearCondition)
+├── wego_bridge/ wego_traffic/ wego_dispatcher/ wego_voice/
+└── ulsan_gui/             # PyQt 관제 GUI
 ```
 
 ### Step 3 — 현재 상태 요약 & 다음 작업 제안
@@ -39,34 +44,37 @@ ulsan_ws/src/
 
 ---
 
-## 소스코드 현황 (2026-05-14 기준)
+## 소스코드 현황 (2026-06-01 기준)
 
-### 아키텍처 — 기기별 역할 (2026-05-25 확정)
+### 아키텍처 — 기기별 역할 (2026-05-25 확정, 2026-06-01 perception 엣지 이동 → DEC-043)
 
 | 기기 | 도메인 | 실행 내용 |
 |------|--------|-----------|
-| LIMO 1 | 6 | 드라이버(limo_base, ydlidar, orbbec, EKF) |
-| LIMO 2 | 7 | 드라이버(limo_base, ydlidar, orbbec, EKF) |
-| 데스크탑 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_bridge (LIMO 1 담당) |
-| 데스크탑 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_aruco, wego_voice, wego_bridge (LIMO 2 담당) |
+| LIMO 1 | 6 | 드라이버(limo_base, ydlidar, orbbec, EKF) + **wego_aruco, ulsan_person_detect** (perception 엣지, DEC-043) |
+| LIMO 2 | 7 | 드라이버(limo_base, ydlidar, orbbec, EKF) + **wego_aruco, ulsan_person_detect** (perception 엣지, DEC-043) |
+| 데스크탑 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_voice, wego_bridge (LIMO 1 담당) |
+| 데스크탑 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_voice, wego_bridge (LIMO 2 담당) |
 | 데스크탑 | 5 | wego_traffic, wego_dispatcher, ulsan_reservation(FastAPI+MySQL) |
-| 노트북 | 5 | wego_ui (관제 GUI) 또는 ulsan-visitor-ui (방문자 UI, 브라우저) |
+| 노트북 | 5 | **ulsan_gui** (관제 GUI, PyQt) / ulsan-visitor-ui (방문자 UI, 브라우저). wego_ui는 RViz 맵 모니터링(보조) |
 
 ```bash
-# LIMO 1 (domain 6) — 드라이버만
+# LIMO 1 (domain 6) — 드라이버 + perception(엣지, DEC-043)
 export ROS_DOMAIN_ID=6
-ros2 launch wego teleop_launch.py
+ros2 launch wego teleop_launch.py                            # 하드웨어 드라이버
+ros2 launch wego_aruco aruco_corrector_launch.py            # 홈 도킹 PBVS (카메라 로컬 처리)
+ros2 run ulsan_person_detect person_detect_node             # 사람 감지 (런치 불필요)
 
-# LIMO 2 (domain 7) — 드라이버만
+# LIMO 2 (domain 7) — 드라이버 + perception(엣지, DEC-043)
 export ROS_DOMAIN_ID=7
 ros2 launch wego teleop_launch.py
+ros2 launch wego_aruco aruco_corrector_launch.py
+ros2 run ulsan_person_detect person_detect_node
 
 # 데스크탑 — LIMO 1 담당 터미널 (domain 6)
 export ROS_DOMAIN_ID=6
 ros2 launch wego navigation_diff_launch.py use_rviz:=false   # Nav2 전체 (localization + navigation)
 ros2 launch wego_behaviour behaviour_launch.py
 ros2 launch wego_bridge bridge_launch.py                     # bridge_robot.yaml 템플릿 → domain 6↔5 브릿지
-ros2 launch wego_aruco aruco_corrector_launch.py
 ros2 launch wego_voice voice_launch.py
 
 # 데스크탑 — LIMO 2 담당 터미널 (domain 7)
@@ -74,7 +82,6 @@ export ROS_DOMAIN_ID=7
 ros2 launch wego navigation_diff_launch.py use_rviz:=false
 ros2 launch wego_behaviour behaviour_launch.py
 ros2 launch wego_bridge bridge_launch.py                     # bridge_robot.yaml 템플릿 → domain 7↔5 브릿지
-ros2 launch wego_aruco aruco_corrector_launch.py
 ros2 launch wego_voice voice_launch.py
 
 # 데스크탑 — domain 5 터미널
@@ -83,9 +90,10 @@ ros2 launch wego_traffic traffic_launch.py
 ros2 launch wego_dispatcher dispatcher_launch.py
 uvicorn ulsan_reservation.main:app --host 0.0.0.0 --port 8000
 
-# 노트북 (domain 5) — 관제 GUI
+# 노트북 (domain 5) — 관제 GUI (PyQt 대시보드)
 export ROS_DOMAIN_ID=5
-ros2 launch wego_ui gui_launch.py
+ros2 launch ulsan_gui gui_launch.py
+# (보조) RViz 맵 모니터링: ros2 launch wego_ui monitor_launch.py
 
 # 노트북 — 방문자 UI (브라우저에서 접속, ROS 불필요)
 # http://<데스크탑IP>:3000
@@ -96,19 +104,21 @@ ros2 launch wego_ui gui_launch.py
 |--------|-----------|------|
 | `wego` | teleop_launch.py, navigation_diff_launch.py | LIMO 드라이버 + Nav2 통합 런치 |
 | `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | navigation_diff_launch.py에서 include |
-| `wego_msgs` | srv/Chalkak.srv | 기본 서비스 |
+| `limo_msgs` | msg/LimoStatus.msg | 도메인 브릿지용 로봇 상태 메시지. 코드 import: `from limo_msgs.msg import LimoStatus` (wego_msgs/Chalkak.srv는 현재 미존재) |
 | `wego_bridge` | bridge_robot.yaml(템플릿), bridge_launch.py | 서버 노트북 LIMO 도메인 터미널에서 실행. ROS_DOMAIN_ID로 자동 결정. amcl_pose/robot_status(6,7→5) + pause/resume/goal/speak(5→6,7) |
-| `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — IDLE/GUIDING/RETURNING/WAITING |
-| `wego_aruco` | pose_corrector.py | passive corrector. 주행 중 마커 감지 → /initialpose 자동 발행 |
+| `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — IDLE/GUIDING/RETURNING/WAITING/FAILED (DEC-033). 데스크탑 domain 6/7 |
+| `wego_aruco` | aruco_home_dock.py | **LIMO 도메인 6/7(로봇)에서 실행 (DEC-043).** 홈 정밀 도킹 PBVS 서비스 `/aruco_home_dock`(staged 채택 DEC-038) → 정차 후 /initialpose AMCL 리셋. AMCL 리셋 좌표는 `wego_behaviour/config/waypoints.yaml`에서 로드(미선언 의존성 — 로봇도 wego_behaviour 빌드 필요). pose_corrector.py는 비활성(캘리브레이션 도구) |
 | `wego_voice` | voice_node.py, tts | TTS only (DEC-024). /speak_text 구독 → edge-tts + mpg123 |
 | `wego_traffic` | traffic_node.py | 데스크탑 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
 | `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 goal/speak 배정 (DEC-027) |
-| `ulsan_person_detect` | person_detect_node.py | 데스크탑 domain 6/7. YOLOv8n + Depth 0.7m 게이팅 → /person_detected 발행 (DEC-041) |
+| `ulsan_person_detect` | person_detect_node.py | **LIMO 도메인 6/7(로봇)에서 실행 (DEC-043).** YOLOv8n + Depth 0.7m 게이팅 → /person_detected 발행 (DEC-041). `ros2 run` 직접 실행(노드 1개, 런치 불필요) |
 | `ulsan_bt_plugins` | person_clear_condition.cpp | Nav2 BT 커스텀 C++ 플러그인. PersonClearCondition: /person_detected 감지 시 RUNNING → FollowPath halt (DEC-041) |
 | `ulsan_obstacle_layer` | PeerObstacleLayer | **폐기 (DEC-022)**: 우선순위 FSM pause 방식으로 대체 |
 | `ulsan_reservation` | main.py (FastAPI) | 데스크탑. 예약 CRUD + 로봇 임무 배정 API. MySQL + APScheduler |
 | `ulsan-web-ui` | React | 외부 방문자용 예약 웹 UI |
 | `ulsan-visitor-ui` | React (HTTP only) | 노트북(브라우저) 방문자 UI. 예약 조회/현장방문 → /assign → wego_dispatcher 폴링. rosbridge 없음 (DEC-027) |
+| `ulsan_gui` | main_window.py, views/, ros_node.py | **관제 GUI 정본.** PyQt5 멀티로봇 대시보드 — 지도/로봇 카드/긴급 제어/이벤트·미션 로그/시스템 상태(diagnostics 기반 DEC-040). 노트북 domain 5. `ros2 launch ulsan_gui gui_launch.py` (DEC-034~036, 040) |
+| `wego_ui` | monitor_launch.py, rviz/*.rviz | RViz 기반 맵 모니터링(보조). nav2_map_server + lifecycle_manager + rviz2(dual_robot_monitor). 관제 대시보드 정본은 ulsan_gui |
 
 ### 멀티로봇 충돌 회피 (DEC-022, 2026-05-11 확정)
 - **PeerObstacleLayer 폐기**: global costmap 기반 동적 회피의 구조적 한계 확인
@@ -125,7 +135,9 @@ ros2 launch wego_ui gui_launch.py
 | 음성 파이프라인 | `docs/ref/VOICE-PIPELINE.md` | 음성 관련 작업 시 |
 | SLAM & Nav2 | `docs/ref/NAVIGATION.md` | 경로 계획, waypoints 작업 시 |
 | 통신 설정 | `docs/ref/COMMUNICATION.md` | CycloneDDS, Domain Bridge 작업 시 |
-| ArUco 보정 | `docs/ref/ARUCO-LOCALIZER.md` | ArUco 마커 로컬라이제이션 작업 시 |
+| UI 구조 | `docs/ref/UI-ARCHITECTURE.md` | 방문자 UI / 관제 GUI(ulsan_gui) / 예약 백엔드 작업 시 |
+| ArUco 홈 도킹 | `docs/ref/ARUCO-LOCALIZER.md` | 현행 설계는 DEC-038/041 + NODE-TOPOLOGY. 본 문서는 구 localizer(2-Phase VS) 폐기 스텁 |
+| Fleet 충돌 회피 | `docs/ref/FLEET-COLLISION.md` | **폐기 이력**(PeerObstacleLayer). 현행은 NAVIGATION.md pause/resume |
 
 ## 문서 관리 커맨드
 - `/doc-update` — 코드 변경 후 관련 문서 갱신
@@ -134,18 +146,29 @@ ros2 launch wego_ui gui_launch.py
 
 ## 코드 위치
 ```
-/home/wego/Ulsan-X/
-├── docs_hub/       ← 이 문서 저장소 (현재 위치)
-├── ulsan_ws/src/
-│   ├── wego/           # 기존: 드라이버, Cartographer
-│   ├── wego_2d_nav/    # 기존: Nav2
-│   ├── wego_msgs/      # 기존: 공통 메시지
-│   ├── wego_bridge/    # Python: domain bridge (amcl_pose 브릿징)
-│   ├── ulsan_obstacle_layer/  # C++: 상대 로봇 amcl_pose → global costmap 장애물 주입
-│   ├── wego_behaviour/ # 신규: 최상단 Behavior Tree
-│   └── wego_voice/     # 신규: 음성 파이프라인
-└── cyclone_peers.xml   # CycloneDDS 유니캐스트 설정
+~/Ulsan-X/                  # (개발 머신: /home/yechan/Ulsan-X)
+├── docs_hub/               ← 이 문서 저장소 (현재 위치)
+├── ulsan_ws/src/           # ROS2 워크스페이스
+│   ├── wego/               # 드라이버 + 런치 (teleop/cartographer/navigation_diff)
+│   ├── wego_2d_nav/        # Nav2 스택 + 커스텀 BT XML + maps
+│   ├── limo_msgs/          # msg/LimoStatus.msg
+│   ├── wego_bridge/        # domain bridge (amcl_pose/status/diagnostics 브릿징)
+│   ├── wego_behaviour/     # Yasmin FSM (IDLE/GUIDING/RETURNING/WAITING/FAILED)
+│   ├── wego_aruco/         # 홈 도킹 PBVS — 로봇 실행 (DEC-043)
+│   ├── ulsan_person_detect/# YOLOv8 사람 감지 — 로봇 실행 (DEC-043)
+│   ├── ulsan_bt_plugins/   # Nav2 BT C++ 플러그인 (PersonClearCondition)
+│   ├── wego_voice/         # TTS (edge-tts + mpg123, DEC-024)
+│   ├── wego_traffic/       # 멀티로봇 pause/resume (domain 5)
+│   ├── wego_dispatcher/    # FastAPI 폴링 → 임무 배정 (domain 5)
+│   ├── ulsan_gui/          # PyQt 관제 GUI (domain 5)
+│   └── wego_ui/            # RViz 맵 모니터링(보조)
+│   # ※ ulsan_obstacle_layer는 폐기·삭제됨 (DEC-022)
+└── ulsan_ui/               # ROS 외부 (FastAPI/React)
+    ├── ulsan_reservation/  # FastAPI + MySQL 예약 백엔드
+    ├── ulsan-web-ui/       # React 웹 예약 UI
+    └── ulsan-visitor-ui/   # React 방문자 UI (HTTP only)
 ```
+> 통신은 **CycloneDDS 멀티캐스트 auto-discovery + 도메인 분리(5/6/7)**로 진행 (cyclone_peers.xml 폐기, 2026-05-25). 상세는 `docs/ref/COMMUNICATION.md` 참조.
 
 ## 작업 공간 규칙
 - `~/wego_ws` — **절대 수정 금지** (로봇 원본 환경)
@@ -164,5 +187,5 @@ ros2 launch wego_ui gui_launch.py
 ## 개발 방법 추천 원칙 (취업용 프로젝트)
 - 개발 방법을 물어보면 직접 서칭 후 비교하여 **최선의 방법과 이유**를 결론으로 제시
 - 기술/라이브러리/설계 선택 시 항상 **"왜 이걸 선택했는가"** 근거 포함
-- 결정은 DECISION-LOG.md에 Rationale까지 기록 → 면접에서 설명 가능한 수준으로 문서화
+- 결정은 Rationale까지 기록 → 면접에서 설명 가능한 수준으로 문서화 (미결: `DECISION-LOG.md`, 확정·폐기: `docs/archive/decisions-resolved.md`)
 - "동작하면 됨" 수준이 아닌 **기술적 판단 근거가 있는 구현**을 목표로 함

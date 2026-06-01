@@ -28,7 +28,7 @@
 | 1-1 | 유리 구간 경유지 통과 주행 | `done (2026-05-29)` |
 | 1-2 | FSM 각 상태 동작 (IDLE/GUIDING/RETURNING/WAITING/FAILED) | `todo` |
 | 1-3 | BT 수정 사항 동작 (BackUp+ClearCostmap 복구, RemovePassedGoals) | `todo` |
-| 1-4 | IBVS 홈 도킹 | `done (2026-05-26)` |
+| 1-4 | PBVS 홈 도킹 | `done (2026-05-26)` |
 
 ### 2단계 — LIMO 2 단독 주행
 
@@ -37,7 +37,7 @@
 | 2-1 | 유리 구간 경유지 통과 주행 | `todo` |
 | 2-2 | FSM 각 상태 동작 | `todo` |
 | 2-3 | BT 수정 사항 동작 | `todo` |
-| 2-4 | IBVS 홈 도킹 (markers.yaml ID 1 측정 완료 2026-05-28) | `todo` |
+| 2-4 | PBVS 홈 도킹 (markers.yaml ID 1 측정 완료 2026-05-28) | `todo` |
 
 ### 3단계 — 2대 통합
 
@@ -65,7 +65,7 @@
 | 5-4 | 실기기 검증 (사람 0.7m 진입 → 정지 → 이탈 → 재개) | `todo` |
 
 > **5단계(실기기 검증 포함) 완료 = 1차 데모 완성**
-> 구현 3종 완료(2026-06-01). person_detect_node launch 통합은 미적용 — 현재 수동 실행.
+> 구현 3종 완료(2026-06-01). person_detect_node는 노드 1개라 launch 없이 `ros2 run`으로 실행(DEC-043). 실행 위치: **로봇(LIMO 도메인 6/7) — perception 엣지 배치(DEC-043)**. wego_aruco도 로봇에서 실행.
 
 ---
 
@@ -94,6 +94,7 @@
 
 ### 완료 — 환경 기반 구축
 - [x] CycloneDDS 설치 및 `cyclonedds_peers.xml` 유니캐스트 설정 — done (2026-04-16), TS-001 참고
+  - ※ **이후 폐기 (2026-05-25)**: `/map` 로컬 발행 전환으로 unicast 불필요 → cyclone_peers.xml 삭제, **도메인 분리(5/6/7) + 기본 멀티캐스트 auto-discovery**로 단순화. 상세 COMMUNICATION.md
 - [x] DOMAIN_ID 확정 — done (2026-04-16): 노트북=5, LIMO 1=6, LIMO 2=7
 - [x] cyclonedds_peers.xml 실제 IP 입력 — done (2026-04-22): LIMO1=192.168.0.101, LIMO2=192.168.0.102, 노트북1=192.168.0.115, 노트북2=192.168.0.116
 - [x] 멀티로봇 통신 설계 확정 — done (2026-04-21): DEC-011, DEC-012
@@ -152,9 +153,9 @@
   - `/abort` 토픽 구독 → GUIDING: cancelTask()+'aborted'→RETURNING, WAITING: return_to 변경(GUIDING→RETURNING)
   - wego_bridge `/ROBOT_NAME/abort` 브릿지 추가 (domain 5→LIMO)
   - ulsan_gui `publish_abort()` 추가, 🛑 임무중단 버튼 연동
-- [x] **LimoStatus.msg wego_msgs 마이그레이션** — done (2026-05-21)
-  - `limo_msgs` 외부 의존성 제거 → `wego_msgs/msg/LimoStatus.msg` 신규 생성
-  - `bridge_robot.yaml` 타입 변경, `ros_node.py` import 변경
+- [x] **메시지 패키지 정리 — limo_msgs 유지** — 정정 (2026-06-01)
+  - ※ 2026-05-21 `wego_msgs`로 마이그레이션 시도했으나 이후 **되돌림**: `wego_msgs`는 삭제되었고 현재 코드는 `limo_msgs/msg/LimoStatus.msg`를 사용 (`from limo_msgs.msg import LimoStatus`)
+  - `Chalkak.srv`는 현재 미존재. 메시지 정본 = `limo_msgs`
 - [x] **BT navigator XML 경로 오류 수정** — done (2026-05-21)
   - `navigation_only_launch.py` 파라미터 오버라이드로 커스텀 XML 경로 명시
 - [x] **WaypointCRUD 서비스 제거** — done (2026-05-21)
@@ -199,7 +200,7 @@
   - `dispatcher_node`에 `_failed` set 추가, FAILED 상태 진입 시 미션 ID 추적
   - IDLE 복귀 시 `_failed`에 있으면 `PATCH /assign/{id}/fail` 호출
   - FastAPI `fail_mission` 엔드포인트 신규 → `mission_fail` 로그 기록
-- [ ] Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition` (C++)
+- [x] ~~Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition`~~ — **폐기** (음성 트리거·on_duty 게이팅은 예약+dispatcher 아키텍처 DEC-027로 대체). 실제 구현된 커스텀 BT 노드는 `PersonClearCondition` (DEC-041)
 - [ ] **백엔드 확장성 정리 (데모 후)** — FastAPI/wego_dispatcher의 `ROBOTS` 상수화 + `wego_traffic` N-pair 거리 비교 일반화
 
 #### 음성 파이프라인
@@ -284,24 +285,24 @@
   - home_robot1 yaw +90° → -90° 수정 후 재캘리브레이션
   - map_x=-0.0463, map_y=-0.4014, map_z=0.0518, qx=0.0161, qy=0.7426, qz=0.6695, qw=0.0009
 - [x] AMCL 보정 거리 임계값 추가 (2026-05-19) — max_correction_depth=0.40m
-  - 주행 중 원거리 마커 감지 오보정 방지. IBVS 도킹 구간(근거리)에서만 보정
-- [x] **aruco_home_dock 3DOF IBVS 재설계** (2026-05-20)
+  - 주행 중 원거리 마커 감지 오보정 방지. PBVS 도킹 구간(근거리)에서만 보정
+- [x] **aruco_home_dock 3DOF PBVS 재설계** (2026-05-20)
   - 기존 2DOF(depth+lateral) → 3DOF(depth+lateral+yaw) P 제어
   - yaw_error = atan2(R_cm[0][2], -R_cm[2][2]) — 마커 법선 기반 비틀림 추출
   - 수렴 조건: depth_tol=0.03m, lateral_tol=0.01m, yaw_tol=0.05rad
   - 후진 시 angular=0 (FOV 이탈 방지), 마커 미감지 즉시 정지
   - 수렴 완료 즉시 Twist() → sleep(0.1) → _publish_initialpose() (AMCL 리셋)
 - [x] **home_robot1_staging 웨이포인트 추가** (2026-05-20) — x=0.0, y=0.5, yaw=-1.5708
-  - Nav2는 staging까지만 이동. 나머지 0.5m는 IBVS 정밀 주행
+  - Nav2는 staging까지만 이동. 나머지 0.5m는 PBVS 정밀 주행
   - states.py ReturningState: staging_key 있으면 staging, 없으면 home 직접 (fallback)
 - [x] **pose_corrector passive 보정 비활성화** (2026-05-20)
   - aruco_corrector_launch.py에서 aruco_pose_corrector 노드 제거
-  - AMCL 보정을 IBVS 정밀 정차 완료 후 1회로 통합
+  - AMCL 보정을 PBVS 정밀 정차 완료 후 1회로 통합
   - 이유: idle 중 마커 감지 → /initialpose 발행 → Nav2 경로 재계획 → 출발 타임아웃(DEC-031)
   - pose_corrector.py 파일은 캘리브레이션 도구로 보존 (end-to-end 완료 후 삭제 예정)
 - [x] markers.yaml ID 1 map 좌표 측정 — done (2026-05-28)
 - [x] **마커 0 재캘리브레이션** — done (2026-05-26): 마커 이동 후 재측정 (map_y=-0.662 등, std 0.0002). target_dist 0.271→0.432 동기화
-- [x] **IBVS 홈 도킹 제어기 재설계 + 실기기 검증** — done (2026-05-26): staged(단계분리) 채택, lateral ~1cm 정밀 정차. DEC-038 참고
+- [x] **PBVS 홈 도킹 제어기 재설계 + 실기기 검증** — done (2026-05-26): staged(단계분리) 채택, lateral ~1cm 정밀 정차. DEC-038 참고
   - 비홀로노믹 과소구동 진단 → ρ/α/θ_g 통합 기하 + 극좌표(A)/단계분리(B) A/B 비교 → staged 채택
   - 목표 근처 α(atan2) 폭발 → steer_freeze(0.15m) 구간 조향 정지로 마지막 급조향 제거
   - 단일 평면 마커 법선 관측성 한계 확인 → 더 높은 정밀도 필요 시 마커 2개 자세 삼각측량 (향후)
@@ -336,19 +337,17 @@
 
 #### 전체 통합 테스트
 - [ ] LIMO 2대 + 노트북 전체 파이프라인 실기기 검증
-  - 웨이크워드 → STT → NLU → FSM → navigate_to_pose → ArUco 보정 → TTS
-  - on_duty 전환 (LIMO 1 BUSY 시 LIMO 2 응대)
+  - 방문자 UI(예약 조회) → FastAPI → dispatcher 배정 → FSM → navigate → TTS 안내 → ArUco 홈 도킹
+  - 협동 임무 배정 (dispatcher: LIMO1 우선, 둘 다 BUSY면 503) + 충돌 회피(wego_traffic pause/resume)
 
 ---
 
 ### Phase 4 — 완성도
-- [ ] 초음파 센서 → local costmap range_sensor_layer 연동 (유리문 닫힘 감지 + 음성 대기) — 유리문 닫힘 시 경로 생성 불가 → TTS "유리문을 열어주세요" + WAIT 상태
+- [ ] 초음파 센서 → local costmap range_sensor_layer 연동 (유리문 닫힘 감지) — 유리문 닫힘 시 경로 생성 불가 → TTS "유리문을 열어주세요" + WAIT 상태
 - [ ] YOLO 사람 감지 → 방향 회전 + 안내 멘트
-- [ ] NLU 백업: Gemma-2B (Ollama) 로컬 폴백
-- [ ] 목적지 도달 후 "추가 용무 확인" 대화 흐름
-- [ ] GPU 메모리 프로파일링 (YOLO + faster-whisper 동시 가동)
 - [ ] 다국어 안내 검토
 - [ ] **유리 구간 주행 버벅임 개선** — Keepout+DenoiseLayer 적용 후에도 간헐적 버벅임 잔존. 추가 해결책 탐색 (local costmap phantom 근본 억제 또는 경로 설계 개선)
+> ※ 음성 STT/NLU 관련 Phase 4 항목(NLU 백업 Gemma-2B, "추가 용무 확인" 대화, YOLO+faster-whisper GPU 프로파일링)은 **음성 인식 파이프라인 폐기(DEC-024)로 전량 제거**.
 - [ ] **2대 충돌 회피 완성도 개선** — 운용 중 간헐적 충돌 발생. 유추 원인: ① 네트워크 지연으로 상대 위치 업데이트 늦음 ② 양 로봇이 대칭으로 같은 방향 회피 → 교착. 정확한 원인 실기기 진단 후 해결
 
 ---
@@ -402,8 +401,8 @@ sudo apt install ros-humble-nav2-map-server ros-humble-nav2-lifecycle-manager ro
 
 | 이슈 | 심각도 | 상태 |
 |------|--------|------|
-| **홈 출발 시 Failed to make progress** | High | **해결 (2026-05-21)** — PoseProgressChecker 교체. 선형+각도 변화 모두 진행으로 인정. DEC-031 참고 |
-| Orin Nano GPU 메모리: YOLO + faster-whisper 동시 가동 시 OOM 가능성 | High | P2에서 프로파일링 예정 |
-| openWakeWord "헤이 리모" 커스텀 모델 학습 필요 여부 | Medium | 미결정 |
-| 두 로봇이 동시에 호출될 때 충돌 시나리오 | Medium | DEC-017: wego_voice에서 on_duty 게이팅으로 해결 예정 |
-| Gemini API 응답 지연이 대화 흐름에 미치는 영향 | Low | 모니터링 |
+| **홈 출발 시 Failed to make progress** | High | **해결 (2026-05-21)** — Spin 선실행 + SimpleProgressChecker 복원. DEC-031/037 참고 |
+| Orin Nano GPU 메모리 (로봇 로컬 YOLO 추론) | Medium | faster-whisper 폐기(DEC-024)로 OOM 리스크 해소. 드라이버+YOLOv8n 동시 가동 프로파일링은 DEC-043 후속 |
+| 두 로봇이 동시에 호출될 때 배정 | — | **해결**: wego_dispatcher LIMO1 우선, 둘 다 BUSY면 503 (DEC-027). on_duty 방식 폐기 |
+| 2대 충돌 회피 완성도 | Medium | 운용 중 간헐적 충돌 — Phase 4 "2대 충돌 회피 완성도 개선" 참고 |
+> ※ openWakeWord 커스텀 모델 / Gemini API 지연 리스크는 음성 인식 파이프라인 폐기(DEC-024)로 무효.

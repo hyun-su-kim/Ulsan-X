@@ -1,5 +1,11 @@
 # 멀티로봇 충돌 회피 구현 설계
 
+> ⚠️ **이 문서의 결론(PeerObstacleLayer — 상대 로봇을 costmap 가상 장애물로 주입)은 전량 폐기되었습니다 (DEC-022).**
+> global costmap은 경로 계획 시에만 참조되어 주행 중 동적 회피가 불가한 구조적 한계가 확인됨.
+> **현재 방식: 우선순위 기반 pause/resume** — `wego_traffic`(domain 5)이 두 로봇 거리 감지 → `/pause`·`/resume` → `wego_behaviour` WAITING. 상세: [NAVIGATION.md](NAVIGATION.md) "상대 로봇 충돌 회피" + DECISION-LOG DEC-022.
+>
+> 아래 내용은 **설계 탐색 이력**(중앙 FMS vs 분산 구독, O(N) vs O(N²), SPOF 분석 등)으로만 보존 — 현재 구현 아님.
+
 ## 1. 검토했던 방식과 채택하지 않은 이유
 
 ### 1-1. 중앙집중식 FMS (Fleet Management System) Primary 방식

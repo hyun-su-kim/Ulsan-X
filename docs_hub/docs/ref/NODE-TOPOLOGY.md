@@ -30,49 +30,53 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 ### wego_bridge 패키지 (구현 완료)
 | 노드 | 역할 |
 |------|------|
-| `domain_bridge` | `/amcl_pose` → 노트북·상대 로봇 domain으로 브릿징 |
+| `domain_bridge` | 로봇 domain(6/7) ↔ 서버 domain 5 브릿징 (단일 `bridge_robot.yaml` 템플릿, DEC-028). 로봇↔로봇 peer 브릿지 없음 |
 
-### ulsan_obstacle_layer 패키지 (구현 완료)
+### wego_traffic 패키지 (구현 완료, domain 5)
 | 노드 | 역할 |
 |------|------|
-| `PeerObstacleLayer` | 상대 로봇 `/amcl_pose` → global costmap LETHAL_OBSTACLE 주입 (Nav2 플러그인) |
+| `wego_traffic_node` | 두 로봇 `/amcl_pose` 거리 감지 → 우선순위 기반 `/pause`·`/resume` 발행 (DEC-022) |
 
-### wego_behaviour 패키지 (뼈대 완료)
+### wego_dispatcher 패키지 (구현 완료, domain 5)
 | 노드 | 역할 |
 |------|------|
-| `wego_behaviour` | Yasmin FSM 실행 (IDLE / GUIDING / RETURNING / WAITING), 임무 상태 관리 |
+| `dispatcher_node` | FastAPI `missions` PENDING 0.5s 폴링 → IDLE 로봇에 `/goal_destination`·`/speak_text` 발행, 귀환 시 complete/fail 처리 (DEC-027/036) |
 
-### wego_aruco 패키지
+### ulsan_gui 패키지 (구현 완료, domain 5)
 | 노드 | 역할 |
 |------|------|
-| `aruco_pose_corrector` | 주행 중 마커 감지 → `/initialpose` 발행 (passive AMCL 보정) |
-| `aruco_home_dock` | `/aruco_home_dock` 서비스 — IBVS로 홈 정밀 정차 (DEC-029) |
+| `ulsan_gui` | PyQt5 관제 대시보드 — 지도/로봇 상태 카드/긴급 제어/이벤트·미션 로그/시스템 상태(diagnostics, DEC-040) |
+
+> **폐기**: `ulsan_obstacle_layer`(PeerObstacleLayer, 상대 로봇 가상 장애물 costmap 주입) — 동적 충돌 회피 구조적 한계로 삭제, 우선순위 pause/resume로 대체 (DEC-022)
+
+### wego_behaviour 패키지 (구현 완료, 데스크탑 domain 6/7)
+| 노드 | 역할 |
+|------|------|
+| `behaviour_node` | Yasmin FSM 실행 (IDLE / GUIDING / RETURNING / WAITING / FAILED), 임무 상태 관리. `/aruco_home_dock` 서비스 client |
+
+### wego_aruco 패키지 (LIMO 도메인 6/7 = 로봇에서 실행, DEC-043)
+| 노드 | 역할 |
+|------|------|
+| `aruco_pose_corrector` | 주행 중 마커 감지 → `/initialpose` 발행 (passive AMCL 보정). **현재 비활성 — 캘리브레이션 도구로만 보존** |
+| `aruco_home_dock` | `/aruco_home_dock` 서비스 — PBVS로 홈 정밀 정차 (staged 채택 DEC-038). 카메라→cmd_vel 닫힌 루프라 로봇 로컬 실행 (DEC-043) |
 
 ### ulsan_person_detect 패키지 (구현 완료, 2026-06-01)
 | 노드 | 역할 |
 |------|------|
-| `person_detect_node` | YOLOv8n(COCO 사전학습) RGB 추론 + Depth 거리 게이팅. `/camera/color/image_raw` + `/camera/depth/image_raw` 구독 → 0.7m 이내 사람 감지 시 `/person_detected=true` 발행 (10Hz). 데스크탑 domain 6/7 |
+| `person_detect_node` | YOLOv8n(COCO 사전학습) RGB 추론 + Depth 거리 게이팅. `/camera/color/image_raw` + `/camera/depth/image_raw` 구독 → 0.7m 이내 사람 감지 시 `/person_detected=true` 발행 (10Hz). **LIMO 도메인 6/7 = 로봇에서 실행 (DEC-043), `ros2 run` 직접 실행** |
 
 ### ulsan_bt_plugins 패키지 (구현 완료, 2026-06-01)
 | 노드 | 역할 |
 |------|------|
 | `PersonClearCondition` | Nav2 BT 커스텀 C++ 조건 노드(plugin). `/person_detected` 구독 → 사람 없음=SUCCESS, 사람 감지=RUNNING. ReactiveSequence가 FollowPath를 halt → 정지. DEC-041 |
 
-### wego_coordinator 패키지 (미구현)
+### wego_voice 패키지 (구현 완료, TTS 전용)
 | 노드 | 역할 |
 |------|------|
-| `wego_coordinator` | 각 로봇 status 구독 → on_duty 결정·발행 (노트북 전용) |
+| `voice_node` | `/speak_text` 구독 → edge-tts + mpg123 음성 출력 (DEC-024). 데스크탑 domain 6/7 |
 
-### wego_voice 패키지 (신규)
-| 노드 | 역할 |
-|------|------|
-| `/vad_node` | Silero VAD: 마이크 → 사람 목소리 필터 |
-| `/wakeword_node` | openWakeWord: "헤이 리모" 감지 |
-| `/stt_node` | faster-whisper (CUDA): 음성 → 텍스트 |
-| `/nlu_node` | If-else / Gemini API / Gemma-2B 의도 해석 |
-| `/tts_node` | Piper: 텍스트 → 음성 출력 |
-
-> 사람 감지(YOLOv8)는 별도 `ulsan_person_detect` 패키지로 분리 구현 — 위 섹션 참고.
+> **폐기**: `wego_coordinator`(on_duty 결정) — 예약+`wego_dispatcher` 아키텍처로 대체 (DEC-027). 음성 인식 파이프라인(VAD/wakeword/STT/NLU `/vad_node`·`/wakeword_node`·`/stt_node`·`/nlu_node`)도 예약 시스템 도입으로 전부 폐기 (DEC-024) — 구현되지 않음.
+> 사람 감지(YOLOv8)는 별도 `ulsan_person_detect` 패키지 — 위 섹션 참고.
 
 ---
 
@@ -82,31 +86,30 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 
 | 토픽 | 타입 | 발행 | 구독 |
 |------|------|------|------|
-| `/amcl_pose` | `geometry_msgs/PoseWithCovarianceStamped` | amcl | PeerObstacleLayer, wego_bridge |
-| `/cmd_vel` | `geometry_msgs/Twist` | nav2 controller | robot_base |
+| `/amcl_pose` | `geometry_msgs/PoseWithCovarianceStamped` | amcl | wego_bridge(→5) |
+| `/cmd_vel` | `geometry_msgs/Twist` | nav2 controller / aruco_home_dock | robot_base |
 | `/scan` | `sensor_msgs/LaserScan` | LiDAR 드라이버 | cartographer, nav2 |
-| `/on_duty` | `std_msgs/Bool` | wego_coordinator (노트북) | wego_behaviour |
-| `/robot_status` | `std_msgs/String` | wego_behaviour | wego_coordinator (bridge 경유) |
-| `/goal_destination` | `std_msgs/String` | wego_voice (NLU 결과) | wego_behaviour |
-| `/voice/vad_active` | `std_msgs/Bool` | vad_node | wakeword_node |
-| `/voice/wakeword_detected` | `std_msgs/Bool` | wakeword_node | wego_behaviour |
-| `/voice/stt_result` | `std_msgs/String` | stt_node | nlu_node |
-| `/voice/nlu_intent` | `std_msgs/String` | nlu_node | wego_behaviour |
-| `/voice/tts_request` | `std_msgs/String` | wego_behaviour | tts_node |
+| `/goal_destination` | `std_msgs/String` | wego_dispatcher (5→) | wego_behaviour |
+| `/robot_status` | `std_msgs/String` | wego_behaviour | wego_bridge(→5) |
+| `/speak_text` | `std_msgs/String` | wego_dispatcher / wego_behaviour (5→) | wego_voice voice_node |
+| `/pause`·`/resume` | `std_msgs/Bool` | wego_traffic (5→) | wego_behaviour |
+| `/abort` | `std_msgs/Bool` | ulsan_gui (5→) | wego_behaviour |
 | `/person_detected` | `std_msgs/Bool` | person_detect_node | PersonClearCondition (Nav2 BT) |
+| `/aruco_home_dock` | `std_srvs/Trigger` (서비스) | wego_behaviour (client) | aruco_home_dock (server) |
+| `/initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | aruco_home_dock | amcl |
 
 ### 로봇 간 (Domain Bridge 경유)
 
 | 토픽 | 방향 | 용도 |
 |------|------|------|
-| `/limo_1/amcl_pose` | LIMO1(6) → LIMO2(7) | LIMO2 PeerObstacleLayer 입력 |
-| `/limo_2/amcl_pose` | LIMO2(7) → LIMO1(6) | LIMO1 PeerObstacleLayer 입력 |
-| `/limo_1/amcl_pose` | LIMO1(6) → 노트북(5) | 관제 UI 위치 마커 |
-| `/limo_2/amcl_pose` | LIMO2(7) → 노트북(5) | 관제 UI 위치 마커 |
-| `/limo_1/robot_status` | LIMO1(6) → 노트북(5) | wego_coordinator on_duty 결정 |
-| `/limo_2/robot_status` | LIMO2(7) → 노트북(5) | wego_coordinator on_duty 결정 |
-| `/limo_1/on_duty` | 노트북(5) → LIMO1(6) | wego_behaviour FSM 활성화 여부 |
-| `/limo_2/on_duty` | 노트북(5) → LIMO2(7) | wego_behaviour FSM 활성화 여부 |
+| `/limo1/amcl_pose`, `/limo2/amcl_pose` | 로봇 → 서버(5) | wego_traffic 거리감지 + ulsan_gui 위치 마커 |
+| `/limo{1,2}/robot_status` | 로봇 → 서버(5) | wego_traffic, wego_dispatcher |
+| `/limo{1,2}/diagnostics`, `/limo_status` | 로봇 → 서버(5) | ulsan_gui 연결 판단(DEC-040)·배터리 |
+| `/limo{1,2}/goal_destination`, `/speak_text` | 서버(5) → 로봇 | wego_dispatcher 임무 배정 |
+| `/limo{1,2}/pause`, `/resume` | 서버(5) → 로봇 | wego_traffic 충돌 회피 |
+| `/limo{1,2}/abort`, `/cmd_vel` | 서버(5) → 로봇 | ulsan_gui 임무중단/텔레옵 |
+
+> 로봇↔로봇 직접 브릿지는 없음 (PeerObstacleLayer 폐기). wego_traffic이 domain 5에서 두 pose를 받아 거리 계산.
 
 > 브릿지 설정 상세: [COMMUNICATION.md](COMMUNICATION.md)
 
