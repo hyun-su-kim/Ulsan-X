@@ -1,16 +1,16 @@
 
 <!--
-  navigate_to_pose 기반. 강의실 등 유리 구간 미통과 목적지용.
+  navigate_to_pose 기반. 강의실 등 유리 구간 미통과 목적지용(복도 경로).
   Nav2 기본값 대비 변경:
     - GoalUpdated 제거 (우리 프로젝트에서 goal은 출발 시 1회만 설정, 항상 FAILURE)
-    - RoundRobin 복구 동작 변경: Spin/Wait/ClearCostmap → BackUp+ClearCostmap+Wait
-      이유: 유리 난반사 phantom 장애물은 가까울수록 증가.
-            BackUp으로 유리에서 멀어진 뒤 ClearCostmap하면 phantom 실질적으로 감소.
-            Spin은 새로운 각도 난반사를 유발해 오히려 phantom 증가 → 제거.
     - FollowPath를 ReactiveSequence(PersonClearCondition + FollowPath)로 래핑:
       사람 감지(/person_detected=true) 시 PersonClearCondition이 RUNNING 반환 →
       ReactiveSequence가 FollowPath를 halt() → cmd_vel 정지. 사람이 벗어나면 재개.
       경로 재계획(ComputePathToPose)은 PipelineSequence에 의해 정지 중에도 계속 수행.
+  복구(RecoveryFallback)는 표준 Nav2(Spin 포함) 유지.
+    이 BT는 유리를 지나지 않는 복도/강의실 경로 전용이므로 유리 phantom이 없음 →
+    진짜 stuck 시 Spin 복구가 유효. (유리 phantom 대응 BackUp 복구는
+    navigate_through_poses BT에만 적용 — 유리 경로 전용)
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -32,12 +32,13 @@
       </PipelineSequence>
       <ReactiveFallback name="RecoveryFallback">
         <RoundRobin name="RecoveryActions">
-          <Sequence name="BackUpAndClear">
-            <BackUp backup_dist="0.10" backup_speed="0.05"/>
+          <Sequence name="ClearingActions">
             <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
             <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
           </Sequence>
+          <Spin spin_dist="1.57"/>
           <Wait wait_duration="5"/>
+          <BackUp backup_dist="0.30" backup_speed="0.05"/>
         </RoundRobin>
       </ReactiveFallback>
     </RecoveryNode>
