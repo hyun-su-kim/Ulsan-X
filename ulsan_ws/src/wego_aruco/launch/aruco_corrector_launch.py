@@ -20,7 +20,7 @@ def generate_launch_description():
             parameters=[{
                 'markers_file': markers_file,
                 'home_key':     home_key,
-                'target_dist':  0.505,
+                'target_dist':  0.519,
                 'rho_tol':      0.01,
                 'yaw_tol':      0.02,
                 'max_linear':   0.08,
