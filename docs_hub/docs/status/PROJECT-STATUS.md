@@ -163,6 +163,13 @@
 - [x] **GUIDING 실패 처리 — FAILED 상태 추가** — done (2026-05-21). DEC-033 참고
   - GUIDING failed → FAILED(TTS "관리자를 기다려 주세요" + 10초 대기) → RETURNING
   - 관제 UI FAILED 빨간 색상 추가. 실기기 검증 필요.
+  - ※ **2026-06-05 전면 재설계 (DEC-044)**: 자동 복귀 폐지 → 아래 항목으로 대체
+- [x] **FSM 실패 처리 통합 — 모든 주행/도킹 실패 → FAILED + 관리자 물리 복구** — done (2026-06-05). DEC-044 참고
+  - GUIDING/RETURNING 주행 실패 + DOCKING(PBVS) 실패 3종을 모두 FAILED로 통합. `failed_from`별 TTS 발화
+  - 자동 재주행 일절 없음(주행 능력 손상으로 자가복구 모순 + FAILED↔RETURNING 무한루프 차단)
+  - 관리자가 로봇을 home에 물리 배치 → `/recover` 수신 → behaviour_node가 home 좌표 `/initialpose` 발행(AMCL 리셋) → IDLE
+  - `RETURNING failed: IDLE→FAILED` 수정, `call_home_dock()` 반환값 표면화(기존 무시). wego_bridge `/recover` 브릿지 추가
+  - **관제 GUI [복구완료] 버튼은 미구현** — FSM 관제 GUI 작업 시 진행(`/limo{N}/recover` Empty 발행). 실기기 검증 남음
 - [x] **PoseProgressChecker 교체** — done (2026-05-21), **Spin 방식으로 대체 (2026-05-25)**. DEC-031·DEC-037 참고
   - SimpleProgressChecker → PoseProgressChecker: 선형+각도 변화 모두 진행으로 인정
   - required_movement_angle: 0.5rad(~28°) 추가 — 홈 출발 180° 회전 시 recovery 루프 해결

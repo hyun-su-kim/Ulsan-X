@@ -58,22 +58,44 @@ class IdleState(State):
 
 
 class FailedState(State):
-    """임무 실패 상태: 실패 로깅 후 홈 복귀."""
+    """임무 실패 상태: 실패 출처별 TTS 발화 후 관리자 복구(/recover) 대기.
+
+    Nav2 주행 실패(GUIDING/RETURNING)·PBVS 도킹 실패(DOCKING)는 모두 '주행 능력이
+    깨진' 상태이므로 자동 재주행을 하지 않는다(고장난 기능으로 자가복구 시도하는
+    모순 + 무한루프 방지). 관리자가 로봇을 물리적으로 home에 가져다 놓고 관제 UI에서
+    복구 신호(/recover)를 보내면, home 좌표로 AMCL 리셋 후 IDLE로 복귀한다.
+    """
+
+    _FAIL_TTS = {
+        'GUIDING':   '안내 주행 중 문제가 발생했습니다. 관리자를 기다립니다.',
+        'RETURNING': '홈으로 복귀하는 중 문제가 발생했습니다. 관리자를 기다립니다.',
+        'DOCKING':   '홈 정밀 정차에 실패했습니다. 관리자를 기다립니다.',
+    }
 
     def __init__(self, node):
-        super().__init__(outcomes=['return_home'])
+        super().__init__(outcomes=['recovered'])
         self._node = node
 
     def execute(self, blackboard):
         self._node.publish_status('FAILED')
-        self._node.get_logger().warn('임무 실패 — 10초 대기 후 홈 복귀')
-        self._node.speak_text(
-            '오류가 발생하여 안내에 실패했습니다. 현재 위치에서 관리자를 기다려 주세요.'
-        )
-        for _ in range(10):
-            time.sleep(1.0)
-            self._node.publish_status('FAILED')
-        return 'return_home'
+        failed_from = blackboard.get('failed_from', 'GUIDING')
+        self._node.get_logger().error(f'임무 실패 ({failed_from}) — 관리자 복구 대기')
+        self._node.speak_text(self._FAIL_TTS.get(failed_from, self._FAIL_TTS['GUIDING']))
+
+        # 관리자가 로봇을 home에 가져다 놓고 관제 UI에서 [복구완료] → /recover 발행 대기
+        self._node._recover_flag = False
+        _tick = 0
+        while not self._node._recover_flag:
+            time.sleep(0.1)
+            _tick += 1
+            if _tick % 10 == 0:
+                self._node.publish_status('FAILED')
+        self._node._recover_flag = False
+
+        # 로봇은 이제 물리적으로 home에 있음 → home 좌표로 AMCL 리셋
+        self._node.publish_initial_pose_home()
+        self._node.get_logger().info('복구 완료 — IDLE 복귀')
+        return 'recovered'
 
 
 class GuidingState(State):
@@ -173,6 +195,7 @@ class GuidingState(State):
             return 'succeeded'
 
         self._node.get_logger().warn(f'목적지 이동 실패: {result}')
+        blackboard['failed_from'] = 'GUIDING'
         return 'failed'
 
 
@@ -252,8 +275,14 @@ class ReturningState(State):
 
         if self._navigator.getResult() == TaskResult.SUCCEEDED:
             self._node.get_logger().info(f'{nav_label} 도착 — PBVS 도킹 시작')
-            self._node.call_home_dock()
-            return 'succeeded'
+            if self._node.call_home_dock():
+                return 'succeeded'
+            # Nav2는 staging 도착(위치추정 정상)했으나 PBVS 정밀 도킹 실패 →
+            # AMCL 리셋 누락 상태. 자동 진행하지 않고 FAILED로 표면화.
+            self._node.get_logger().error('PBVS 홈 도킹 실패')
+            blackboard['failed_from'] = 'DOCKING'
+            return 'failed'
 
         self._node.get_logger().warn('홈 이동 실패')
+        blackboard['failed_from'] = 'RETURNING'
         return 'failed'

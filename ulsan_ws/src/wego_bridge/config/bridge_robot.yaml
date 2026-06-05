@@ -60,6 +60,12 @@ topics:
     to_domain: ROBOT_DOMAIN
     remap: /abort                     # ulsan_gui → wego_behaviour
 
+  /ROBOT_NAME/recover:
+    type: std_msgs/msg/Empty
+    from_domain: 5
+    to_domain: ROBOT_DOMAIN
+    remap: /recover                   # ulsan_gui [복구완료] → wego_behaviour FAILED 탈출
+
   /ROBOT_NAME/speak_text:
     type: std_msgs/msg/String
     from_domain: 5

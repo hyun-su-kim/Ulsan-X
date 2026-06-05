@@ -28,6 +28,30 @@
 
 > 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-043(최신)부터 시간 역순.
 
+### DEC-044: FSM 실패 처리 — 모든 주행/도킹 실패를 FAILED로 통합 + 관리자 물리 복구 (done 2026-06-05)
+- **Context**: 기존 FSM의 실패 처리가 불완전·위험. ① `RETURNING failed → IDLE`이라 복귀 주행 실패 시 로봇이 맵 한복판에 멈췄는데 상태는 IDLE → dispatcher가 새 임무 배정 + AMCL 리셋 누락 채로 다음 주행. ② `ReturningState`의 PBVS 도킹(`call_home_dock()`) 반환값을 무시 → 도킹 실패가 silent. ③ `GUIDING failed → FAILED → 10초 후 자동 RETURNING` 자가복구를 두었으나, "Nav2 실패 = 주행 능력이 깨짐"인데 그 깨진 능력으로 복귀를 시도하는 모순 + RETURNING도 실패하면 무한루프 위험.
+- **실패 지점 3분류 (코드 확인)**:
+  - **GUIDING**(목적지 주행 실패) / **RETURNING**(홈·staging 주행 실패): 위치추정 의심, 로봇은 경로 한복판 → 심각도 높음
+  - **DOCKING**(PBVS 마커 도킹 실패): Nav2 본주행은 성공해 staging 도착(위치추정 정상) + 홈 코앞 → 심각도 낮지만, 그래도 정밀 파킹·AMCL 리셋이 누락되므로 표면화 필요
+- **Options**:
+  - A) 출처별 차등 복구(GUIDING은 1회 자동 복귀 시도, DOCKING은 1회 재시도 후 IDLE 등)
+  - B) **모든 실패 → FAILED 통합. 자동 재주행 일절 없음. 관리자가 물리적으로 로봇을 home에 배치 후 UI [복구완료] → home 좌표 `/initialpose`(AMCL 리셋) → IDLE**
+- **Decision**: **B 채택.**
+- **Rationale**:
+  - **모순 제거**: Nav2 실패는 "주행 능력이 깨졌다"는 신호. 깨진 그 능력(주행)으로 자가복구를 시도하는 건 논리적 모순 — 복귀도 실패할 공산이 큼. 자동 재주행을 전면 배제해 이 모순과 무한루프(FAILED↔RETURNING)를 원천 차단.
+  - **위치추정 신뢰 회복**: 실패는 대개 localization 상실을 동반. 사람이 로봇을 알려진 home 위치에 물리적으로 놓고 그 좌표로 `/initialpose`를 발행하면, 다음 임무를 **깨끗한 AMCL 상태**에서 시작. (PBVS 도킹의 AMCL 리셋과 동일 효과를 사람이 보장.)
+  - **단순성·안전성**: 분기 정책(A)은 케이스마다 동작이 갈려 검증 부담↑. 학원 데모 규모에선 "실패=정지+호출"이 가장 예측 가능하고 안전.
+  - **AMCL 리셋 주체**: 복구는 도킹을 거치지 않으므로 `aruco_home_dock`(로봇)이 아니라 **`behaviour_node`(데스크탑, AMCL과 동일 도메인)가 직접 home `/initialpose` 발행**. 도킹 성공 경로의 리셋 로직을 그대로 미러링(covariance 0.05).
+- **구현**:
+  - `states.py`: `FailedState` 재작성 — `failed_from`(GUIDING/RETURNING/DOCKING)별 TTS 3종 발화 → `/recover` 대기 루프(FAILED 1초 재발행) → `publish_initial_pose_home()` → `recovered`. `GuidingState`/`ReturningState` 실패 시 `blackboard['failed_from']` 기록. `ReturningState`가 `call_home_dock()` 반환값을 받아 False면 `failed_from='DOCKING'`로 표면화.
+  - `behaviour_node.py`: `/recover`(Empty) 구독 + `_recover_flag`, `/initialpose` 퍼블리셔 + `publish_initial_pose_home()`(home_key 좌표 사용), SM 전이 `RETURNING failed: IDLE→FAILED` / `FAILED: recovered→IDLE`.
+  - `wego_bridge/bridge_robot.yaml`: `/ROBOT_NAME/recover`(domain 5→LIMO) 브릿지 추가(abort 패턴 동일).
+  - **관제 GUI [복구완료] 버튼은 미구현(FSM GUI 작업 시 진행)** — `/limo{N}/recover` Empty 발행만 하면 됨.
+- **면접 어필**: "FSM 실패 처리를 설계할 때 'Nav2 실패=주행 능력 손상'으로 해석. 손상된 능력으로 자가복구를 시도하는 모순과 FAILED↔RETURNING 무한루프를 진단해, 자동 재주행을 배제하고 human-in-the-loop 물리 복구로 단순화. 복구 시 알려진 home 좌표로 AMCL을 강제 리셋해 위치추정 신뢰를 회복하는 게 핵심 — 실패의 근본 원인(localization 상실)을 정조준."
+- **Date**: 2026-06-05
+
+---
+
 ### DEC-043: perception 노드(wego_aruco, ulsan_person_detect) 로봇 엣지 배치 (done 2026-06-01)
 - **Context**: 기존엔 `wego_aruco`와 `ulsan_person_detect`를 데스크탑 domain 6/7에서 실행. 두 노드 모두 로봇(Orin Nano)의 Orbbec 카메라(`/camera/color/image_raw` 등)를 구독하므로, 카메라 원본 이미지가 WiFi를 건너 데스크탑까지 전송되는 구조였음. 이를 로봇에서 직접 실행하는 게 맞는지 검토.
 - **데이터 흐름 분석 (코드 확인)**:

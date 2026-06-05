@@ -1,3 +1,4 @@
+import math
 import os
 import time
 import threading
@@ -31,23 +32,27 @@ class BehaviourNode(Node):
 
         self.pending_destination: str | None = None
         self.latest_amcl_pose: PoseWithCovarianceStamped | None = None
-        self._pause_flag  = False
-        self._resume_flag = False
-        self._abort_flag  = False
-        self._fsm_status  = 'UNKNOWN'
+        self._pause_flag   = False
+        self._resume_flag  = False
+        self._abort_flag   = False
+        self._recover_flag = False
+        self._fsm_status   = 'UNKNOWN'
 
         # /diagnostics 발행 — GUI 시스템 상태 패널에서 연결 확인용
         self._diag_updater = Updater(self)
         self._diag_updater.setHardwareID('wego_behaviour')
         self._diag_updater.add('wego_behaviour', self._diag_check)
 
-        self._status_pub = self.create_publisher(String, '/robot_status', 10)
-        self._speak_pub  = self.create_publisher(String, '/speak_text', 10)
+        self._status_pub      = self.create_publisher(String, '/robot_status', 10)
+        self._speak_pub       = self.create_publisher(String, '/speak_text', 10)
+        self._initialpose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, '/initialpose', 1)
 
         self.create_subscription(String, '/goal_destination', self._dest_cb, 10)
-        self.create_subscription(Empty,  '/pause',  self._pause_cb,  10)
-        self.create_subscription(Empty,  '/resume', self._resume_cb, 10)
-        self.create_subscription(Empty,  '/abort',  self._abort_cb,  10)
+        self.create_subscription(Empty,  '/pause',   self._pause_cb,   10)
+        self.create_subscription(Empty,  '/resume',  self._resume_cb,  10)
+        self.create_subscription(Empty,  '/abort',   self._abort_cb,   10)
+        self.create_subscription(Empty,  '/recover', self._recover_cb, 10)
         self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 1)
 
@@ -69,6 +74,10 @@ class BehaviourNode(Node):
     def _abort_cb(self, _: Empty) -> None:
         self._abort_flag = True
         self.get_logger().info('abort 수신')
+
+    def _recover_cb(self, _: Empty) -> None:
+        self._recover_flag = True
+        self.get_logger().info('recover 수신 (관리자 복구완료)')
 
     def _amcl_cb(self, msg: PoseWithCovarianceStamped) -> None:
         self.latest_amcl_pose = msg
@@ -104,6 +113,31 @@ class BehaviourNode(Node):
         msg = String()
         msg.data = text
         self._speak_pub.publish(msg)
+
+    def publish_initial_pose_home(self) -> None:
+        """관리자 복구 시 home 좌표를 /initialpose로 발행해 AMCL을 리셋.
+
+        FAILED는 주행/도킹이 깨진 상태라 PBVS 도킹(aruco_home_dock)의 AMCL 리셋을
+        거치지 못한다. 관리자가 로봇을 물리적으로 home에 가져다 놓았다는 전제로,
+        behaviour_node(AMCL과 동일 도메인)가 직접 home 좌표를 발행한다.
+        """
+        wp = self.waypoints[self.home_key]
+        yaw = float(wp['yaw'])
+        msg = PoseWithCovarianceStamped()
+        msg.header.stamp    = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        msg.pose.pose.position.x    = float(wp['x'])
+        msg.pose.pose.position.y    = float(wp['y'])
+        msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
+        msg.pose.covariance[0]  = 0.05
+        msg.pose.covariance[7]  = 0.05
+        msg.pose.covariance[35] = 0.05
+        self._initialpose_pub.publish(msg)
+        self.get_logger().info(
+            f'[복구 AMCL 리셋] {self.home_key} x={wp["x"]} y={wp["y"]} '
+            f'yaw={math.degrees(yaw):.1f}°'
+        )
 
     def call_home_dock(self) -> bool:
         if not self._home_dock_cli.wait_for_service(timeout_sec=2.0):
@@ -142,8 +176,8 @@ def main():
     sm = StateMachine(outcomes=['finished'])
     sm.add_state('IDLE',      IdleState(node),                transitions={'goto_destination': 'GUIDING'})
     sm.add_state('GUIDING',   GuidingState(node, navigator),  transitions={'succeeded': 'RETURNING', 'failed': 'FAILED', 'paused': 'WAITING', 'aborted': 'RETURNING'})
-    sm.add_state('FAILED',    FailedState(node),              transitions={'return_home': 'RETURNING'})
-    sm.add_state('RETURNING', ReturningState(node, navigator), transitions={'succeeded': 'IDLE',      'failed': 'IDLE', 'paused': 'WAITING'})
+    sm.add_state('FAILED',    FailedState(node),              transitions={'recovered': 'IDLE'})
+    sm.add_state('RETURNING', ReturningState(node, navigator), transitions={'succeeded': 'IDLE',      'failed': 'FAILED', 'paused': 'WAITING'})
     sm.add_state('WAITING',   WaitingState(node),             transitions={'resume_guiding': 'GUIDING', 'resume_returning': 'RETURNING'})
 
     try:
