@@ -6,22 +6,23 @@
 |--------|---------------|------|
 | 리더 로봇 (LIMO 1) | **6** | 주 안내 로봇 |
 | 서브 로봇 (LIMO 2) | **7** | 보조 안내 로봇 |
-| 관제 노트북 | **5** | RViz 모니터링 |
+| 관제 노트북 | **5** | ulsan_gui 관제 GUI (PyQt). 보조로 wego_ui RViz 맵 모니터링 |
 
 Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로 브릿징.
 → 설정 상세: [COMMUNICATION.md](COMMUNICATION.md)
 
 ---
 
-## 노드 목록 (예정)
+## 노드 목록
 
-### wego 패키지 (기존)
+### wego 패키지
 | 노드 | 역할 |
 |------|------|
 | `/robot_base_node` | 하드웨어 드라이버 |
-| `/cartographer_node` | SLAM 지도 작성 |
+| `/cartographer_node` | SLAM 지도 작성 (매핑 시) |
+| `ekf_node` (robot_localization) | 휠 오도메트리 + IMU 융합 → `odom→base_link` TF |
 
-### wego_2d_nav 패키지 (기존)
+### wego_2d_nav 패키지
 | 노드 | 역할 |
 |------|------|
 | `/nav2_bringup` | Nav2 스택 (플래너, 컨트롤러, AMCL) |

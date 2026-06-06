@@ -60,22 +60,22 @@ export ROS_DOMAIN_ID=7
 
 ## ros2-domain-bridge 설정
 
-**각 LIMO 로봇에서 실행** (노트북에 워크스페이스 없음 — DEC-010 참고).
-각 로봇이 자신의 토픽을 필요한 domain으로 push하는 방식.
+**서버(데스크탑)의 LIMO 도메인 터미널에서 실행** (domain 6/7). 로봇이 아니라 서버에서 실행하며, `ROS_DOMAIN_ID`로 어느 로봇 브릿지인지 자동 결정한다.
 
 ### 실행 방법
 
 ```bash
-# 각 LIMO에서 동일한 명령 (leader 구분 없음 — DEC-012)
-ros2 launch wego_bridge robot_bridge_launch.py
+# 서버 LIMO 도메인 터미널에서 동일한 명령 (leader 구분 없음 — DEC-012)
+export ROS_DOMAIN_ID=6 && ros2 launch wego_bridge bridge_launch.py  # LIMO 1
+export ROS_DOMAIN_ID=7 && ros2 launch wego_bridge bridge_launch.py  # LIMO 2
 ```
 
-### 설계 (DEC-010, DEC-011, DEC-012)
+### 설계 (DEC-011, DEC-012, DEC-028)
 
-- **단일 템플릿**: `wego_bridge/config/domain_bridge_robot.yaml` — `ROBOT_DOMAIN`, `PEER_DOMAIN` 플레이스홀더
-- **launch**: `robot_bridge_launch.py`가 `ROS_DOMAIN_ID`, `PEER_DOMAIN_ID` 환경변수로 자동 결정
+- **단일 템플릿**: `wego_bridge/config/bridge_robot.yaml` — `ROBOT_DOMAIN`, `ROBOT_NAME` 플레이스홀더 (`to_domain: 5` 고정)
+- **launch**: `bridge_launch.py`가 `ROS_DOMAIN_ID`를 읽어 `robot_config.yaml`에서 `robot_name`을 결정 → 템플릿의 `ROBOT_DOMAIN`/`ROBOT_NAME` 치환 후 실행
 - **`/map`**: 브릿징 없음. 각 기기가 로컬 map_server로 독립 발행 (DEC-012)
-- **`/amcl_pose`**: 모든 로봇이 domain 5(노트북)와 상대 로봇 domain으로 전송
+- **`/amcl_pose`**: 각 로봇 → domain 5(노트북)로만 전송. **로봇↔로봇 peer 브릿징 없음** (PeerObstacleLayer 폐기 DEC-022). wego_traffic이 domain 5에서 두 pose를 받아 거리 계산.
 
 ### 브릿지 토픽
 
@@ -149,11 +149,11 @@ scp ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map.pgm \
   ※ cyclone_peers.xml 삭제됨 — CYCLONEDDS_URI 설정 불필요
 
 ■ Domain Bridge 실행 후 토픽 브릿징 확인 (데스크탑 domain 5 터미널) — done (2026-04-22)
-  → ros2 topic echo /limo_1/amcl_pose   # LIMO 1 위치 수신 확인 ✓
-  → ros2 topic echo /limo_2/amcl_pose   # LIMO 2 위치 수신 확인
+  → ros2 topic echo /limo1/amcl_pose   # LIMO 1 위치 수신 확인 ✓
+  → ros2 topic echo /limo2/amcl_pose   # LIMO 2 위치 수신 확인
   ※ /map은 브릿징 없음 — 각 기기 로컬 map_server에서 발행 (DEC-012)
 
-□ 주행 중 토픽 끊김 없는지 확인: ros2 topic hz /limo_1/amcl_pose
+□ 주행 중 토픽 끊김 없는지 확인: ros2 topic hz /limo1/amcl_pose
 ```
 
 ---
