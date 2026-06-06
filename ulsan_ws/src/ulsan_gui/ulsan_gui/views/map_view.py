@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QFrame, QSizePolicy,
     QTableWidget, QTableWidgetItem, QHeaderView, QScrollArea,
+    QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QPen, QBrush, QPolygon
@@ -456,6 +457,9 @@ _ABORT_NORMAL  = 'background:#fee2e2; color:#b91c1c; border:1.5px solid #fca5a5;
 _PAUSE_FLASH   = 'background:#b45309; color:#fff;    border:1.5px solid #b45309; border-radius:6px;'
 _RESUME_FLASH  = 'background:#065f46; color:#fff;    border:1.5px solid #065f46; border-radius:6px;'
 _ABORT_FLASH   = 'background:#b91c1c; color:#fff;    border:1.5px solid #b91c1c; border-radius:6px;'
+_RECOVER_NORMAL = 'background:#e0e7ff; color:#3730a3; border:1.5px solid #a5b4fc; border-radius:6px;'
+_RECOVER_FLASH  = 'background:#3730a3; color:#fff;    border:1.5px solid #3730a3; border-radius:6px;'
+_BTN_DISABLED   = 'background:#f3f4f6; color:#9ca3af; border:1.5px solid #e5e7eb; border-radius:6px;'
 
 
 class MapView(QWidget):
@@ -595,6 +599,20 @@ class MapView(QWidget):
         row2.addWidget(self._abort_btn)
         vbox.addLayout(row2)
 
+        row3 = QHBoxLayout()
+        row3.setSpacing(6)
+
+        self._recover_btn = QPushButton('🔧 복구완료 (FAILED 해제)')
+        self._recover_btn.setFixedHeight(34)
+        self._recover_btn.setFont(QFont('Segoe UI', 11, QFont.Bold))
+        self._recover_btn.setFocusPolicy(Qt.NoFocus)
+        self._recover_btn.setStyleSheet(_RECOVER_NORMAL)
+        self._recover_btn.clicked.connect(self._send_recover)
+        row3.addWidget(self._recover_btn)
+        vbox.addLayout(row3)
+
+        # 미연결 상태로 시작 — 연결 확인 전까지 허공 발행 방지
+        self._refresh_emergency_buttons()
         return card
 
     def _build_sys_card(self) -> QFrame:
@@ -708,6 +726,20 @@ class MapView(QWidget):
         self._selected_robot = robot
         for r, btn in self._rsel_btns.items():
             btn.setStyleSheet(self._rsel_style(r == robot))
+        self._refresh_emergency_buttons()
+
+    def _refresh_emergency_buttons(self) -> None:
+        # 선택된 로봇이 미연결(/diagnostics 5초 미수신)이면 긴급제어 버튼 비활성화.
+        # setEnabled(False)가 클릭 자체를 차단 → 허공 발행·허위 이벤트 로그 방지.
+        ok = self.ros.is_node_ok(self._selected_robot)
+        for btn, normal in (
+            (self._pause_btn,   _PAUSE_NORMAL),
+            (self._resume_btn,  _RESUME_NORMAL),
+            (self._abort_btn,   _ABORT_NORMAL),
+            (self._recover_btn, _RECOVER_NORMAL),
+        ):
+            btn.setEnabled(ok)
+            btn.setStyleSheet(normal if ok else _BTN_DISABLED)
 
     @staticmethod
     def _flash_btn(btn: QPushButton, flash_style: str, normal_style: str) -> None:
@@ -729,6 +761,23 @@ class MapView(QWidget):
         self.ros.signals.sig_gui_log.emit('mission_fail', robot_label(self._selected_robot), '임무중단')
         self._flash_btn(self._abort_btn, _ABORT_FLASH, _ABORT_NORMAL)
 
+    def _send_recover(self) -> None:
+        # 복구완료는 AMCL을 home 좌표로 리셋하므로 오조작 방지 확인 다이얼로그 필수.
+        # 관리자가 로봇을 물리적으로 home에 배치한 뒤에만 눌러야 함 (DEC-044).
+        label = robot_label(self._selected_robot)
+        reply = QMessageBox.question(
+            self, '복구완료 확인',
+            f'{label} 을(를) home 위치에 물리적으로 배치했습니까?\n\n'
+            '확인을 누르면 위치추정(AMCL)이 home 좌표로 리셋되고\n'
+            'FAILED 상태가 해제되어 IDLE로 복귀합니다.',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self.ros.publish_recover(self._selected_robot)
+        self.ros.signals.sig_gui_log.emit('system', label, '복구완료 (FAILED 해제)')
+        self._flash_btn(self._recover_btn, _RECOVER_FLASH, _RECOVER_NORMAL)
+
     def _check_connections(self) -> None:
         # 로봇 연결: /ROBOT_NAME/diagnostics 수신 시각 기준
         # 미연결 시 맵 마커도 즉시 제거
@@ -741,6 +790,9 @@ class MapView(QWidget):
                 val.setText('● 미연결')
                 val.setStyleSheet('color:#ef4444; border:none;')
                 self._canvas.clear_pose(robot)
+
+        # 선택된 로봇 연결 상태 반영 → 긴급제어 버튼 활성/비활성 갱신
+        self._refresh_emergency_buttons()
 
         # 맵 서버: /map 수신 여부 기준 (Nav2 map_server가 diagnostics 미보장)
         val = self._sys_vals['map_server']
