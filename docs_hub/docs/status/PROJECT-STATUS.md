@@ -358,6 +358,10 @@
   - 기존: 토픽 존재 여부(`get_topic_names_and_types()`) → GUI 자신이 퍼블리셔를 생성해 항상 연결됨으로 표시되는 버그
   - 수정: `diagnostic_updater` 추가(wego_behaviour/dispatcher/traffic) + `/diagnostics` 수신 시간 기반 판단
   - `bridge_robot.yaml`: `/diagnostics` → `/ROBOT_NAME/diagnostics` 브릿징 추가 (wego_behaviour domain 6/7→5)
+- [x] **로봇 연결 판정 단일화 + 미연결 표시 전 화면 통일** — done (2026-06-08). DEC-045 참고
+  - `is_robot_connected`(behaviour 생존 AND Nav2 lifecycle 전부 active) 단일 판정 → 시스템 패널·지도 마커·상태 카드·요약 칩·상세 탭이 공유. lifecycle_manager가 맺은 bond 결과를 diagnostics로 받아 판정(도메인 브릿지 너머 생사 반영 — bond 직접 사용 불가 이유는 DEC-045)
+  - `sig_connection` 시그널 신규, 변화 시에만 발행. 재연결 시 마지막 pose로 마커 복원. 요약 칩 집계에서 미연결 로봇 제외. 지도 마커 시각 정리(크기·화살표·범례 색-로봇 매핑 키)
+  - ※ 코드 머지 완료(미커밋 아님). **실기기 검증 남음**
 
 #### 전체 통합 테스트
 - [ ] LIMO 2대 + 노트북 전체 파이프라인 실기기 검증
