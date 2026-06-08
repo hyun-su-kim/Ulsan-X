@@ -212,7 +212,7 @@
   - IDLE 복귀 시 `_failed`에 있으면 `PATCH /assign/{id}/fail` 호출
   - FastAPI `fail_mission` 엔드포인트 신규 → `mission_fail` 로그 기록
 - [x] ~~Nav2 BT 커스텀 노드: `VoiceTriggerCondition`, `PeerRobotBusyCondition`~~ — **폐기** (음성 트리거·on_duty 게이팅은 예약+dispatcher 아키텍처 DEC-027로 대체). 실제 구현된 커스텀 BT 노드는 `PersonClearCondition` (DEC-041)
-- [ ] **백엔드 확장성 정리 (데모 후)** — FastAPI/wego_dispatcher의 `ROBOTS` 상수화 + `wego_traffic` N-pair 거리 비교 일반화
+- [ ] ~~**백엔드 확장성 정리 (데모 후)**~~ — **보류·범위 밖** (2026-06-08): 데모 후 추가 개발은 난반사 BT 복구·도킹 실패 복구 2건만 유지(Phase 4 참고). 본 항목은 필요 시 재개.
 
 #### 음성 파이프라인
 - [x] `wego_voice` 패키지: TTS 전용으로 단순화 — done (2026-05-13)
@@ -379,9 +379,11 @@
 ---
 
 ### Phase 4 — 완성도
-- [ ] 초음파 센서 → local costmap range_sensor_layer 연동 (유리문 닫힘 감지) — 유리문 닫힘 시 경로 생성 불가 → TTS "유리문을 열어주세요" + WAIT 상태
-- [ ] YOLO 사람 감지 → 방향 회전 + 안내 멘트
-- [ ] 다국어 안내 검토
+
+> **1차 데모 후 추가 개발은 아래 2건만 유지** (2026-06-08 범위 정리). 나머지 탐색 항목(초음파 유리문 닫힘 감지, YOLO 방향회전+안내멘트, 다국어, 백엔드 ROBOTS 상수화/traffic N-pair 일반화)은 **데모 범위 밖으로 정리·보류**.
+
+- [ ] **(데모 후 ①) 난반사 시 BT 복구동작 개선** — 현재 표준 복구(DEC-046)로 환원한 상태. 데모 후 유리 난반사 phantom 상황의 복구를 더 견고하게 개선 검토(PhantomPushThrough 등 [[glass-phantom-pushthrough-idea]] 재검토 포함). 방법 미정.
+- [ ] **(데모 후 ②) 도킹(PBVS) 실패 시 복구동작** — 현재 DEC-044로 도킹 실패도 FAILED→관리자 물리복구로 통합. 데모 후 도킹 실패에 한해 자동 재시도/재정렬 등 복구동작 검토. 방법 미정.
 - [x] **유리 구간 주행 버벅임 개선** — done (2026-05-29). 2026-04-30 미결 항목(Keepout+Denoise 후 잔존 버벅임)을 **경로 설계 개선**으로 해결: NavigateThroughPoses + glass_entry/exit 경유(DEC-030) → 중간 정지 제거, 경유지 재측정 + RemovePassedGoals 매틱 체크 + BackUp 튜닝(DEC-041). LIMO 1 검증 완료(1-1), LIMO 2 검증(2-1) 남음
 > ※ 음성 STT/NLU 관련 Phase 4 항목(NLU 백업 Gemma-2B, "추가 용무 확인" 대화, YOLO+faster-whisper GPU 프로파일링)은 **음성 인식 파이프라인 폐기(DEC-024)로 전량 제거**.
 - [x] **2대 충돌 회피 — 방식 재설계 완료** — done (2026-05-13, 구현). 2026-04-30에 기록된 "운용 중 간헐적 충돌"은 **폐기된 PeerObstacleLayer(global costmap 주입) 시절 현상**. 그 두 원인(① 네트워크 지연 ② 대칭 회피 교착)을 **DEC-022 우선순위 기반 pause/resume**으로 정조준 해결 — pause/resume은 단순 토픽이라 지연 영향 최소, 우선순위(GUIDING>RETURNING, 동순위 LIMO1)로 한 대가 물리 정지 → 충돌 구조적 불가. wego_traffic 구현 완료. **단, 2대 실기기 검증(3-2)은 미실시** → 최종 확인 필요
