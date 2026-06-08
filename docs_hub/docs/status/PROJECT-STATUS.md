@@ -27,7 +27,7 @@
 |---|------|------|
 | 1-1 | 유리 구간 경유지 통과 주행 | `done (2026-05-29)` |
 | 1-2 | FSM 각 상태 동작 (IDLE/GUIDING/RETURNING/WAITING/FAILED) | `todo` |
-| 1-3 | BT 수정 사항 동작 (BackUp+ClearCostmap 복구, RemovePassedGoals) | `todo` |
+| 1-3 | BT 수정 사항 동작 (표준 복구 Clear/Spin/BackUp DEC-046, RemovePassedGoals, PersonClearCondition) | `todo` |
 | 1-4 | PBVS 홈 도킹 | `done (2026-05-26)` |
 
 ### 2단계 — LIMO 2 단독 주행
@@ -323,8 +323,12 @@
   - glass_entry: x=-0.2, y=2.65 (로봇 복도 경로에 맞게 조정)
   - glass_exit: x=2.2158, y=2.7579 (재측정)
   - RemovePassedGoals radius: 0.2 → 0.7 (경유지 미제거로 로봇 되돌아가는 문제 해결)
-  - BackUp dist: 0.30 → 0.10m (유리 구간 맵 경계 이탈 방지)
+  - BackUp dist: 0.30 → 0.10m (유리 구간 맵 경계 이탈 방지) — ※ **2026-06-08 DEC-046으로 환원**: 유리 전용 복구 폐기, Nav2 표준(Spin 포함, BackUp 0.30)으로 통일
   - 유리 구간 경유지 통과 실기기 검증 완료
+- [x] **유리 경로 BT 복구 표준 환원** — done (2026-06-08). DEC-046 참고
+  - `navigate_through_poses` BT의 유리 전용 복구(Spin 제거 + BackUp 0.10m)를 폐기, Nav2 표준 `RoundRobin[Clear→Spin(1.57)→Wait(5)→BackUp(0.30)]`로 환원 → `navigate_to_pose` BT와 복구 블록 동일화
+  - 근거: Keepout Filter + 경유지(glass_entry/exit) 경로로 난반사 phantom 주행불가가 발생하지 않음 → 유리 전용 복구는 미사용 분기. 검토하던 `PhantomPushThrough` 커스텀 노드도 YAGNI로 폐기(미구현)
+  - `RemovePassedGoals`(0.7)·`PersonClearCondition` 래핑은 유지
 - [x] **PBVS 도킹 A/B 실험 종료 — polar 제어기 제거, staged 단독 채택** — done (2026-06-01). DEC-042 참고
   - `_ctrl_polar`·`dock_mode`·polar 게인(k_rho/k_alpha/k_beta) 코드·런치에서 제거
   - `dock_mode` 인자 누락 시 기각된 polar로 도킹되던 운영 리스크 제거

@@ -26,7 +26,25 @@
 
 # DECISION-LOG에서 이관 (2026-06-01 정리)
 
-> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-045(최신)부터 시간 역순.
+> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-046(최신)부터 시간 역순.
+
+### DEC-046: 유리 경로 BT 복구 — 유리 전용 BackUp 복구 폐기, Nav2 표준 복구로 환원 (done 2026-06-08)
+- **Context**: `navigate_through_poses_w_replanning_and_recovery.xml`(유리 경유 목적지 전용 BT)의 `RecoveryFallback`을 한때 유리 난반사 phantom 대응으로 커스터마이즈했었다 — Nav2 표준의 `Spin`을 제거하고 `RoundRobin[BackUpAndClear(BackUp 0.10m + local/global Clear), Wait]`만 남긴 형태(DEC-041에서 `BackUp 0.30→0.10m`로 "유리 구간 맵 경계 이탈 방지"). 추가로 갇힘 시 costmap을 무시하고 저속 전진으로 난반사를 "뚫는" 커스텀 BT 노드(`PhantomPushThrough`) 신설도 검토 대상이었다. 1차 데모 실주행 직전, 이 유리 전용 복구를 유지할지 표준으로 되돌릴지 결정 필요.
+- **Options**:
+  - A) 유리 전용 BackUp 복구 유지 + 필요 시 `PhantomPushThrough` 커스텀 노드 신설(geofence·사람게이트·저속/거리상한으로 안전 가둠)
+  - B) **유리 전용 복구를 폐기하고 Nav2 표준 복구(Clear→Spin→Wait→BackUp 0.30)로 환원** — `navigate_to_pose` BT와 복구 블록 동일화
+- **Decision**: **B 채택.** 유리 전용 복구·`PhantomPushThrough` 모두 폐기(미구현). 두 BT의 `RecoveryFallback`을 표준으로 통일. `RemovePassedGoals`(RateController 밖, radius 0.7)·`PersonClearCondition` 래핑은 그대로 유지.
+- **Rationale**:
+  - **문제 자체가 발생하지 않음**: 난반사 phantom으로 인한 주행불가는 ① Keepout Filter(+DenoiseLayer)로 global costmap phantom 차단, ② NavigateThroughPoses + `glass_entry`/`glass_exit` 경유지로 **로봇이 유리에 붙지 않는 경로**를 강제(DEC-030/041)함으로써 이미 구조적으로 제거됨. 실주행에서 유리 구간 복구 진입이 관찰되지 않아 유리 전용 복구는 "쓰이지 않는 분기"였다.
+  - **표준의 가치 = 진짜 stuck 대응**: 복구가 트리거된다면 그건 phantom이 아니라 실제 stuck일 가능성이 큰데, 그때는 표준 `Spin`(제자리 회전으로 새 경로 탐색)이 유효하다. 유리 전용 복구는 Spin을 빼서 진짜 stuck 회복력을 오히려 약화시켰다.
+  - **YAGNI / 복잡도 비용**: `PhantomPushThrough`는 cmd_vel 직접 발행으로 costmap을 우회하는 침습적 노드라 geofence·사람게이트·거리상한 등 안전장치를 모두 직접 구현·검증해야 한다(내장 `DriveOnHeading`은 costmap 충돌검사로 phantom에 abort되어 못 씀). 발생하지 않는 문제를 위해 이 비용을 치를 이유가 없다.
+  - **일관성·유지보수**: 두 BT의 복구 블록이 동일해져 동작 예측·검증이 단순해짐.
+- **구현**: `navigate_through_poses_w_replanning_and_recovery.xml`의 `RecoveryFallback`을 `RoundRobin[ClearingActions(local+global Clear), Spin(1.57), Wait(5), BackUp(0.30, 0.05)]`로 교체(= `navigate_to_pose` BT와 동일). 헤더 주석에 폐기 사유 명시. params 심링크 설치라 재빌드 불필요.
+- **면접 어필**: "센서의 물리적 한계(LiDAR 난반사)를 costmap 레이어에서 직접 싸우는 대신, **경로 설계(경유지)로 문제 조건 자체를 회피**해 복구 분기를 불필요하게 만들었다. 발생하지 않는 문제를 위한 침습적 커스텀 노드(costmap 우회 전진)는 YAGNI로 기각하고, 복구는 진짜 stuck에 유효한 표준으로 환원해 두 BT를 일관화했다."
+- **관련**: [DEC-030](NavigateThroughPoses 경유지 경로), [DEC-041](경유지 재측정·BackUp 튜닝), Nav2 단독주행 phantom 운용정책(NAVIGATION.md)
+- **Date**: 2026-06-08
+
+---
 
 ### DEC-045: 관제 GUI 로봇 연결 판정 — bond 직접 사용 대신 lifecycle_manager bond-health를 diagnostics로 수신 (done 2026-06-08)
 - **Context**: DEC-040에서 시스템 패널 연결 판정을 `/diagnostics` 수신 시각(`is_node_ok`) 기반으로 바꿨으나, 로봇 연결을 "behaviour 진단 수신 여부" 하나로만 봐서 **Nav2 lifecycle이 죽어도 연결됨으로 표시**되는 한계가 남음. 또한 화면마다(시스템 패널·지도 마커·상태 카드·요약 칩·상세 탭) 연결 판정이 제각각이라 표시가 엇갈림. 검토 중 "순수 생사 판정이면 ROS2의 정석은 `bond` 아니냐"는 의문 제기 → bond 직접 사용 여부를 결정해야 함.
