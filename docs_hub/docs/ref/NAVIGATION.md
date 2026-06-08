@@ -1,42 +1,43 @@
 # NAVIGATION — SLAM & Nav2 설정
 
-## SLAM 도구 선택 경위 (2026-05-05)
+## SLAM 도구 선택 경위
 
-### 1차 매핑 — Cartographer (2026-04-28~29)
+### 채택: Cartographer (2026-04-28~29 매핑, 2026-05-07 재매핑)
 
-초기에 Cartographer를 선택한 이유:
+**현행 SLAM = Cartographer** (`wego/launch/cartographer_launch.py`, config `limo_lds_2d.lua`).
+
+Cartographer를 선택한 이유:
 - 복도·유리 구간이 많은 학원 환경에서 submap 기반 loop closure 성능이 검증됨
 - ROS2 Humble 공식 패키지로 설치 간편
+- EKF 융합 오도메트리(`odometry/filtered`)를 입력으로 받아 scan matching과 결합
 
-결과: 맵 작성 및 Nav2 자율주행은 동작했으나, 장시간 운용 후 **홈 복귀 위치 오차가 허용 범위를 초과**하는 문제 발생.
+장시간 운용 시 **홈 복귀 위치 오차 누적** 문제가 있었으나, 이는 SLAM 맵 품질이 아니라 **AMCL 로컬라이저 drift**가 주원인이라 판단하고 **ArUco PBVS 홈 도킹 + AMCL 리셋**(→ [ARUCO-LOCALIZER.md](ARUCO-LOCALIZER.md))으로 매 사이클 보정하는 방향으로 해결했다.
 
-### 재매핑 결정 및 SLAM Toolbox 전환 (2026-05-05)
+### 검토했으나 미채택: SLAM Toolbox 전환 + 로컬라이저 비교 실험
 
-**문제 정의**: 홈 복귀 위치 오차의 원인이 ① SLAM 맵 품질 문제인지, ② AMCL 로컬라이저 drift 문제인지 구분이 필요했음.
-
-**SLAM Toolbox로 전환한 기술적 근거**:
+홈 복귀 오차의 원인이 ① SLAM 맵 품질인지 ② AMCL drift인지 분리 진단하기 위해, **동일 맵 위에서 AMCL(파티클 필터) vs SLAM Toolbox localization(scan matching)을 정량 비교**하는 실험을 설계했다. 이를 위해 SLAM 단계부터 PGM(AMCL용) + `.posegraph`(SLAM Toolbox localization용)를 동시에 저장하는 SLAM Toolbox 전환을 검토했다.
 
 | 비교 항목 | Cartographer | SLAM Toolbox |
 |----------|-------------|-------------|
-| 저장 포맷 | `.pbstream` (독자 포맷) | `.posegraph` + `.data` + PGM |
+| 저장 포맷 | `.pbstream` → PGM 변환 | `.posegraph` + `.data` + PGM |
 | AMCL 연동 | PGM 저장 후 사용 가능 | PGM 저장 후 사용 가능 |
 | SLAM Toolbox localization | **불가** (포맷 불일치) | **가능** (동일 포맷) |
-| ROS2 공식 권장 | community maintained | Nav2 기본 SLAM |
 | 복도 환경 loop closure | 강함 (submap 교차 검증) | 충분 (전역 포즈 그래프 최적화) |
 
-**핵심 이유**: 원인 규명을 위해 **AMCL(파티클 필터) vs SLAM Toolbox localization(scan matching)** 두 방식을 동일 맵 위에서 정량 비교할 계획. 이를 위해 `.posegraph` 포맷이 필요하고, Cartographer SLAM으로는 생성 불가. SLAM Toolbox로 SLAM하면 PGM(AMCL용) + posegraph(SLAM Toolbox localization용) 둘 다 한 번에 확보 가능.
+**미채택 사유(실용성 우선)**: drift의 실제 원인이 로컬라이저 쪽으로 좁혀졌고, ArUco PBVS 리셋이 홈 복귀 오차를 직접 해결하면서 **재매핑·로컬라이저 교체의 ROI가 사라졌다.** 비교 실험은 설계만 남기고 실행하지 않았으며, Cartographer 맵 기반 AMCL을 유지한다.
 
-> **면접 어필**: "홈 복귀 오차의 원인을 SLAM 품질과 로컬라이저 drift로 분리해 진단하기 위해, 동일 맵 위에서 AMCL과 SLAM Toolbox localization을 정량 비교하는 실험을 설계했다. 이 비교를 위해 SLAM 단계부터 두 포맷을 동시에 저장할 수 있는 SLAM Toolbox를 선택했다."
+> **면접 어필**: "홈 복귀 오차의 원인을 SLAM 품질과 로컬라이저 drift로 분리 진단하려 AMCL vs SLAM Toolbox localization 정량 비교 실험을 **설계**했다. 다만 원인이 로컬라이저로 좁혀지고 ArUco PBVS 리셋이 오차를 직접 해소하자, 재매핑보다 그 방법이 ROI가 높다고 판단해 Cartographer를 유지했다. — 실험 설계 역량과, 과제를 실제로 푸는 효율적 경로 선택을 함께 보여준 사례."
 
 ---
 
-## 지도 작성 (SLAM Toolbox — 2차 매핑, 2026-05-05~)
+## 지도 작성 (Cartographer)
 
-- **사용 패키지**: `wego` (`slam_toolbox_launch.py`)
-- **파라미터**: `wego_2d_nav/params/slam_toolbox_slam_params.yaml`
-- **작성 주체**: LIMO 1으로만 SLAM 수행. LIMO 2는 완성된 맵 파일 배포.
-- **원점 설정**: 홈 위치에서 SLAM 시작 → 홈 = (0, 0, 0)
-- **저장 포맷**: PGM + YAML (AMCL용), posegraph + data (SLAM Toolbox localization용)
+- **사용 패키지**: `wego` (`cartographer_launch.py`)
+- **설정**: `wego/config/limo_lds_2d.lua`
+- **노드**: `cartographer_node` + `occupancy_grid_launch.py`(OccupancyGrid 변환). odom은 EKF 출력 `odometry/filtered`로 remap.
+- **작성 주체**: LIMO 1으로만 SLAM 수행. LIMO 2는 완성된 맵 파일 배포(scp + git).
+- **원점 설정**: 홈 위치에서 SLAM 시작 → 홈 = (0, 0, 0). 새 map origin: `[-7.87, -12.3, 0]`
+- **저장 포맷**: PGM + YAML (AMCL + map_server용). 유리 금지구역 반영본 `filter_map.pgm/yaml` 별도 생성.
 
 ```bash
 # LIMO 1에서 실행
@@ -44,40 +45,27 @@
 # Terminal 1: 드라이버 전체 기동
 ros2 launch wego teleop_launch.py
 
-# Terminal 2: SLAM Toolbox 매핑 시작
-ros2 launch wego slam_toolbox_launch.py
-# SSH 환경: ros2 launch wego slam_toolbox_launch.py use_rviz:=false
+# Terminal 2: Cartographer 매핑 시작
+ros2 launch wego cartographer_launch.py
+# SSH 환경: ros2 launch wego cartographer_launch.py use_rviz:=false
 
 # Terminal 3: 키보드 텔레op으로 공간 주행
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
-# 매핑 완료 후 — 두 포맷 모두 저장
-# ① PGM 저장 (AMCL + 노트북 map_server용)
-ros2 run nav2_map_server map_saver_cli -f ~/map_result/map
+# 매핑 완료 후 — PGM 저장 (AMCL + 노트북 map_server용)
+ros2 run nav2_map_server map_saver_cli -f \
+  ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map
 
-# ② posegraph 저장 (SLAM Toolbox localization용)
-ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap \
-  "{name: {data: '/home/wego/map_result/slam_map'}}"
-# → slam_map.posegraph + slam_map.data 생성
-
-# 저장된 맵을 프로젝트에 복사 후 git push → 각 기기 git pull로 배포
-cp ~/map_result/map.* \
-  /home/wego/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
-cp ~/map_result/slam_map.* \
-  /home/wego/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/
+# 저장된 맵을 git push → 각 기기 git pull / scp로 배포 (COMMUNICATION.md 참고)
 ```
 
-### SLAM 모드 설명 (async vs sync)
-
-`async_slam_toolbox_node` 선택 이유:
-- **async(비동기)**: 스캔 처리를 별도 스레드에서 수행 → 실시간 주행 중에도 맵 업데이트 끊김 없음
-- sync는 스캔 처리 동안 다른 콜백이 블로킹됨 → 실기기 주행 시 TF 끊김 가능성
+> 매핑 후 GIMP로 노이즈 제거 + 유리문 가상 벽 처리 → `filter_map`(Keepout 금지구역 반영) 재생성. 상세는 아래 "SLAM 품질 향상 절차".
 
 ---
 
 ## SLAM 품질 향상 절차 (학원 환경 — 유리+복도)
 
-Cartographer 1차 매핑 시 발생한 문제와 해결 절차. SLAM Toolbox 재매핑 시에도 동일하게 적용.
+Cartographer 매핑 시 발생한 문제와 해결 절차. 재매핑 시에도 동일하게 적용.
 
 ### 문제
 - 유리 구간: LiDAR가 유리를 투과 → 특징점 없음 → 맵에 구멍
@@ -95,73 +83,45 @@ Cartographer 1차 매핑 시 발생한 문제와 해결 절차. SLAM Toolbox 재
 6. **GIMP로 후보정** — 장애물 흔적 및 스파이크 노이즈 제거
 7. **가상 벽 처리** — 유리문 등 인식이 덜 된 구간을 GIMP로 직접 벽 그리기
 
-### SLAM Toolbox loop closure 확인 방법
+### Cartographer loop closure 확인 방법
 
 ```bash
-# loop closure 발생 시 터미널에 출력됨
-# "RUNNING LOOP CLOSURE JOB" 메시지 확인
-# RViz: /map 토픽에서 전체 맵 일관성 시각적 확인
+# RViz에서 /constraint_list 토픽 시각화 → loop closure 제약(간선) 생성 확인
+# 출발점(홈)으로 복귀 시 inter-submap 제약이 생기며 복도 drift 보정
+# /map 토픽에서 전체 맵 일관성 시각적 확인
 ```
 
 ---
 
-## 위치추정 방식 비교 실험 (2026-05-05 계획, 실행 예정)
+## 위치추정 방식 비교 실험 (설계만, 미실행)
 
-### 실험 목적
+> ⚠️ **이 실험은 설계만 하고 실행하지 않았다.** 현행 로컬라이저는 **AMCL 단독**(Cartographer 맵 기반)이며, SLAM Toolbox localization은 도입하지 않았다. 아래는 의사결정 근거(실험 설계)로만 보존한다. `slam_toolbox_localization_launch.py` 등은 **존재하지 않는다.**
 
-홈 복귀 오차의 원인이 SLAM 품질 문제인지 로컬라이저 drift 문제인지 수치로 분리·진단.
-동시에 두 방식 중 더 강건한 로컬라이저를 선택하기 위한 근거 확보.
+### 실험 목적 (설계)
 
-### 비교 대상
+홈 복귀 오차의 원인이 SLAM 품질인지 로컬라이저 drift인지 수치로 분리·진단하고, 두 방식 중 더 강건한 로컬라이저를 선택하기 위한 근거 확보.
 
-| | AMCL | SLAM Toolbox localization |
+### 비교 대상 (설계)
+
+| | AMCL (채택) | SLAM Toolbox localization (미도입) |
 |--|--|--|
 | 방식 | 파티클 필터 (확률적) | Scan matching + 포즈 그래프 최적화 (결정론적) |
 | 발행 토픽 | `/amcl_pose` + `/tf` | `/tf` (map→odom)만 발행 |
-| 맵 포맷 | `map.yaml` (PGM) | `slam_map.posegraph` |
-| 파라미터 파일 | `diff_navigation_params.yaml` | `slam_toolbox_localization_params.yaml` |
 
-> **SLAM Toolbox localization 주의**: `/amcl_pose`를 발행하지 않음.
-> `wego_bridge`·`wego_traffic`은 `/amcl_pose` 의존. 비교 실험은 단일 로봇으로 진행하므로 문제 없음.
-> 최종 선택 후 멀티로봇 단계에서 `/tf → /amcl_pose` republisher 노드 추가 예정 (SLAM Toolbox 선택 시).
+### 측정 프로토콜 (설계) — 3축
 
-### 측정 프로토콜
+1. **홈 복귀 반복 오차**: 홈→최원거리 강의실→홈 10회, 바닥 기준점 대비 자 측정 (평균/최대/표준편차)
+2. **초기 수렴 속도**: 기동 후 `/amcl_pose` covariance가 0.1 이하로 떨어지는 시간
+3. **장거리 drift**: 전 목적지 순회 1회 후 실제 홈 vs 추정 위치 절대 오차
 
-**측정 항목 3가지:**
+### 미실행 결론
 
-#### ① 홈 복귀 반복 오차 (정밀도)
-- 방법: 홈 → 목적지(가장 먼 강의실) → 홈 복귀, 10회 반복
-- 측정: 복귀 완료 후 바닥 기준점 대비 로봇 앞바퀴 위치를 자로 측정 (x, y 각각)
-- 기록: 10회 평균 오차, 최대 오차, 표준편차
-
-#### ② 초기 수렴 속도
-- 방법: 로봇 기동 후 `/amcl_pose` 또는 `/tf`의 covariance가 일정 값(0.1) 이하로 줄어드는 시간 측정
-- 측정: `ros2 topic echo /amcl_pose` covariance 값 기록 (AMCL) / TF 안정화 시간 (SLAM Toolbox)
-
-#### ③ 장거리 주행 후 drift
-- 방법: 학원 전체 경로(전 목적지 순회) 1회 주행 후 홈 복귀
-- 측정: 실제 홈 위치 vs 로봇 추정 위치 (RViz `/amcl_pose` 또는 TF 수치)
-- 바닥 기준점과 비교하여 절대 오차 기록
-
-### 실행 방법
+drift 원인이 로컬라이저로 좁혀지고 **ArUco PBVS 홈 도킹 + AMCL 리셋**이 홈 복귀 오차를 직접 해소(→ [ARUCO-LOCALIZER.md](ARUCO-LOCALIZER.md))하면서, 재매핑·로컬라이저 교체의 실익이 사라짐. **AMCL 단독 유지로 확정.**
 
 ```bash
-# AMCL 로컬라이제이션
+# 현행 로컬라이제이션 (AMCL)
 ros2 launch wego_2d_nav localization_launch.py  # map_server + amcl
-
-# SLAM Toolbox localization 모드
-ros2 launch wego_2d_nav slam_toolbox_localization_launch.py  # 구현 예정
 ```
-
-### 결과 기록 양식 (실험 후 아래에 기입)
-
-| 항목 | AMCL | SLAM Toolbox loc |
-|------|------|-----------------|
-| 홈 복귀 평균 오차 (m) | — | — |
-| 홈 복귀 최대 오차 (m) | — | — |
-| 초기 수렴 시간 (s) | — | — |
-| 장거리 drift (m) | — | — |
-| **선택** | | |
 
 ---
 
@@ -181,7 +141,7 @@ map → odom → base_link       map → odom → base_link
       [wego_bridge]                 [wego_bridge]
              ↓                             ↓
         노트북 (domain 5)
-        /limo_1/amcl_pose   /limo_2/amcl_pose
+        /limo1/amcl_pose   /limo2/amcl_pose
              ↓                             ↓
         wego_ui (지도 위 위치 마커 시각화)
 ```
@@ -192,7 +152,7 @@ map → odom → base_link       map → odom → base_link
 # LIMO 1, LIMO 2 동일한 명령 (robot_name 인자 없음)
 ros2 launch wego teleop_launch.py
 ros2 launch wego navigation_diff_launch.py
-ros2 launch wego_bridge robot_bridge_launch.py  # ROS_DOMAIN_ID 읽어 자동 설정
+ros2 launch wego_bridge bridge_launch.py  # ROS_DOMAIN_ID 읽어 자동 설정
 
 # 노트북 (domain 5)
 ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=<path>/map.yaml

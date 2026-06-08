@@ -149,6 +149,9 @@ class RosNode(Node):
         self._abort_pubs = {
             r: self.create_publisher(Empty, f'/{r}/abort', 10) for r in ROBOTS
         }
+        self._recover_pubs = {
+            r: self.create_publisher(Empty, f'/{r}/recover', 10) for r in ROBOTS
+        }
 
         self.get_logger().info('ulsan_gui ROS 노드 초기화 완료')
 
@@ -231,6 +234,10 @@ class RosNode(Node):
 
     def publish_abort(self, robot: str) -> None:
         self._abort_pubs[robot].publish(Empty())
+
+    def publish_recover(self, robot: str) -> None:
+        # FAILED 상태 탈출 — behaviour_node가 home 좌표 /initialpose 발행(AMCL 리셋) → IDLE (DEC-044)
+        self._recover_pubs[robot].publish(Empty())
 
     # ── 유틸 ─────────────────────────────────────────────────────────
 

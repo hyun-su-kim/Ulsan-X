@@ -7,20 +7,22 @@
 ### 흐름
 
 ```
-방문자가 LIMO 터치 화면에서 체크인
-  │  이름 + 전화번호 끝자리 입력
+방문자가 태블릿 웹 UI(ulsan-visitor-ui)에서 체크인
+  │  이름 + 전화번호 끝자리 입력 (HTTP only, rosbridge 없음)
   ▼
-예약 DB 조회
-  │  오늘 날짜 + 현재 시간대 예약 확인 → 배정 상담실 반환
+FastAPI(ulsan_reservation) 예약 DB 조회
+  │  오늘 날짜 + 현재 시간대 예약 확인 → 배정 상담실 + 안내 멘트 확정 → mission PENDING
   ▼
-TTS 안내 멘트
-  │  "{이름}님 {시간}시 상담 예약으로 {상담실}로 안내합니다."
-  │  구현: edge-tts (Microsoft Neural TTS, ko-KR-SunHiNeural)
-  │  인터넷 연결 필요 — 클라우드 음성 합성
-  │  출력 장치: mpg123 -a plughw:1,3 (HDMI 0, Jetson Orin NX HDA)
-  ▼
-/goal_destination 발행 → wego_behaviour FSM → Nav2 navigate_to_pose
+wego_dispatcher (domain 5, 0.5s 폴링) → IDLE 로봇에 발행
+  ├─ /speak_text       → wego_voice voice_node
+  │     │  "{이름}님 {시간}시 상담 예약으로 {상담실}로 안내합니다."
+  │     │  구현: edge-tts (Microsoft Neural TTS, ko-KR-SunHiNeural), 클라우드 합성
+  │     │  출력 장치: mpg123 -a plughw:1,3 (로봇 HDMI 오디오, Jetson Orin)
+  │     ▼  TTS 음성 출력
+  └─ /goal_destination → wego_behaviour FSM → Nav2 navigate_to_pose / navigate_through_poses
 ```
+
+> 음성 발행 경로: 목적지 결정은 예약 DB, TTS 트리거는 `/speak_text`(dispatcher→voice). voice_node는 DB를 직접 조회하지 않고 받은 문구를 합성만 한다 (DEC-024/027).
 
 ### TTS 선택 근거 (edge-tts)
 - 별도 모델 설치 없이 `pip install edge-tts` 한 줄로 즉시 사용 가능
@@ -30,7 +32,7 @@ TTS 안내 멘트
 
 ### 오디오 출력 장치 설정
 - Jetson Orin NX 기본 ALSA 장치는 HDMI가 아님 → mpg123에 `-a` 장치 명시 필수
-- LIMO 탑재 디스플레이가 HDMI로 연결되어 있어 `plughw:1,3` (card 1, device 3) 사용
+- 로봇 오디오 출력이 HDMI 경로(card 1, device 3)라 `plughw:1,3` 사용
 - `voice_params.yaml`의 `audio_device` 파라미터로 변경 가능
 
 ---

@@ -10,5 +10,5 @@
 
 ## Resolved / 결정 완료
 
-> 확정·폐기된 모든 결정(DEC-001 ~ DEC-043)은 **[archive/decisions-resolved.md](../archive/decisions-resolved.md)** 로 이관됨 (2026-06-01 정리).
+> 확정·폐기된 모든 결정(DEC-001 ~ DEC-044)은 **[archive/decisions-resolved.md](../archive/decisions-resolved.md)** 로 이관됨.
 > 면접용 의사결정 근거(Rationale/면접 어필 포함)는 전부 archive에 보존됨.

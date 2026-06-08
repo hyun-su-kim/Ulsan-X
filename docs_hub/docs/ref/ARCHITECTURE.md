@@ -161,4 +161,4 @@ DEC-014: 최상단은 **Yasmin FSM**, 실행 레이어는 **Nav2 BT** (하이브
 | 목적지 결정 | 예약 DB 조회 (FastAPI+MySQL) | 음성 NLU 불확실성 제거, 안내 정확도 보장 (DEC-023/024) |
 | 음성 | TTS 전용 (edge-tts + mpg123) | 예약 시스템 도입으로 STT/wakeword/NLU 불필요 (DEC-024) |
 
-> 세부 결정 배경(DEC-001~042 전체): [archive/decisions-resolved.md](../archive/decisions-resolved.md) — 미결 결정은 [DECISION-LOG.md](../status/DECISION-LOG.md)
+> 세부 결정 배경(DEC-001~044 전체): [archive/decisions-resolved.md](../archive/decisions-resolved.md) — 미결 결정은 [DECISION-LOG.md](../status/DECISION-LOG.md)
