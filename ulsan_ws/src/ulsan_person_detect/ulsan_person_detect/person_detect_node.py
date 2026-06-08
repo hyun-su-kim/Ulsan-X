@@ -2,7 +2,7 @@
 
 목적:
   Nav2 BT의 PersonClearCondition 플러그인이 구독할 /person_detected (Bool)를 발행.
-  안내 주행 중 로봇 전방 가까이(기본 0.7m) 사람이 들어오면 True → BT가 FollowPath
+  안내 주행 중 로봇 전방 가까이(기본 1.5m) 사람이 들어오면 True → BT가 FollowPath
   halt → 정지. 사람이 벗어나면 False → 주행 재개.
 
 설계:
@@ -19,7 +19,7 @@
 파라미터:
   model_path           : YOLO 가중치 (기본 'yolov8n.pt', COCO 사전학습, 미학습)
   confidence_threshold : person 최소 신뢰도 (기본 0.5)
-  distance_threshold   : 정지 임계 거리 m (기본 0.7)
+  distance_threshold   : 정지 임계 거리 m (기본 1.5)
   rate                 : 추론 주기 Hz (기본 10.0) — 매 프레임 추론 시 CPU 과부하
   clear_hold           : RESUME 지연 홀드 s (기본 1.0) — 단일 프레임 dropout 흡수, 떨림 방지
   depth_scale          : depth 픽셀값 → m 환산 (16UC1 mm 기준 0.001)
@@ -46,7 +46,7 @@ class PersonDetectNode(Node):
 
         self.declare_parameter('model_path', 'yolov8n.pt')
         self.declare_parameter('confidence_threshold', 0.5)
-        self.declare_parameter('distance_threshold', 0.7)
+        self.declare_parameter('distance_threshold', 1.5)
         self.declare_parameter('rate', 10.0)
         self.declare_parameter('clear_hold', 1.0)
         self.declare_parameter('depth_scale', 0.001)
