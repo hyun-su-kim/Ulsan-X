@@ -69,7 +69,7 @@
   - `states.py`: `FailedState` 재작성 — `failed_from`(GUIDING/RETURNING/DOCKING)별 TTS 3종 발화 → `/recover` 대기 루프(FAILED 1초 재발행) → `publish_initial_pose_home()` → `recovered`. `GuidingState`/`ReturningState` 실패 시 `blackboard['failed_from']` 기록. `ReturningState`가 `call_home_dock()` 반환값을 받아 False면 `failed_from='DOCKING'`로 표면화.
   - `behaviour_node.py`: `/recover`(Empty) 구독 + `_recover_flag`, `/initialpose` 퍼블리셔 + `publish_initial_pose_home()`(home_key 좌표 사용), SM 전이 `RETURNING failed: IDLE→FAILED` / `FAILED: recovered→IDLE`.
   - `wego_bridge/bridge_robot.yaml`: `/ROBOT_NAME/recover`(domain 5→LIMO) 브릿지 추가(abort 패턴 동일).
-  - **관제 GUI [복구완료] 버튼은 미구현(FSM GUI 작업 시 진행)** — `/limo{N}/recover` Empty 발행만 하면 됨.
+  - **관제 GUI [복구완료] 버튼 구현 완료** (2026-06-08, 커밋 533be90e) — 긴급제어 카드에 🔧 복구완료 버튼 + 오조작 방지 확인 다이얼로그(QMessageBox) → `publish_recover()`로 `/limo{N}/recover` Empty 발행. 미연결 로봇은 버튼 비활성(`_refresh_emergency_buttons`, DEC-045 연결 판정 공유). 실기기 검증 남음.
 - **면접 어필**: "FSM 실패 처리를 설계할 때 'Nav2 실패=주행 능력 손상'으로 해석. 손상된 능력으로 자가복구를 시도하는 모순과 FAILED↔RETURNING 무한루프를 진단해, 자동 재주행을 배제하고 human-in-the-loop 물리 복구로 단순화. 복구 시 알려진 home 좌표로 AMCL을 강제 리셋해 위치추정 신뢰를 회복하는 게 핵심 — 실패의 근본 원인(localization 상실)을 정조준."
 - **Date**: 2026-06-05
 

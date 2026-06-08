@@ -169,7 +169,7 @@
   - 자동 재주행 일절 없음(주행 능력 손상으로 자가복구 모순 + FAILED↔RETURNING 무한루프 차단)
   - 관리자가 로봇을 home에 물리 배치 → `/recover` 수신 → behaviour_node가 home 좌표 `/initialpose` 발행(AMCL 리셋) → IDLE
   - `RETURNING failed: IDLE→FAILED` 수정, `call_home_dock()` 반환값 표면화(기존 무시). wego_bridge `/recover` 브릿지 추가
-  - **관제 GUI [복구완료] 버튼은 미구현** — FSM 관제 GUI 작업 시 진행(`/limo{N}/recover` Empty 발행). 실기기 검증 남음
+  - **관제 GUI [복구완료] 버튼 구현 완료** (2026-06-08) — 긴급제어 카드 🔧 복구완료 버튼 + 확인 다이얼로그 → `/limo{N}/recover` Empty 발행. 미연결 시 버튼 비활성(DEC-045 연결 판정 공유). 실기기 검증 남음
 - [x] **PoseProgressChecker 교체** — done (2026-05-21), **Spin 방식으로 대체 (2026-05-25)**. DEC-031·DEC-037 참고
   - SimpleProgressChecker → PoseProgressChecker: 선형+각도 변화 모두 진행으로 인정
   - required_movement_angle: 0.5rad(~28°) 추가 — 홈 출발 180° 회전 시 recovery 루프 해결
