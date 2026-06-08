@@ -12,7 +12,7 @@ from std_msgs.msg import String, Empty
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from sensor_msgs.msg import CompressedImage
 from nav_msgs.msg import OccupancyGrid
-from diagnostic_msgs.msg import DiagnosticArray
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 try:
     from limo_msgs.msg import LimoStatus as _LimoStatus
     _LIMO_MSGS_OK = True
@@ -53,6 +53,7 @@ class GuiSignals(QObject):
     sig_camera   = pyqtSignal(str, bytes, str)  # (robot, data, fmt)
     sig_dest     = pyqtSignal(str, str)         # (robot, dest)
     sig_battery  = pyqtSignal(str, float)       # (robot, voltage)
+    sig_connection = pyqtSignal(str, bool)       # (robot, connected) — is_robot_connected 단일 출처
     # 비로봇 시그널
     sig_map      = pyqtSignal(object)
     sig_gui_log  = pyqtSignal(str, str, str)    # (log_type, robot_label, message)
@@ -88,6 +89,13 @@ class RosNode(Node):
         # domain 5 노드(wego_dispatcher/wego_traffic): /diagnostics에서 name 필드로 구분
         self._diag_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
         self._diag_recv.update({'wego_dispatcher': 0.0, 'wego_traffic': 0.0})
+
+        # 로봇 '연결' 판정(B안: Nav2 AND behaviour) — _robot_diag_cb가 채움
+        #   behaviour 생존: hardware_id 'wego_behaviour' 진단 수신 시각
+        #   Nav2 상태: hardware_id 'Nav2' 진단을 status.name별(navigation/localization
+        #              lifecycle_manager)로 (수신시각, OK여부) 추적 → 둘 다 active 일 때만 연결
+        self._behaviour_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
+        self._nav2_diag: dict[str, dict[str, tuple[float, bool]]] = {r: {} for r in ROBOTS}
 
         # 구독 — 로봇별 루프
         for robot in ROBOTS:
@@ -188,7 +196,16 @@ class RosNode(Node):
         self.signals.sig_battery.emit(robot, msg.battery_voltage)
 
     def _robot_diag_cb(self, robot: str, msg: DiagnosticArray) -> None:
-        self._diag_recv[robot] = time.time()
+        # /{robot}/diagnostics 에는 behaviour와 Nav2 lifecycle_manager(navigation/
+        # localization)가 같은 토픽으로 함께 실려 옴 → hardware_id로 구분해 기록
+        now = time.time()
+        self._diag_recv[robot] = now
+        for st in msg.status:
+            if st.hardware_id == 'wego_behaviour':
+                self._behaviour_recv[robot] = now
+            elif st.hardware_id == 'Nav2':
+                # status.name = 'lifecycle_manager_navigation: Nav2 Health' 등 매니저별 구분
+                self._nav2_diag[robot][st.name] = (now, st.level == DiagnosticStatus.OK)
 
     def _domain5_diag_cb(self, msg: DiagnosticArray) -> None:
         # 여러 노드가 /diagnostics 하나에 발행 — hardware_id 필드로 노드 구분
@@ -218,8 +235,24 @@ class RosNode(Node):
     # ── 유틸 ─────────────────────────────────────────────────────────
 
     def is_node_ok(self, key: str, timeout_sec: float = 5.0) -> bool:
-        # /diagnostics 수신 시각 기준 — key: 로봇명(limo1/limo2) 또는 노드명(wego_dispatcher/wego_traffic)
+        # /diagnostics 수신 시각 기준 — key: domain5 노드명(wego_dispatcher/wego_traffic)
         return (time.time() - self._diag_recv.get(key, 0.0)) < timeout_sec
+
+    def is_robot_connected(self, robot: str, timeout_sec: float = 5.0) -> bool:
+        # 로봇 '연결' = behaviour FSM 생존 AND Nav2 lifecycle 전부 active (B안)
+        # 정지/주행과 무관하게 lifecycle_manager가 1Hz로 bond 상태를 발행하므로 idle 오탐 없음
+        now = time.time()
+        # 1) behaviour 노드 생존 — 목적지 명령을 처리할 FSM이 있어야 함
+        if (now - self._behaviour_recv.get(robot, 0.0)) >= timeout_sec:
+            return False
+        # 2) Nav2 — 관측된 lifecycle_manager 진단이 있어야 하고, 모두 최근 수신 + OK
+        entries = self._nav2_diag.get(robot, {})
+        if not entries:
+            return False
+        return all(
+            (now - recv) < timeout_sec and ok
+            for recv, ok in entries.values()
+        )
 
     @staticmethod
     def pose_to_xyyaw(pose_msg: PoseWithCovarianceStamped) -> tuple[float, float, float]:

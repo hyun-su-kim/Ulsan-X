@@ -26,7 +26,30 @@
 
 # DECISION-LOG에서 이관 (2026-06-01 정리)
 
-> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-043(최신)부터 시간 역순.
+> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-045(최신)부터 시간 역순.
+
+### DEC-045: 관제 GUI 로봇 연결 판정 — bond 직접 사용 대신 lifecycle_manager bond-health를 diagnostics로 수신 (done 2026-06-08)
+- **Context**: DEC-040에서 시스템 패널 연결 판정을 `/diagnostics` 수신 시각(`is_node_ok`) 기반으로 바꿨으나, 로봇 연결을 "behaviour 진단 수신 여부" 하나로만 봐서 **Nav2 lifecycle이 죽어도 연결됨으로 표시**되는 한계가 남음. 또한 화면마다(시스템 패널·지도 마커·상태 카드·요약 칩·상세 탭) 연결 판정이 제각각이라 표시가 엇갈림. 검토 중 "순수 생사 판정이면 ROS2의 정석은 `bond` 아니냐"는 의문 제기 → bond 직접 사용 여부를 결정해야 함.
+- **bond란**: `bondcpp`/`bondpy` — 두 프로세스가 같은 토픽(`bond_msgs/Status`) 위에서 하트비트를 주고받는 **애플리케이션 레벨 양방향 생사 계약**. Nav2의 `lifecycle_manager`가 관리 노드(amcl/controller/planner…)와 bond를 맺어 노드 사망을 감지(`bond_timeout` 기본 4초).
+- **Options**:
+  - A) **GUI가 bond를 직접 사용** — 감시 대상 노드들과 직접 bond 형성
+  - B) **lifecycle_manager가 이미 맺은 bond의 결과를 diagnostics로 받아 freshness+level로 판정** (behaviour 자체 진단 하트비트 AND Nav2 lifecycle bond-health)
+  - C) DDS QoS Liveliness 이벤트 — 매칭 퍼블리셔 생사 콜백
+- **Decision**: **B 채택.** GUI는 bond를 직접 쓰지 않고, lifecycle_manager의 bond 결과(`hardware_id='Nav2'`, "Nav2 Health")와 behaviour 진단(`hardware_id='wego_behaviour'`)을 `/{robot}/diagnostics`로 받아 **둘 다 최근 수신 + Nav2 level==OK**일 때만 연결로 판정.
+- **Rationale**:
+  - **도메인 브릿지가 결정적**: GUI는 domain 5, 로봇은 domain 6/7, 사이는 전부 `wego_bridge`(domain_bridge)를 건넘(DEC-028). ROS2 도메인은 기본 격리 → 다른 도메인끼리 토픽이 안 보이므로 **bond는 같은 도메인 안에서만 자연 형성**된다(bond 토픽을 양방향 브릿징하지 않는 한). DDS Liveliness(C)는 브릿지가 republisher라 domain 5에선 **브릿지의 생사**만 보임 → 로봇 노드 사망을 못 잡음.
+  - **bond는 양방향 2자 계약**: GUI가 bond로 판정하려면 GUI도 자기 하트비트를 브릿지 너머로 되쏘고, 감시 대상 노드들도 GUI와 bond를 맺도록 코드 수정 필요. 관제는 "보기만 하는" 일방향 관측자이므로 양방향 계약은 불필요·침습적. 게다가 bond는 하트비트 타이밍이 민감해 브릿지 지연/지터를 타면 **bridge가 느려졌을 뿐인데 끊김으로 오판**.
+  - **bond를 버린 게 아니라 계층화**: 생사 판정(bond)은 정당한 당사자인 lifecycle_manager가 도메인 내부에서 수행하고, 그 결과를 diagnostics(일방향·브릿지 통과)로 운반해 GUI가 소비. diagnostics는 소스가 실제로 발행할 때만 브릿지가 전달하므로 freshness가 브릿지 너머에서도 실제 소스 생사를 반영.
+  - **분업 정리**: bond = 도메인 내부 프로세스쌍 생사(타이밍 민감, 2자), diagnostics = 도메인 경계 넘는 관측(일방향, 내용 운반). 관측 대상이 도메인을 건너므로 diagnostics가 올바른 도구.
+- **구현** (ulsan_gui, 미커밋 작업):
+  - `ros_node.py`: `is_robot_connected(robot)` 신규 — `_behaviour_recv`(hardware_id 'wego_behaviour' 수신시각) AND `_nav2_diag`(hardware_id 'Nav2', status.name별 lifecycle_manager의 (수신시각, level==OK))를 모두 최근+OK일 때만 True. `_robot_diag_cb`가 hardware_id로 분리 기록. 신규 시그널 `sig_connection(robot, connected)`.
+  - `map_view.py`: `_check_connections`가 `is_node_ok` → `is_robot_connected`로 교체, 변화 시에만 `sig_connection` 발행(`_conn_prev`). 시스템 패널·지도 마커·상태 카드가 한 판정 공유, 재연결 시 마지막 pose로 마커 복원(`has_pose`).
+  - `main_window.py`: 상단 요약 칩(운행/대기) 집계에서 미연결 로봇 제외. `robot_view.py`: 상세 패널·탭 배지가 미연결이면 FSM 상태 무시하고 '미연결' 우선 표시. → 전 화면 통일.
+- **면접 어필**: "연결 판정에 ROS2 정석인 bond를 쓰지 않은 이유를 도메인 브릿지 아키텍처로 설명할 수 있음. bond/ DDS liveliness 같은 생사 신호는 브릿지 경계에서 종료되고(브릿지의 생사만 보임), bond는 양방향 2자 계약이라 일방향 관측자인 관제엔 과함. 대신 정당한 bond 당사자(lifecycle_manager)의 bond 결과를 diagnostics로 받아 freshness로 판정 — 생사 판정(bond)과 경계를 넘는 운반(diagnostics)을 계층 분리한 설계."
+- **관련**: [DEC-040](diagnostics 연결 판정 도입)을 정련, [DEC-028](domain bridge 위치), [DEC-021](연산 오프로딩 아키텍처)
+- **Date**: 2026-06-08
+
+---
 
 ### DEC-044: FSM 실패 처리 — 모든 주행/도킹 실패를 FAILED로 통합 + 관리자 물리 복구 (done 2026-06-05)
 - **Context**: 기존 FSM의 실패 처리가 불완전·위험. ① `RETURNING failed → IDLE`이라 복귀 주행 실패 시 로봇이 맵 한복판에 멈췄는데 상태는 IDLE → dispatcher가 새 임무 배정 + AMCL 리셋 누락 채로 다음 주행. ② `ReturningState`의 PBVS 도킹(`call_home_dock()`) 반환값을 무시 → 도킹 실패가 silent. ③ `GUIDING failed → FAILED → 10초 후 자동 RETURNING` 자가복구를 두었으나, "Nav2 실패 = 주행 능력이 깨짐"인데 그 깨진 능력으로 복귀를 시도하는 모순 + RETURNING도 실패하면 무한루프 위험.

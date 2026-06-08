@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ros = ros_node
         self._robot_statuses = {r: 'UNKNOWN' for r in ROBOTS}
+        self._connected = {r: False for r in ROBOTS}
 
         self.setWindowTitle('wego 관제 대시보드')
         self.resize(1280, 800)
@@ -75,6 +76,7 @@ class MainWindow(QMainWindow):
         self._tick_clock()
 
         self.ros.signals.sig_status.connect(self._on_status)
+        self.ros.signals.sig_connection.connect(self._on_connection)
 
     # ── 메인 앱 레이아웃 ─────────────────────────────────────────────
 
@@ -307,9 +309,22 @@ class MainWindow(QMainWindow):
 
     def _on_status(self, robot: str, status: str) -> None:
         self._robot_statuses[robot] = status
-        statuses = list(self._robot_statuses.values())
-        busy = sum(1 for s in statuses if s in BUSY_STATES)
-        idle = sum(1 for s in statuses if s == 'IDLE')
+        self._recompute_chips()
+
+    def _on_connection(self, robot: str, connected: bool) -> None:
+        self._connected[robot] = connected
+        self._recompute_chips()
+
+    def _recompute_chips(self) -> None:
+        # 연결된 로봇만 집계 — 끊긴 로봇은 운행 중·대기 어디에도 포함하지 않음
+        busy = sum(
+            1 for r in ROBOTS
+            if self._connected[r] and self._robot_statuses[r] in BUSY_STATES
+        )
+        idle = sum(
+            1 for r in ROBOTS
+            if self._connected[r] and self._robot_statuses[r] == 'IDLE'
+        )
         self._chip_busy._val.setText(str(busy))
         self._chip_idle._val.setText(str(idle))
 

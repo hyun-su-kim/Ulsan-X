@@ -36,9 +36,8 @@ CARD_TITLE_STYLE = (
 )
 
 
-# 로봇 마커 색상 팔레트 — ROBOTS 인덱스 기준으로 순환
+# 로봇 마커 색상 팔레트 — ROBOTS 인덱스 기준으로 순환 (범례 점과 공유)
 _ROBOT_COLORS = ['#2563eb', '#d97706', '#10b981', '#9333ea', '#dc2626']
-_LEGEND_DOTS  = ['#f59e0b', '#10b981', '#3b82f6', '#9333ea', '#ef4444']
 
 
 # ── 맵 캔버스 ────────────────────────────────────────────────────────
@@ -97,8 +96,8 @@ class MapCanvas(QWidget):
 
         self._legend_rows: dict[str, QLabel] = {}
         for i, robot_id in enumerate(ROBOTS):
-            color = _LEGEND_DOTS[i % len(_LEGEND_DOTS)]
-            label = f'{robot_label(robot_id)} (UNKNOWN)'
+            color = _ROBOT_COLORS[i % len(_ROBOT_COLORS)]
+            label = robot_label(robot_id)   # 색-로봇 매핑 키 — 이름만 표시 (상태는 카드에서)
             row = QHBoxLayout()
             row.setSpacing(6)
             dot = QLabel()
@@ -221,11 +220,12 @@ class MapCanvas(QWidget):
             self._poses[robot] = None
             self.update()
 
+    def has_pose(self, robot: str) -> bool:
+        return self._poses.get(robot) is not None
+
     def update_status(self, robot: str, status: str) -> None:
+        # 범례는 색-로봇 매핑 키이므로 이름만 유지 — 상태 텍스트는 덧붙이지 않음
         self._statuses[robot] = status
-        lbl = self._legend_rows.get(robot)
-        if lbl:
-            lbl.setText(f'{robot_label(robot)} ({status})')
 
     def paintEvent(self, _) -> None:
         painter = QPainter(self)
@@ -265,31 +265,26 @@ class MapCanvas(QWidget):
             # ROS yaw=0 → +x(오른쪽), Qt 화살표 기본방향=위(-y) → +90° 오프셋으로 정렬
             painter.rotate(-math.degrees(ryaw) + 90)
 
-            R = 13
+            R = 8
             # 흰색 외곽선으로 배경과 구분
-            painter.setPen(QPen(Qt.white, 3))
+            painter.setPen(QPen(Qt.white, 2))
             painter.setBrush(QBrush(Qt.white))
             painter.drawEllipse(-(R + 2), -(R + 2), 2 * (R + 2), 2 * (R + 2))
             # 본체 원
             painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(color))
             painter.drawEllipse(-R, -R, 2 * R, 2 * R)
-            # 방향 화살표 (삼각형, 앞방향=위)
+            # 방향 화살표 (삼각형, 앞방향=위) — 다크 채움 + 흰색 외곽선으로 가시성 확보
             arrow = QPolygon([
-                QPoint(0,  -(R + 14)),
-                QPoint(-8, -(R - 3)),
-                QPoint(8,  -(R - 3)),
+                QPoint(0,  -(R + 8)),
+                QPoint(-5, -(R - 2)),
+                QPoint(5,  -(R - 2)),
             ])
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QBrush(Qt.white))
+            painter.setPen(QPen(Qt.white, 1.5))
+            painter.setBrush(QBrush(QColor('#1f2937')))
             painter.drawPolygon(arrow)
 
             painter.restore()
-
-            label = f'L{robot[4:]}' if robot.startswith('limo') else robot
-            painter.setPen(color)
-            painter.setFont(QFont('Segoe UI', 9, QFont.Bold))
-            painter.drawText(px + R + 6, py - 4, label)
 
 
 # ── 로봇 상태 카드 ────────────────────────────────────────────────────
@@ -297,14 +292,16 @@ class MapCanvas(QWidget):
 class RobotStatusCard(QFrame):
     def __init__(self, robot_id: str, on_click=None):
         super().__init__()
-        self._robot_id = robot_id
-        self._status   = 'UNKNOWN'
-        self._on_click = on_click
+        self._robot_id  = robot_id
+        self._status    = 'UNKNOWN'
+        self._connected = False   # 연결 판정 전 기본값 = 미연결
+        self._dest      = ''      # 현재 목적지(빈 값 = 없음)
+        self._on_click  = on_click
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         if on_click:
             self.setCursor(Qt.PointingHandCursor)
         self._build_ui()
-        self._apply_border()
+        self._render()
 
     def _build_ui(self) -> None:
         hbox = QHBoxLayout(self)
@@ -367,6 +364,35 @@ class RobotStatusCard(QFrame):
 
     def update_status(self, status: str) -> None:
         self._status = status
+        if status == 'IDLE':
+            self._dest = ''   # 임무 종료 → 목적지 비움 ('방문자 대기 중' 복귀)
+        self._render()
+
+    def update_connection(self, connected: bool) -> None:
+        self._connected = connected
+        self._render()
+
+    def _render(self) -> None:
+        # 미연결이면 FSM 상태와 무관하게 '미연결'을 우선 표시 (전 화면 통일)
+        if not self._connected:
+            self.setStyleSheet(
+                'background:#fff; border-radius:10px;'
+                'border-top:1px solid #e5e7eb;'
+                'border-right:1px solid #e5e7eb;'
+                'border-bottom:1px solid #e5e7eb;'
+                'border-left:4px solid #cbd5e1;'
+            )
+            self._avatar.setStyleSheet('border-radius:9px; background:#f1f5f9; border:none;')
+            self._badge.setText('미연결')
+            self._badge.setStyleSheet(
+                'border-radius:10px; padding:2px 6px; border:none;'
+                'color:#9ca3af; background:#f1f5f9;'
+            )
+            # 미연결이면 상태를 알 수 없으므로 '방문자 대기 중' 대신 끊김 표시
+            self._dest_lbl.setText('연결 끊김')
+            self._dest_lbl.setStyleSheet('color:#9ca3af; border:none;')
+            return
+        status = self._status
         self._apply_border()
         c  = STATUS_COLOR.get(status, STATUS_COLOR['UNKNOWN'])
         bg = STATUS_BG.get(status, STATUS_BG['UNKNOWN'])
@@ -375,7 +401,10 @@ class RobotStatusCard(QFrame):
             f'border-radius:10px; padding:2px 6px; border:none;'
             f'color:{c}; background:{bg};'
         )
-        if status == 'IDLE':
+        self._dest_lbl.setStyleSheet('color:#6b7280; border:none;')
+        if self._dest:
+            self._dest_lbl.setText(f'→ {self._dest}')
+        elif status == 'IDLE':
             self._dest_lbl.setText('방문자 대기 중')
 
     def update_battery(self, voltage: float) -> None:
@@ -384,7 +413,8 @@ class RobotStatusCard(QFrame):
 
     def update_destination(self, dest: str) -> None:
         if dest:
-            self._dest_lbl.setText(f'→ {dest}')
+            self._dest = dest
+            self._render()
 
     def mousePressEvent(self, e) -> None:
         if e.button() == Qt.LeftButton and self._on_click:
@@ -472,6 +502,8 @@ class MapView(QWidget):
         self._api_checker = HttpGetThread(f'{FASTAPI_URL}/health', timeout=1.0)
         self._api_checker.done.connect(self._on_fastapi_result)
 
+        # 연결 상태 변화 통지용 — 변화 시에만 sig_connection 발행 (None=미발행)
+        self._conn_prev: dict[str, bool | None] = {r: None for r in ROBOTS}
         self._conn_timer = QTimer()
         self._conn_timer.timeout.connect(self._check_connections)
         self._conn_timer.start(2000)
@@ -730,17 +762,31 @@ class MapView(QWidget):
         self._flash_btn(self._abort_btn, _ABORT_FLASH, _ABORT_NORMAL)
 
     def _check_connections(self) -> None:
-        # 로봇 연결: /ROBOT_NAME/diagnostics 수신 시각 기준
-        # 미연결 시 맵 마커도 즉시 제거
+        # 로봇 연결 단일 판정(is_robot_connected) — 시스템 패널·지도 마커·상태 카드·
+        # 상단 요약 칩이 모두 이 결과를 공유해 화면 간 불일치를 제거
         for robot in ROBOTS:
+            connected = self.ros.is_robot_connected(robot)
             val = self._sys_vals[f'{robot}_conn']
-            if self.ros.is_node_ok(robot):
+            if connected:
                 val.setText('● 연결')
                 val.setStyleSheet('color:#059669; border:none;')
+                # 재연결 시 마지막 위치로 마커 복원 (amcl_pose 재발행 전 공백 방지)
+                if not self._canvas.has_pose(robot):
+                    last = self.ros.robots[robot].pose
+                    if last is not None:
+                        self._canvas.update_pose(robot, last)
             else:
                 val.setText('● 미연결')
                 val.setStyleSheet('color:#ef4444; border:none;')
                 self._canvas.clear_pose(robot)
+
+            # 상태 카드 동기화 + 변화 시 요약 칩·상세 탭에 통지
+            card = self._cards.get(robot)
+            if card:
+                card.update_connection(connected)
+            if connected != self._conn_prev.get(robot):
+                self._conn_prev[robot] = connected
+                self.ros.signals.sig_connection.emit(robot, connected)
 
         # 맵 서버: /map 수신 여부 기준 (Nav2 map_server가 diagnostics 미보장)
         val = self._sys_vals['map_server']

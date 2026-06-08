@@ -412,10 +412,13 @@ class TeleopCard(QFrame):
 class RobotPanel(QWidget):
     def __init__(self, robot: str, ros_node):
         super().__init__()
-        self.robot = robot
-        self.ros   = ros_node
+        self.robot      = robot
+        self.ros        = ros_node
+        self._status    = 'UNKNOWN'
+        self._connected = False
         self._build_ui()
         self._connect_signals()
+        self._render_status()
 
     def _build_ui(self) -> None:
         main_vbox = QVBoxLayout(self)
@@ -589,6 +592,8 @@ class RobotPanel(QWidget):
         # 통합 시그널 + 로봇 필터링
         self.ros.signals.sig_status.connect(
             lambda r, s: self._on_status(s) if r == self.robot else None)
+        self.ros.signals.sig_connection.connect(
+            lambda r, c: self._on_connection(c) if r == self.robot else None)
         self.ros.signals.sig_camera.connect(
             lambda r, d, f: self._on_camera(d, f) if r == self.robot else None)
         self.ros.signals.sig_dest.connect(
@@ -617,6 +622,23 @@ class RobotPanel(QWidget):
             )
 
     def _on_status(self, status: str) -> None:
+        self._status = status
+        self._render_status()
+
+    def _on_connection(self, connected: bool) -> None:
+        self._connected = connected
+        self._render_status()
+
+    def _render_status(self) -> None:
+        # 미연결이면 FSM 상태와 무관하게 '미연결' 우선 표시 (전 화면 통일)
+        if not self._connected:
+            self._status_badge.setText('미연결')
+            self._status_badge.setStyleSheet(
+                'border-radius:8px; padding:3px 10px; border:none;'
+                'color:#9ca3af; background:#f1f5f9;'
+            )
+            return
+        status = self._status
         self._status_badge.setText(status)
         c  = STATUS_COLOR.get(status, STATUS_COLOR['UNKNOWN'])
         bg = STATUS_BG.get(status, STATUS_BG['UNKNOWN'])
@@ -747,9 +769,11 @@ class RobotView(QWidget):
         super().__init__()
         self.setFocusPolicy(Qt.StrongFocus)
         self._statuses = {r: 'UNKNOWN' for r in ROBOTS}
+        self._connected = {r: False for r in ROBOTS}
         self._build_ui(ros_node)
 
         ros_node.signals.sig_status.connect(self._on_tab_status)
+        ros_node.signals.sig_connection.connect(self._on_tab_connection)
 
         self._task_timer = QTimer(self)
         self._task_timer.timeout.connect(self._fetch_today_tasks)
@@ -848,8 +872,24 @@ class RobotView(QWidget):
 
     def _on_tab_status(self, robot: str, status: str) -> None:
         self._statuses[robot] = status
+        self._render_tab(robot)
+
+    def _on_tab_connection(self, robot: str, connected: bool) -> None:
+        self._connected[robot] = connected
+        self._render_tab(robot)
+
+    def _render_tab(self, robot: str) -> None:
         badge = self._tab_badges[robot]
         active = (self._stack.currentWidget() == self._panels[robot])
+        # 미연결이면 FSM 상태와 무관하게 '미연결' 우선 표시 (전 화면 통일)
+        if not self._connected[robot]:
+            badge.setText('미연결')
+            badge.setStyleSheet(
+                f'border-radius:8px; padding:1px 6px; border:none;'
+                f'color:#9ca3af; background:{"rgba(0,0,0,0.1)" if active else "#f1f5f9"};'
+            )
+            return
+        status = self._statuses[robot]
         c  = STATUS_COLOR.get(status, STATUS_COLOR['UNKNOWN'])
         bg = STATUS_BG.get(status, STATUS_BG['UNKNOWN'])
         badge.setText(status)
