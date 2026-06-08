@@ -15,7 +15,7 @@
 | 3 | **Nav2 BT 커스텀** | `done (2026-06-01)` | XML 2개 커스텀(DEC-039) + PersonClearCondition C++ 노드 + ReactiveSequence 래핑 완료(DEC-041) |
 | 4 | **유리문 구간 중앙 웨이포인트 경유** | `done (2026-05-19)` | NavigateThroughPoses + glass_entry/glass_exit 경유 포인트 2개. DEC-030 참고 |
 | 5 | **관제 UI (wego_ui, PyQt + rclpy)** | `done (2026-05-22)` | 지도·로봇 상태·카드·긴급 제어·이벤트 로그·미션 로그·확장성 리팩토링 완료. DEC-034~036 참고 |
-| 6 | **사람 발견 시 정지 기능** | `in-progress (2026-06-01)` | 구현 완료(ulsan_person_detect + ulsan_bt_plugins + BT XML). 실기기 검증 남음. DEC-041 참고 |
+| 6 | **사람 발견 시 정지 기능** | `done (2026-06-08)` | 구현 + 실기기 검증 완료. 검증 중 보강: 정지거리 0.7→1.5m, clear_hold(1.0s) 디바운스로 STOP/RESUME 떨림 제거. DEC-041 참고 |
 
 ---
 
@@ -62,7 +62,7 @@
 | 5-1 | YOLOv8n(COCO 사전학습) + Depth 거리 게이팅(0.7m) 노드 — `ulsan_person_detect` | `done (2026-06-01)` |
 | 5-2 | PersonClearCondition C++ BT 노드 — `ulsan_bt_plugins` | `done (2026-06-01)` |
 | 5-3 | BT XML 수정 (ReactiveSequence 삽입, navigate_to_pose + navigate_through_poses) | `done (2026-06-01)` |
-| 5-4 | 실기기 검증 (사람 0.7m 진입 → 정지 → 이탈 → 재개) | `todo` |
+| 5-4 | 실기기 검증 (사람 1.5m 진입 → 정지 → 이탈 → 재개) | `done (2026-06-08)` — 정지거리 1.5m + clear_hold 1.0s 디바운스 반영 |
 
 > **5단계(실기기 검증 포함) 완료 = 1차 데모 완성**
 > 구현 3종 완료(2026-06-01). person_detect_node는 노드 1개라 launch 없이 `ros2 run`으로 실행(DEC-043). 실행 위치: **로봇(LIMO 도메인 6/7) — perception 엣지 배치(DEC-043)**. wego_aruco도 로봇에서 실행.
@@ -170,6 +170,10 @@
   - 관리자가 로봇을 home에 물리 배치 → `/recover` 수신 → behaviour_node가 home 좌표 `/initialpose` 발행(AMCL 리셋) → IDLE
   - `RETURNING failed: IDLE→FAILED` 수정, `call_home_dock()` 반환값 표면화(기존 무시). wego_bridge `/recover` 브릿지 추가
   - **관제 GUI [복구완료] 버튼 구현 완료** (2026-06-08) — 긴급제어 카드 🔧 복구완료 버튼 + 확인 다이얼로그 → `/limo{N}/recover` Empty 발행. 미연결 시 버튼 비활성(DEC-045 연결 판정 공유). 실기기 검증 남음
+- [ ] **FAILED 흐름 잔여 수정 3종 (2026-06-09 예정 — 무엇을 고칠지만 기록, 방법은 미정)**
+  - ① **FAILED 시 TTS 발화 안 나옴** — `FailedState`가 `speak_text` 호출하나 실제 음성 출력 안 됨. 원인 미진단(브릿지/voice 노드/타이밍 등 조사 필요)
+  - ② **GUI FAILED 팝업** — FAILED 진입 시 관제 GUI에 간단한 알림 팝업 표시 (현재 없음)
+  - ③ **[복구완료] 버튼 비활성 문제** — FAILED로 nav2 종료 → DEC-045 연결판정(behaviour AND nav2)이 '미연결'로 떨어져 버튼 비활성 → 복구 신호(`/recover`)를 못 보냄. `/recover`는 behaviour_node 대상이라 nav2와 무관 → 버튼 활성 조건을 nav2 health에서 분리 필요(방법 내일 논의)
 - [x] **PoseProgressChecker 교체** — done (2026-05-21), **Spin 방식으로 대체 (2026-05-25)**. DEC-031·DEC-037 참고
   - SimpleProgressChecker → PoseProgressChecker: 선형+각도 변화 모두 진행으로 인정
   - required_movement_angle: 0.5rad(~28°) 추가 — 홈 출발 180° 회전 시 recovery 루프 해결
