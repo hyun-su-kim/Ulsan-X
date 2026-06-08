@@ -8,18 +8,25 @@
 설계:
   - RGB(/camera/color/image_raw)로 YOLOv8n 추론 → COCO class 0(person) 박스 추출
   - Depth(/camera/depth/image_raw)에서 각 사람 박스 중심 영역의 거리 측정
-  - 거리 < distance_threshold 인 사람이 한 명이라도 있으면 True
+  - 거리 < distance_threshold 인 사람이 한 명이라도 있으면 (원시) 감지 True
   - 거리 게이팅 이유: 화면 감지만 쓰면 멀리 지나가는 사람에도 멈춤 → 안내 불가.
     근접한 사람만 정지 대상으로 한정.
+  - clear 홀드(디바운스): 원시 감지가 프레임 단위로 깜빡(YOLO 신뢰도 경계·depth
+    구멍)이면 STOP→RESUME→STOP 떨림 발생 → 사람이 코앞인데 로봇이 잠깐 재개하는
+    위험. 안전을 위해 "멈춤은 즉시, 해제는 지연" — 마지막 원시 감지 후 clear_hold
+    초가 지나야만 발행값을 False(RESUME)로 내림. 그 안에 재감지되면 타이머 리셋.
 
 파라미터:
   model_path           : YOLO 가중치 (기본 'yolov8n.pt', COCO 사전학습, 미학습)
   confidence_threshold : person 최소 신뢰도 (기본 0.5)
   distance_threshold   : 정지 임계 거리 m (기본 0.7)
   rate                 : 추론 주기 Hz (기본 10.0) — 매 프레임 추론 시 CPU 과부하
+  clear_hold           : RESUME 지연 홀드 s (기본 1.0) — 단일 프레임 dropout 흡수, 떨림 방지
   depth_scale          : depth 픽셀값 → m 환산 (16UC1 mm 기준 0.001)
   color_topic / depth_topic / output_topic
 """
+
+import time
 
 import numpy as np
 import rclpy
@@ -41,6 +48,7 @@ class PersonDetectNode(Node):
         self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('distance_threshold', 0.7)
         self.declare_parameter('rate', 10.0)
+        self.declare_parameter('clear_hold', 1.0)
         self.declare_parameter('depth_scale', 0.001)
         self.declare_parameter('color_topic', '/camera/color/image_raw')
         self.declare_parameter('depth_topic', '/camera/depth/image_raw')
@@ -48,6 +56,7 @@ class PersonDetectNode(Node):
 
         self.conf_th = self.get_parameter('confidence_threshold').value
         self.dist_th = self.get_parameter('distance_threshold').value
+        self.clear_hold = self.get_parameter('clear_hold').value
         self.depth_scale = self.get_parameter('depth_scale').value
         rate = self.get_parameter('rate').value
         model_path = self.get_parameter('model_path').value
@@ -59,6 +68,7 @@ class PersonDetectNode(Node):
         self._color = None   # 최신 RGB (numpy BGR)
         self._depth = None    # 최신 Depth (numpy, 원본 dtype)
         self._last_state = None  # 직전 발행값 (변화 시에만 로그)
+        self._last_detect_time = None  # 마지막 원시 감지 시각 (clear 홀드 기준)
 
         self.create_subscription(
             Image, self.get_parameter('color_topic').value, self._color_cb, 10)
@@ -70,7 +80,8 @@ class PersonDetectNode(Node):
         self.create_timer(1.0 / rate, self._on_timer)
         self.get_logger().info(
             f'person_detect_node started '
-            f'(conf={self.conf_th}, dist={self.dist_th}m, rate={rate}Hz)')
+            f'(conf={self.conf_th}, dist={self.dist_th}m, rate={rate}Hz, '
+            f'clear_hold={self.clear_hold}s)')
 
     def _color_cb(self, msg: Image):
         self._color = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -109,7 +120,16 @@ class PersonDetectNode(Node):
             if dist <= self.dist_th:
                 detected = True
 
-        self._publish(detected, min_dist)
+        # clear 홀드(디바운스): 원시 감지(detected)는 즉시 STOP으로 반영하되,
+        # RESUME(False)은 마지막 감지 후 clear_hold초가 지나야만 내림. 단일 프레임
+        # dropout(YOLO 깜빡·depth 구멍)이 홀드 구간에 흡수돼 STOP→RESUME 떨림을 차단.
+        now = time.monotonic()
+        if detected:
+            self._last_detect_time = now
+        held = (self._last_detect_time is not None
+                and (now - self._last_detect_time) < self.clear_hold)
+
+        self._publish(held, min_dist)
 
     def _box_distance(self, depth, color_shape, x1, y1, x2, y2):
         """박스 중심 영역(중앙 40%)의 유효 depth 중앙값 → 거리(m).
