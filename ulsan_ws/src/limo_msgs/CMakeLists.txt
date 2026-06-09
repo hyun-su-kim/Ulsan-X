@@ -8,6 +8,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/LimoStatus.msg"
+  "msg/GuideGoal.msg"
+  "srv/Speak.srv"
   DEPENDENCIES
   builtin_interfaces std_msgs
 )

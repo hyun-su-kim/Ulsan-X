@@ -35,6 +35,12 @@ topics:
     to_domain: 5
     remap: /ROBOT_NAME/limo_status    # ulsan_gui 배터리 표시용
 
+  /person_detected:
+    type: std_msgs/msg/Bool
+    from_domain: ROBOT_DOMAIN
+    to_domain: 5
+    remap: /ROBOT_NAME/person_detected   # ulsan_gui 시스템 상태 '사람감지' liveness (10Hz 발행)
+
   # ── domain 5 → LIMO 도메인 ──────────────────────────────────────────
   /ROBOT_NAME/pause:
     type: std_msgs/msg/Empty
@@ -49,7 +55,7 @@ topics:
     remap: /resume                    # wego_traffic → wego_behaviour
 
   /ROBOT_NAME/goal_destination:
-    type: std_msgs/msg/String
+    type: limo_msgs/msg/GuideGoal     # 목적지 + 출발 안내 멘트(tts)를 묶어 전달
     from_domain: 5
     to_domain: ROBOT_DOMAIN
     remap: /goal_destination          # wego_dispatcher → wego_behaviour
@@ -66,11 +72,9 @@ topics:
     to_domain: ROBOT_DOMAIN
     remap: /recover                   # ulsan_gui [복구완료] → wego_behaviour FAILED 탈출
 
-  /ROBOT_NAME/speak_text:
-    type: std_msgs/msg/String
-    from_domain: 5
-    to_domain: ROBOT_DOMAIN
-    remap: /speak_text                # wego_dispatcher → wego_voice
+  # ※ /ROBOT_NAME/speak_text 라우트 폐지(2026-06-09): 출발 안내는 이제 GuideGoal.tts_text로
+  #   behaviour를 거쳐 발화-완료대기-주행으로 동기화됨. 도착·실패 발화는 behaviour가 같은
+  #   도메인에서 /speak_text로 직접 발행하므로 브릿지 불필요.
 
   /ROBOT_NAME/cmd_vel:
     type: geometry_msgs/msg/Twist

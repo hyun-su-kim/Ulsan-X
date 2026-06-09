@@ -325,7 +325,7 @@ waypoints:
 ## wego_behaviour FSM 연동
 
 ```
-wego_dispatcher → /goal_destination (String 키, 예: "classroom_1")
+wego_dispatcher → /goal_destination (limo_msgs/GuideGoal: destination 키 "classroom_1" + 출발멘트, DEC-048)
   → wego_behaviour IDLE 상태 수신
   → waypoints.yaml에서 좌표 조회
   → blackboard['from_home'] = True 설정

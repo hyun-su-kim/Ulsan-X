@@ -1,4 +1,3 @@
-import math
 import os
 import time
 import threading
@@ -8,7 +7,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
-from std_msgs.msg import String, Empty
+from std_msgs.msg import String, Empty, Bool
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from sensor_msgs.msg import CompressedImage
 from nav_msgs.msg import OccupancyGrid
@@ -83,6 +82,8 @@ class RosNode(Node):
         # 로봇별 상태 — 단일 dict
         self.robots: dict[str, RobotState] = {r: RobotState() for r in ROBOTS}
         self.latest_map: OccupancyGrid | None = None
+        # 현재 보고 있는(활성) 로봇 — 이 로봇의 카메라 프레임만 처리. None=처리 안 함.
+        self._active_camera: str | None = None
 
         # 노드별 최근 /diagnostics 수신 시각 — is_node_ok() 판정 기준
         # 로봇(limo1/limo2): bridge를 통해 /ROBOT_NAME/diagnostics로 수신
@@ -90,12 +91,21 @@ class RosNode(Node):
         self._diag_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
         self._diag_recv.update({'wego_dispatcher': 0.0, 'wego_traffic': 0.0})
 
-        # 로봇 '연결' 판정(B안: Nav2 AND behaviour) — _robot_diag_cb가 채움
-        #   behaviour 생존: hardware_id 'wego_behaviour' 진단 수신 시각
-        #   Nav2 상태: hardware_id 'Nav2' 진단을 status.name별(navigation/localization
-        #              lifecycle_manager)로 (수신시각, OK여부) 추적 → 둘 다 active 일 때만 연결
+        # 연결/준비 판정 — 세 개념을 분리(DEC-047):
+        #   ① 로봇 연결(physical liveness): /limo_status — 로봇 HW 드라이버(Orin) 발.
+        #      behaviour/Nav2(데스크탑 발)와 무관하게 "물리 로봇이 살아있나"만 판정.
+        #   ② behaviour 생존: hardware_id 'wego_behaviour' 진단 수신 시각 — 명령(pause/
+        #      resume/abort/recover) 수신 주체.
+        #   ③ Nav2 준비(navigation/localization): hardware_id 'Nav2' 진단을 status.name별
+        #      (lifecycle_manager_navigation / _localization)로 (수신시각, OK) 추적 →
+        #      navigation·localization을 독립 판정.
         self._behaviour_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
         self._nav2_diag: dict[str, dict[str, tuple[float, bool]]] = {r: {} for r in ROBOTS}
+        self._limo_status_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
+        # 로봇 측 노드 liveness — person_detect: /person_detected(10Hz) 신선도,
+        #   voice: /diagnostics의 hardware_id 'wego_voice' 수신 시각
+        self._person_detect_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
+        self._voice_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
 
         # 구독 — 로봇별 루프
         for robot in ROBOTS:
@@ -114,6 +124,10 @@ class RosNode(Node):
             self.create_subscription(
                 String, f'/{robot}/goal_destination',
                 lambda m, r=robot: self._dest_cb(r, m), 10,
+            )
+            self.create_subscription(
+                Bool, f'/{robot}/person_detected',
+                lambda m, r=robot: self._person_detected_cb(r, m), 10,
             )
             if _LIMO_MSGS_OK:
                 self.create_subscription(
@@ -189,6 +203,10 @@ class RosNode(Node):
         self.signals.sig_map.emit(msg)
 
     def _camera_cb(self, robot: str, msg: CompressedImage) -> None:
+        # 활성(현재 보고 있는) 로봇의 프레임만 emit — 나머지는 디코드/표시 전에 즉시 폐기.
+        # robot_view의 압축 해제+스케일이 큰 비용이라, 안 보는 로봇/뷰에서 헛돌지 않게 한다.
+        if robot != self._active_camera:
+            return
         self.signals.sig_camera.emit(robot, bytes(msg.data), msg.format)
 
     def _dest_cb(self, robot: str, msg: String) -> None:
@@ -196,7 +214,13 @@ class RosNode(Node):
         self.signals.sig_dest.emit(robot, msg.data)
 
     def _battery_cb(self, robot: str, msg) -> None:
+        # /limo_status = 로봇 HW 드라이버 발 — 로봇 '연결' 판정의 하트비트(DEC-047)
+        self._limo_status_recv[robot] = time.time()
         self.signals.sig_battery.emit(robot, msg.battery_voltage)
+
+    def _person_detected_cb(self, robot: str, msg: Bool) -> None:
+        # /person_detected는 감지 여부와 무관하게 10Hz로 발행 → 수신 자체가 노드 liveness
+        self._person_detect_recv[robot] = time.time()
 
     def _robot_diag_cb(self, robot: str, msg: DiagnosticArray) -> None:
         # /{robot}/diagnostics 에는 behaviour와 Nav2 lifecycle_manager(navigation/
@@ -206,6 +230,8 @@ class RosNode(Node):
         for st in msg.status:
             if st.hardware_id == 'wego_behaviour':
                 self._behaviour_recv[robot] = now
+            elif st.hardware_id == 'wego_voice':
+                self._voice_recv[robot] = now
             elif st.hardware_id == 'Nav2':
                 # status.name = 'lifecycle_manager_navigation: Nav2 Health' 등 매니저별 구분
                 self._nav2_diag[robot][st.name] = (now, st.level == DiagnosticStatus.OK)
@@ -239,6 +265,11 @@ class RosNode(Node):
         # FAILED 상태 탈출 — behaviour_node가 home 좌표 /initialpose 발행(AMCL 리셋) → IDLE (DEC-044)
         self._recover_pubs[robot].publish(Empty())
 
+    def set_active_camera(self, robot: str | None) -> None:
+        # RobotView가 현재 보는 로봇(탭)을 통지 — None이면 로봇 뷰를 벗어난 것 → 카메라 처리 중단.
+        # 단순 속성 대입이라 executor 스레드의 _camera_cb 읽기와 GIL 하에 안전.
+        self._active_camera = robot
+
     # ── 유틸 ─────────────────────────────────────────────────────────
 
     def is_node_ok(self, key: str, timeout_sec: float = 5.0) -> bool:
@@ -246,30 +277,43 @@ class RosNode(Node):
         return (time.time() - self._diag_recv.get(key, 0.0)) < timeout_sec
 
     def is_robot_connected(self, robot: str, timeout_sec: float = 5.0) -> bool:
-        # 로봇 '연결' = behaviour FSM 생존 AND Nav2 lifecycle 전부 active (B안)
-        # 정지/주행과 무관하게 lifecycle_manager가 1Hz로 bond 상태를 발행하므로 idle 오탐 없음
+        # 로봇 '연결'(physical liveness) = 로봇 HW 드라이버(/limo_status) 하트비트 신선도.
+        # Nav2(navigation/localization)·behaviour는 데스크탑 발이라 로봇 물리 생존과 무관 →
+        # 연결 판정에서 분리(DEC-047). 도킹 중 CPU 스파이크로 Nav2 진단이 굶어도, FAILED로
+        # navigation이 죽어도 로봇 자체가 살아있으면 '연결'을 유지한다.
+        return (time.time() - self._limo_status_recv.get(robot, 0.0)) < timeout_sec
+
+    def is_behaviour_alive(self, robot: str, timeout_sec: float = 5.0) -> bool:
+        # 명령 수신 주체(FSM) 생존 — pause/resume/abort/recover의 필수 전제
+        return (time.time() - self._behaviour_recv.get(robot, 0.0)) < timeout_sec
+
+    def is_person_detect_alive(self, robot: str, timeout_sec: float = 5.0) -> bool:
+        # 사람 감지 노드 생존 — /person_detected(10Hz) 신선도. 죽으면 안전정지 무력화.
+        return (time.time() - self._person_detect_recv.get(robot, 0.0)) < timeout_sec
+
+    def is_voice_alive(self, robot: str, timeout_sec: float = 5.0) -> bool:
+        # 음성(TTS) 노드 생존 — wego_voice diagnostics 신선도. 죽으면 안내 발화 없음.
+        return (time.time() - self._voice_recv.get(robot, 0.0)) < timeout_sec
+
+    def _lifecycle_ready(self, robot: str, key: str, timeout_sec: float) -> bool:
+        # status.name 예) 'lifecycle_manager_navigation: Nav2 Health' → key('navigation'/
+        # 'localization') 부분 일치로 매니저 구분. 해당 매니저 진단이 최근 수신 + 전부 OK일 때만 준비.
         now = time.time()
-        # 1) behaviour 노드 생존 — 목적지 명령을 처리할 FSM이 있어야 함
-        if (now - self._behaviour_recv.get(robot, 0.0)) >= timeout_sec:
-            return False
-        # 2) Nav2 — 관측된 lifecycle_manager 진단이 있어야 하고, 모두 최근 수신 + OK
-        entries = self._nav2_diag.get(robot, {})
+        entries = [
+            (recv, ok) for name, (recv, ok) in self._nav2_diag.get(robot, {}).items()
+            if key in name
+        ]
         if not entries:
             return False
-        return all(
-            (now - recv) < timeout_sec and ok
-            for recv, ok in entries.values()
-        )
+        return all((now - recv) < timeout_sec and ok for recv, ok in entries)
 
-    @staticmethod
-    def pose_to_xyyaw(pose_msg: PoseWithCovarianceStamped) -> tuple[float, float, float]:
-        p = pose_msg.pose.pose
-        q = p.orientation
-        yaw = math.atan2(
-            2.0 * (q.w * q.z + q.x * q.y),
-            1.0 - 2.0 * (q.y ** 2 + q.z ** 2)
-        )
-        return p.position.x, p.position.y, yaw
+    def is_navigation_ready(self, robot: str, timeout_sec: float = 5.0) -> bool:
+        # planner/controller/bt_navigator 등 주행 스택 active — pause/resume/abort에 필요
+        return self._lifecycle_ready(robot, 'navigation', timeout_sec)
+
+    def is_localization_ready(self, robot: str, timeout_sec: float = 5.0) -> bool:
+        # map_server/amcl active — recover의 /initialpose 리셋이 먹으려면 필수(navigation 무관)
+        return self._lifecycle_ready(robot, 'localization', timeout_sec)
 
 
 class RosSpinThread(threading.Thread):

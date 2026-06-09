@@ -151,6 +151,11 @@ class ReservationView(QWidget):
 
         self._scroll_top_next = False
 
+        # HTTP GET 스레드 단일 인스턴스 재사용 — 폴링/이벤트마다 새 QThread 생성 방지
+        # (재할당 시 실행 중 스레드 참조가 끊겨 'QThread destroyed while running' 크래시 위험)
+        self._thread = HttpGetThread(f'{API_BASE}/reservations/')
+        self._thread.done.connect(self._on_fetched)
+
         self._timer = QTimer()
         self._timer.timeout.connect(self._fetch)
         self._timer.start(5000)
@@ -306,9 +311,8 @@ class ReservationView(QWidget):
         self._fetch()
 
     def _fetch(self) -> None:
-        self._thread = HttpGetThread(f'{API_BASE}/reservations/')
-        self._thread.done.connect(self._on_fetched)
-        self._thread.start()
+        if not self._thread.isRunning():
+            self._thread.start()
 
     def _on_fetched(self, response) -> None:
         self._all_data = response.json() if response is not None else []

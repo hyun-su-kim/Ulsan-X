@@ -26,7 +26,57 @@
 
 # DECISION-LOG에서 이관 (2026-06-01 정리)
 
-> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-046(최신)부터 시간 역순.
+> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-048(최신)부터 시간 역순.
+
+### DEC-048: 출발 안내 발화-주행 동기화 (GuideGoal 메시지 + Speak 서비스) + FAILED 발화 범위 축소 + 음성노드 진단 분리 (done 2026-06-09)
+- **Context**: 출발 안내 TTS가 **주행과 동시에** 재생됐다 — `wego_dispatcher`가 `/goal_destination`(String)과 `/speak_text`(String)를 **별도 토픽 2개로** fire-and-forget 발행하고, 둘은 서로 다른 노드(behaviour, voice)로 가 독립 실행됐기 때문(게다가 goal을 먼저 보내 로봇이 먼저 움직임). "발화가 다 끝난 뒤 출발"로 만들 필요. 추가로 FAILED 발화가 GUIDING/RETURNING/DOCKING 3종 모두 나왔는데, 복귀·도킹 실패는 방문자가 곁에 없어 발화 의미가 없었다.
+- **Options (동기화 메커니즘)**:
+  - A) **그대로 동시 진행** (현재)
+  - B) **서비스(발화-후-응답)** — voice가 재생 끝난 뒤 응답, behaviour가 동기 호출로 완료를 기다렸다 주행
+  - C) **액션(Action)** — 장시간 작업 + 피드백 + 취소
+  - D) **라이프사이클(managed node)** — voice를 activate/deactivate로 제어
+- **Decision**: **B 채택.** + 목적지와 발화 문구를 **한 메시지(`limo_msgs/GuideGoal{destination, tts_text}`)로 묶어** behaviour로 전달. behaviour는 출발 시 `발화(서비스)→완료대기→Spin→주행`. **FAILED 발화는 `failed_from=='GUIDING'`일 때만**. voice_node는 **MultiThreadedExecutor + 콜백 그룹 분리**.
+- **Rationale**:
+  - **메시지 묶기(GuideGoal)** = goal/tts 도착 레이스 제거: goal·tts를 따로 보내면 goal이 먼저 도착해 behaviour가 "tts 미도착 상태로 출발"하거나 직전 미션 tts로 발화하는 짝 어긋남이 가능. 한 메시지로 묶으면 **원자적 수신**이 보장됨. → bridge의 goal 토픽 타입을 `String`→`GuideGoal`로, 이제 안 쓰는 dispatcher→voice `/speak_text` 라우트는 폐지.
+  - **서비스 vs 액션·라이프사이클**: 발화는 **fire-and-forget 한 번짜리, 피드백·취소 불요** → 액션(C)은 goal handle·feedback·cancel 보일러플레이트가 과함. 라이프사이클(D)은 **노드 상태/브링업 오케스트레이션** 도구지 "요청-완료 통지"가 아니라 의미 오용. 서비스(B)는 behaviour가 이미 `/aruco_home_dock`을 **블로킹 호출(call+wait)** 로 쓰는 패턴과 동일해 일관·최소. 발화 완료 통지는 `tts.speak()`가 **mpg123 재생 끝까지 블로킹**하는 기존 성질을 그대로 활용(서비스 콜백이 반환=재생 완료).
+  - **FAILED 발화 GUIDING 한정**: 그때만 방문자가 곁에 있어 음성 인지가 필요. 복귀·도킹 실패는 무인 상황이고 **관제 GUI가 표시**(DEC-044/047)하므로 TTS 불필요.
+  - **음성노드 멀티스레드**: `speak()` 블로킹이 **단일 스레드** 실행기에선 진단(/diagnostics) 1Hz 하트비트까지 멈춰, DEC-047에서 추가한 **시스템 패널 "음성(TTS)" 행이 긴 발화 중 false '미연결'로 깜빡임**. 발화 콜백을 전용 `MutuallyExclusiveCallbackGroup`(두 발화 입구 직렬화 = 오디오 장치 충돌 방지)에 두고 진단 타이머는 기본 그룹에 남겨, `MultiThreadedExecutor`가 **발화 블로킹 중에도 하트비트를 다른 스레드에서 계속 발행**.
+- **구현**:
+  - `limo_msgs`: `msg/GuideGoal.msg`, `srv/Speak.srv` 신규(빌드 검증 완료).
+  - `wego_dispatcher`: goal pub `String`→`GuideGoal`(목적지+tts 묶음), departure `/speak_text` 발행 제거.
+  - `wego_bridge/bridge_robot.yaml`: `/ROBOT_NAME/goal_destination` 타입 `GuideGoal`로, `/ROBOT_NAME/speak_text` 라우트 폐지.
+  - `wego_behaviour`: goal sub `GuideGoal`(+`pending_tts`), `/speak` 서비스 클라이언트 + `speak_and_wait()`; `IdleState`가 tts를 blackboard로; `GuidingState`가 출발 시 `발화→완료대기→Spin→주행`.
+  - `wego_voice`: `/speak` 서비스 추가(발화-후-응답), `MultiThreadedExecutor`+콜백그룹. `/speak_text`(도착·실패 비동기) 유지.
+  - **진단 계측(① 후속)**: `tts.py speak()`가 실패를 삼키던 것 제거→예외 전파, `voice_node`가 ROS 로거로 `TTS 재생 실패: …` 출력 + 시작 로그에 `audio_device` 표시. (직결 경로 도착 TTS 미발화 원인 규명용 — 실기기 확인 대기)
+- **면접 어필**: "노드 간 작업 순서 동기화에 **요청-완료 통신(서비스)** 을 선택한 이유를 액션·라이프사이클과 비교해 설명할 수 있음 — 액션은 fire-and-forget·무피드백 작업엔 과하고, 라이프사이클은 노드 상태 관리지 작업 완료 통지가 아님. 또 goal과 부수 데이터(tts)를 **한 메시지로 묶어 분산 발행의 도착 레이스를 구조적으로 제거**했고, 블로킹 콜백이 진단 하트비트를 굶기는 단일스레드 함정을 **콜백 그룹 분리 + MultiThreadedExecutor**로 풀어 모니터링 false-negative를 없앴다."
+- **관련**: [DEC-027](dispatcher 임무 배정), [DEC-024](TTS 전용 voice), [DEC-044](FAILED 처리), [DEC-047](음성 liveness 행·연결 판정)
+- **Date**: 2026-06-09
+
+---
+
+### DEC-047: 관제 GUI 로봇 연결 판정 재설계 — liveness(연결)와 readiness(준비)를 분리, 버튼은 동작별 게이트 (done 2026-06-09)
+- **Context**: DEC-045는 `is_robot_connected`를 **behaviour 생존 AND Nav2 lifecycle 전부(navigation+localization) active** 하나의 binary로 묶었다. 실주행 테스트에서 두 가지 오판이 드러남: ① **FAILED**(navigation task 종료/서버 다운)나 **스테이징 도착→PBVS 도킹**(Nav2 미사용·idle, 카메라+추론 CPU 스파이크로 lifecycle 진단 starvation) 구간에서 로봇이 멀쩡히 살아있는데 "미연결"로 표시되고, 그 결과 긴급제어·복구완료 버튼이 잠겨 **FAILED 탈출 신호(/recover)를 못 보내는** 모순 발생. ② 판정이 behaviour/Nav2(둘 다 **데스크탑** 발) 기반이라 **로봇 전원이 꺼져도 데스크탑 스택만 살아있으면 "연결"** 로 뜨는 반대 오류. 근본 원인은 서로 다른 3개념(물리 연결 / 명령 수신 가능 / 자율주행 준비)을 하나의 binary로 뭉갠 것.
+- **Options**:
+  - A) DEC-045 단일 binary 유지 + timeout만 완화(도킹 starvation 임시 회피)
+  - B) **세 개념을 분리**: 연결(physical liveness)=로봇 HW 발 하트비트, 명령 수신 가능=behaviour 생존, 자율주행 준비=navigation/localization **독립 판정**. 버튼은 각 동작이 실제 필요로 하는 서브시스템으로 게이트. 시스템 패널은 카테고리로 시각화.
+- **Decision**: **B 채택.**
+  - **연결(표시·지도 마커·요약 칩·카드)** = `/limo_status` 하트비트 신선도. AgileX LIMO 베이스 드라이버(Orin)가 시리얼 상태 프레임을 주기 발행하는 **유일한 "로봇 발" 신호** → 물리 로봇 생사를 정직하게 반영(데스크탑 스택과 무관). 이미 배터리용으로 브릿지·구독 중이라 추가 토픽 불필요.
+  - **pause/resume/abort 활성** = behaviour 생존 AND **navigation** ready. (cancelTask/새 goal 발행이 주행 스택을 필요로 함)
+  - **복구완료(recover) 활성** = behaviour 생존 AND **localization(AMCL)** ready AND `status==FAILED`. **navigation 무관** — recover는 목적지 이동 없이 `/initialpose`만 발행(AMCL 리셋)하므로 planner/controller가 죽어도 동작해야 한다(=DEC-045에서 버튼이 잠긴 진짜 원인). 단 AMCL이 죽었으면 리셋이 허공에 사라져 **잘못된 위치추정으로 IDLE 복귀 → 더 위험**하므로 localization은 필수로 건다.
+  - **navigation/localization 독립 판정**: Nav2는 lifecycle_manager가 둘로 나뉘고(`lifecycle_manager_navigation`/`_localization`), DEC-045가 받던 `hardware_id='Nav2'` 진단의 `status.name`으로 매니저를 구분할 수 있어 **추가 토픽 없이** 분리.
+- **Rationale**:
+  - **업계 정석 = liveness와 health 분리**: 플릿 플랫폼(Formant·Freedom Robotics·InOrbit·OpenRMF)은 online/offline을 **온보드 텔레메트리 하트비트 타임아웃**으로만 판정하고, 위치추정·nav·센서 건강은 **별도 진단 배지**로 표시. "nav 스택이 idle/실패"라고 offline 처리하지 않음. DEC-045는 이 둘을 섞은 것이고 본 결정이 바로잡음.
+  - **버튼=동작이 실제 필요로 하는 것**: 같은 "연결"이라도 명령마다 의존 서브시스템이 달라(주행제어=navigation, 복구=localization) 단일 게이트가 틀림. 동작별 게이트가 의미적으로 정확하고 recover 잠김을 구조적으로 해소.
+  - **CPU starvation 내성**: 도킹 중 Nav2 진단이 굶어도 `/limo_status`(저비용·로봇 발)는 안 굶어 연결 표시가 안정적.
+- **구현** (ulsan_gui·wego_bridge·wego_voice, 미커밋):
+  - `ros_node.py`: `is_robot_connected`→`/limo_status` 신선도로 교체. 신규 헬퍼 `is_behaviour_alive`/`is_navigation_ready`/`is_localization_ready`(`status.name` 부분일치로 매니저 구분)/`is_person_detect_alive`/`is_voice_alive`.
+  - `map_view.py`: `_refresh_emergency_buttons` 동작별 게이트 분리, `_on_status`가 선택 로봇 FAILED 진입/이탈 시 복구버튼 즉시 갱신. 시스템 패널을 **카테고리(🤖 로봇 N / 🖥 시스템)** 밴드 헤더로 재구성, 로봇별 **로봇(HW)/자율주행/위치추정/사람감지/음성(TTS)** 5행.
+  - **사람감지·음성 liveness 추가**: 브릿지에 `/person_detected`(10Hz, domain 6/7→5) 추가(로봇 코드 변경 없음), `voice_node`에 `diagnostic_updater`(hardware_id `wego_voice`) 추가 → 기존 `/diagnostics` 브릿지로 GUI 도달. (음성 행은 부수적으로 "FAILED TTS 미발화" 진단에도 활용)
+- **면접 어필**: "연결 판정을 ROS2/플릿 업계 정석대로 **liveness(연결)와 readiness(준비)로 계층 분리**했다. 연결은 데스크탑 자율주행 스택이 아니라 **로봇이 직접 보내는 하트비트(`/limo_status`)** 로만 판정해 '로봇 전원 off인데 연결됨' 오판을 제거했고, 긴급제어 버튼은 각 동작이 실제 필요로 하는 서브시스템(주행제어=navigation, 복구=localization)으로 **동작별 게이트**를 분리해 'FAILED인데 복구버튼이 잠기는' 모순을 구조적으로 풀었다. navigation/localization을 독립 lifecycle_manager 진단으로 분리 판정한 점도 Nav2 내부 구조 이해를 보여준다."
+- **관련**: [DEC-045](bond 대신 diagnostics 연결 판정)를 정련·확장, [DEC-040](diagnostics 연결 판정 도입), [DEC-044](FAILED/recover 흐름), [DEC-043](perception 엣지 — person_detect/voice 노드)
+- **Date**: 2026-06-09
+
+---
 
 ### DEC-046: 유리 경로 BT 복구 — 유리 전용 BackUp 복구 폐기, Nav2 표준 복구로 환원 (done 2026-06-08)
 - **Context**: `navigate_through_poses_w_replanning_and_recovery.xml`(유리 경유 목적지 전용 BT)의 `RecoveryFallback`을 한때 유리 난반사 phantom 대응으로 커스터마이즈했었다 — Nav2 표준의 `Spin`을 제거하고 `RoundRobin[BackUpAndClear(BackUp 0.10m + local/global Clear), Wait]`만 남긴 형태(DEC-041에서 `BackUp 0.30→0.10m`로 "유리 구간 맵 경계 이탈 방지"). 추가로 갇힘 시 costmap을 무시하고 저속 전진으로 난반사를 "뚫는" 커스텀 BT 노드(`PhantomPushThrough`) 신설도 검토 대상이었다. 1차 데모 실주행 직전, 이 유리 전용 복구를 유지할지 표준으로 되돌릴지 결정 필요.

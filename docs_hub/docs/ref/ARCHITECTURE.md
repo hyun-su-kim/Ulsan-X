@@ -84,8 +84,8 @@ LIMO 2, 노트북에 파일 복사
 ulsan_ws/src/
 ├── wego/                  # 로봇 드라이버 + 런치 (teleop/cartographer/navigation_diff)
 ├── wego_2d_nav/           # Nav2 스택 + 커스텀 BT XML + maps
-├── limo_msgs/             # msg/LimoStatus.msg (도메인 브릿지용 로봇 상태)
-├── wego_bridge/           # domain bridge (amcl_pose/status/diagnostics ↔ pause/resume/goal/speak)
+├── limo_msgs/             # LimoStatus + GuideGoal(목적지+멘트) + Speak.srv (DEC-048)
+├── wego_bridge/           # domain bridge (amcl_pose/status/diagnostics/person_detected ↔ pause/resume/abort/recover/goal_destination(GuideGoal))
 ├── wego_behaviour/        # Yasmin FSM (IDLE/GUIDING/RETURNING/WAITING/FAILED) + Nav2 연동
 ├── wego_aruco/            # 홈 도킹 PBVS (aruco_home_dock) — 로봇 실행 (DEC-043)
 ├── ulsan_person_detect/   # YOLOv8 사람 감지 — 로봇 실행 (DEC-043)
@@ -107,7 +107,7 @@ DEC-014: 최상단은 **Yasmin FSM**, 실행 레이어는 **Nav2 BT** (하이브
 
 ```
 방문자 UI(태블릿/브라우저) → FastAPI(ulsan_reservation) missions PENDING
-   → wego_dispatcher (domain 5, 0.5s 폴링) → IDLE 로봇에 /goal_destination + /speak_text 발행
+   → wego_dispatcher (domain 5, 0.5s 폴링) → IDLE 로봇에 GuideGoal(목적지+출발멘트) 발행 (DEC-048)
         │
         ▼  wego_behaviour FSM (각 로봇 담당, domain 6/7)
         ├── IDLE       — /goal_destination 수신 대기
@@ -136,9 +136,9 @@ DEC-014: 최상단은 **Yasmin FSM**, 실행 레이어는 **Nav2 BT** (하이브
 임무 흐름 (DEC-023/024/027) — 음성 NLU 폐기, 예약 DB 기반
 방문자 UI 입력 (예약 조회 / 현장방문 / 강의실 선택)
   → FastAPI(ulsan_reservation): 목적지(상담실/강의실) 확정 + missions PENDING
-    → wego_dispatcher (0.5s 폴링): IDLE 로봇 선택 → /goal_destination + /speak_text
-      → wego_voice TTS (edge-tts + mpg123) 안내 멘트 출력
-      → wego_behaviour FSM (목적지 결정) → Nav2 BT (경로 계획 + 실행)
+    → wego_dispatcher (0.5s 폴링): IDLE 로봇 선택 → GuideGoal(목적지+출발멘트) 발행
+      → wego_behaviour FSM: /speak 서비스로 출발멘트 발화→완료대기→주행 (발화 중 주행 없음, DEC-048)
+      → wego_voice TTS (edge-tts + mpg123) / Nav2 BT (경로 계획 + 실행)
 
 카메라 입력 (RGB + Depth) — 로봇 로컬 처리 (DEC-043)
   → ulsan_person_detect (YOLOv8n + Depth 0.7m 게이팅) → /person_detected

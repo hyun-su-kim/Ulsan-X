@@ -146,8 +146,8 @@ COMPLETED: "안내 완료" 표시 → 4초 후 홈으로
 | 토픽 | 방향 | 용도 |
 |---|---|---|
 | `robot_status` | domain 6→5, 7→5 | wego_dispatcher가 로봇 상태 수신 |
-| `goal_destination` | domain 5→6, 5→7 | wego_dispatcher가 목적지 전달 |
-| `speak_text` | domain 5→6, 5→7 | wego_dispatcher가 TTS 트리거 |
+| `goal_destination` (`GuideGoal`) | domain 5→6, 5→7 | wego_dispatcher가 목적지+출발멘트 전달 (DEC-048) |
+| ~~`speak_text` 5→6/7~~ | — | **폐지**(DEC-048): 출발멘트는 GuideGoal로 behaviour 경유, 도착·실패는 behaviour가 동일 도메인에서 발화 |
 
 ---
 

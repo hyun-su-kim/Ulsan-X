@@ -30,6 +30,7 @@ import requests
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from limo_msgs.msg import GuideGoal
 from diagnostic_updater import Updater
 from diagnostic_msgs.msg import DiagnosticStatus
 
@@ -73,13 +74,10 @@ class DispatcherNode(Node):
         self.create_subscription(String, '/limo1/robot_status', self._status_cb('limo1'), 10)
         self.create_subscription(String, '/limo2/robot_status', self._status_cb('limo2'), 10)
 
-        # 목적지 + TTS 발행자
+        # 목적지+TTS를 한 메시지(GuideGoal)로 발행 — behaviour가 발화 후 주행하도록 동기화.
+        # (출발 안내는 더 이상 voice로 직접 보내지 않음 — behaviour가 GuideGoal.tts_text로 발화)
         self._goal_pubs = {
-            robot: self.create_publisher(String, f'/{robot}/goal_destination', 10)
-            for robot in ROBOTS
-        }
-        self._speak_pubs = {
-            robot: self.create_publisher(String, f'/{robot}/speak_text', 10)
+            robot: self.create_publisher(GuideGoal, f'/{robot}/goal_destination', 10)
             for robot in ROBOTS
         }
 
@@ -161,15 +159,12 @@ class DispatcherNode(Node):
         destination = mission['destination']
         tts_text    = mission['tts_text']
 
-        # goal_destination 발행 → wego_bridge → wego_behaviour FSM
-        goal_msg = String()
-        goal_msg.data = destination
+        # GuideGoal(목적지+tts) 발행 → wego_bridge → wego_behaviour FSM
+        # behaviour가 출발 시 tts를 발화-완료대기-주행 순으로 처리(발화 중 주행 방지)
+        goal_msg = GuideGoal()
+        goal_msg.destination = destination
+        goal_msg.tts_text    = tts_text
         self._goal_pubs[robot].publish(goal_msg)
-
-        # speak_text 발행 → wego_bridge → wego_voice
-        speak_msg = String()
-        speak_msg.data = tts_text
-        self._speak_pubs[robot].publish(speak_msg)
 
         self.get_logger().info(
             f'[{mission_id}] {robot} → {destination} | TTS: "{tts_text}"'

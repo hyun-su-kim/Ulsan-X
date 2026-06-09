@@ -13,23 +13,7 @@ from PyQt5.QtGui import QFont, QImage, QPixmap, QPainter, QColor, QPen, QBrush, 
 from ulsan_gui.ros_node import ROBOTS, robot_label, FASTAPI_URL
 from ulsan_gui.http_thread import HttpGetThread
 
-STATUS_COLOR = {
-    'IDLE':      '#16a34a', 'BUSY':      '#d97706',
-    'RETURNING': '#2563eb', 'WAITING':   '#9333ea',
-    'FAILED':    '#dc2626', 'UNKNOWN':   '#9ca3af',
-}
-STATUS_BG = {
-    'IDLE':      '#f0fdf4', 'BUSY':      '#fffbeb',
-    'RETURNING': '#eff6ff', 'WAITING':   '#faf5ff',
-    'FAILED':    '#fef2f2', 'UNKNOWN':   '#f8fafc',
-}
-STATUS_BORDER = {
-    'IDLE':      '#10b981', 'BUSY':      '#f59e0b',
-    'RETURNING': '#3b82f6', 'WAITING':   '#9333ea',
-    'FAILED':    '#ef4444', 'UNKNOWN':   '#9ca3af',
-}
-
-from ulsan_gui.styles import LOG_TYPE_COLOR
+from ulsan_gui.styles import LOG_TYPE_COLOR, STATUS_COLOR, STATUS_BG, STATUS_BORDER, status_badge
 
 CARD_TITLE_STYLE = (
     'font-size:11px; font-weight:600; color:#6b7280;'
@@ -374,7 +358,12 @@ class RobotStatusCard(QFrame):
         self._render()
 
     def _render(self) -> None:
-        # 미연결이면 FSM 상태와 무관하게 '미연결'을 우선 표시 (전 화면 통일)
+        # 배지 결정은 전 화면 공통 헬퍼(status_badge) — 미연결이면 '미연결' 우선
+        text, c, bg = status_badge(self._connected, self._status)
+        self._badge.setText(text)
+        self._badge.setStyleSheet(
+            f'border-radius:10px; padding:2px 6px; border:none; color:{c}; background:{bg};'
+        )
         if not self._connected:
             self.setStyleSheet(
                 'background:#fff; border-radius:10px;'
@@ -384,24 +373,12 @@ class RobotStatusCard(QFrame):
                 'border-left:4px solid #cbd5e1;'
             )
             self._avatar.setStyleSheet('border-radius:9px; background:#f1f5f9; border:none;')
-            self._badge.setText('미연결')
-            self._badge.setStyleSheet(
-                'border-radius:10px; padding:2px 6px; border:none;'
-                'color:#9ca3af; background:#f1f5f9;'
-            )
             # 미연결이면 상태를 알 수 없으므로 '방문자 대기 중' 대신 끊김 표시
             self._dest_lbl.setText('연결 끊김')
             self._dest_lbl.setStyleSheet('color:#9ca3af; border:none;')
             return
         status = self._status
         self._apply_border()
-        c  = STATUS_COLOR.get(status, STATUS_COLOR['UNKNOWN'])
-        bg = STATUS_BG.get(status, STATUS_BG['UNKNOWN'])
-        self._badge.setText(status)
-        self._badge.setStyleSheet(
-            f'border-radius:10px; padding:2px 6px; border:none;'
-            f'color:{c}; background:{bg};'
-        )
         self._dest_lbl.setStyleSheet('color:#6b7280; border:none;')
         if self._dest:
             self._dest_lbl.setText(f'→ {self._dest}')
@@ -499,6 +476,10 @@ class MapView(QWidget):
         self.ros = ros_node
         self._selected_robot = ROBOTS[0]
         self._switch_view_cb = switch_view_cb
+        # FAILED 비모달 팝업 추적 — _connect_signals()의 상태 재생이 _on_status를 호출하므로
+        # 그 전에 초기화돼 있어야 함(시작 시 이미 FAILED인 로봇 대비)
+        self._failed_popups: dict[str, QMessageBox | None] = {r: None for r in ROBOTS}
+        self._popup_prev_status: dict[str, str] = {r: '' for r in ROBOTS}
         self._build_ui()
         self._connect_signals()
 
@@ -508,6 +489,9 @@ class MapView(QWidget):
 
         # 연결 상태 변화 통지용 — 변화 시에만 sig_connection 발행 (None=미발행)
         self._conn_prev: dict[str, bool | None] = {r: None for r in ROBOTS}
+        # 시스템 상태 항목별 직전값 — 전이(연결↔끊김) 시에만 이벤트 로그.
+        # 미기록 키는 끊김(False)으로 간주 → 부팅 시 올라오는 항목의 최초 '연결'도 기록됨
+        self._sys_prev: dict[str, bool] = {}
         self._conn_timer = QTimer()
         self._conn_timer.timeout.connect(self._check_connections)
         self._conn_timer.start(2000)
@@ -673,23 +657,23 @@ class MapView(QWidget):
         vbox.setSpacing(0)
 
         self._sys_vals: dict[str, QLabel] = {}
-        rows = [(f'{r}_conn', robot_label(r), '● 확인 중', '#9ca3af') for r in ROBOTS]
-        rows.extend([
-            ('map_server', '맵 서버',       '● 확인 중', '#9ca3af'),
-            ('fastapi',    'FastAPI',       '● 확인 중', '#9ca3af'),
-            ('dispatcher', '배차 노드',     '● 확인 중', '#9ca3af'),
-            ('traffic',    '충돌 방지',     '● 확인 중', '#9ca3af'),
-        ])
-        for key, label, init_txt, init_color in rows:
-            sep = QFrame()
-            sep.setFrameShape(QFrame.HLine)
-            sep.setStyleSheet('border:none; border-top:1px solid #f3f4f6;')
-            vbox.addWidget(sep)
 
+        def _add_header(text: str) -> None:
+            # 카테고리 밴드 헤더 — 배경 칩으로 구획을 시각적으로 구분
+            hdr = QLabel(text)
+            hdr.setFont(QFont('Segoe UI', 10, QFont.Bold))
+            hdr.setStyleSheet(
+                'color:#475569; background:#eef2f7; border:none; border-radius:5px;'
+                'padding:5px 8px; margin-top:6px;'
+            )
+            vbox.addWidget(hdr)
+
+        def _add_value_row(key: str, label: str) -> None:
             row_w = QWidget()
-            row_w.setStyleSheet('background:transparent;')
+            # 헤더보다 들여쓰고 하단 옅은 구분선 — 카테고리 소속 + 행 가독성
+            row_w.setStyleSheet('background:transparent; border-bottom:1px solid #f3f4f6;')
             rh = QHBoxLayout(row_w)
-            rh.setContentsMargins(8, 5, 8, 5)
+            rh.setContentsMargins(20, 5, 8, 5)
             rh.setSpacing(8)
 
             lbl = QLabel(label)
@@ -698,14 +682,33 @@ class MapView(QWidget):
             rh.addWidget(lbl)
             rh.addStretch()
 
-            val = QLabel(init_txt)
+            val = QLabel('● 확인 중')
             val.setFont(QFont('Segoe UI', 11, QFont.Bold))
-            val.setStyleSheet(f'color:{init_color}; border:none;')
+            val.setStyleSheet('color:#9ca3af; border:none;')
             val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             rh.addWidget(val)
 
             self._sys_vals[key] = val
             vbox.addWidget(row_w)
+
+        # ① 로봇 카테고리 — 로봇별 로봇(HW)/자율주행(navigation)/위치추정(localization) (DEC-047)
+        for r in ROBOTS:
+            _add_header(f'🤖  {robot_label(r)}')
+            _add_value_row(f'{r}_hw',     '로봇(HW)')
+            _add_value_row(f'{r}_nav',    '자율주행')
+            _add_value_row(f'{r}_loc',    '위치추정')
+            _add_value_row(f'{r}_person', '사람감지')
+            _add_value_row(f'{r}_voice',  '음성(TTS)')
+
+        # ② 시스템 카테고리 — 서버 측 노드/서비스
+        _add_header('🖥  시스템')
+        for key, label in (
+            ('map_server', '맵 서버'),
+            ('fastapi',    'FastAPI'),
+            ('dispatcher', '배차 노드'),
+            ('traffic',    '충돌 방지'),
+        ):
+            _add_value_row(key, label)
 
         vbox.addStretch()
         scroll.setWidget(inner)
@@ -737,6 +740,52 @@ class MapView(QWidget):
         if card:
             card.update_status(status)
         self._canvas.update_status(robot, status)
+        self._handle_failed_popup(robot, status)
+        # 복구완료 버튼은 status==FAILED에 의존 → 선택 로봇이 FAILED 진입/이탈 시 즉시 갱신
+        # (2초 주기 _check_connections를 기다리지 않고 반응)
+        if robot == self._selected_robot:
+            self._refresh_emergency_buttons()
+
+    # ── FAILED 비모달 팝업 ────────────────────────────────────────────
+    # FAILED는 방문자 안내 중 로봇이 멈춰 사람이 물리 복구해야 하는 즉시조치 상황 →
+    # 카드/로그와 별도로 주의를 끄는 팝업으로 격상. 단 비모달이라 [복구완료] 조작을 막지 않음.
+
+    def _handle_failed_popup(self, robot: str, status: str) -> None:
+        prev = self._popup_prev_status.get(robot, '')
+        self._popup_prev_status[robot] = status
+        if status == 'FAILED' and prev != 'FAILED':
+            self._show_failed_popup(robot)          # 진입 엣지에서 1회
+        elif status != 'FAILED' and prev == 'FAILED':
+            self._close_failed_popup(robot)         # 해소 시 자동 닫기
+
+    def _show_failed_popup(self, robot: str) -> None:
+        if self._failed_popups.get(robot) is not None:
+            return                                   # 이미 떠 있으면 중복 방지
+        label = robot_label(robot)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle('⚠ 임무 실패')
+        box.setText(f'<b>{label} 임무 실패</b>')
+        box.setInformativeText(
+            '안내 주행 중 문제가 발생해 로봇이 정지했습니다.\n'
+            '로봇을 home 위치에 배치한 뒤 긴급제어의 [복구완료]를 누르세요.'
+        )
+        box.setStandardButtons(QMessageBox.Ok)
+        box.setModal(False)                          # 비모달 — 대시보드 조작 유지
+        box.finished.connect(lambda _r, rb=robot: self._on_popup_closed(rb))
+        self._failed_popups[robot] = box
+        box.show()
+        # 2대 동시 FAILED 시 완전 겹침 방지 — 로봇 인덱스만큼 오프셋
+        offset = ROBOTS.index(robot) * 36
+        box.move(box.x() + offset, box.y() + offset)
+
+    def _close_failed_popup(self, robot: str) -> None:
+        box = self._failed_popups.get(robot)
+        if box is not None:
+            box.close()                              # finished → _on_popup_closed에서 ref 정리
+
+    def _on_popup_closed(self, robot: str) -> None:
+        self._failed_popups[robot] = None
 
     def _on_dest(self, robot: str, dest: str) -> None:
         card = self._cards.get(robot)
@@ -761,19 +810,28 @@ class MapView(QWidget):
         self._refresh_emergency_buttons()
 
     def _refresh_emergency_buttons(self) -> None:
-        # 선택된 로봇이 미연결이면 긴급제어 버튼 비활성화.
+        # 버튼별로 실제 필요한 서브시스템이 다르므로 게이트를 분리한다(DEC-047).
         # setEnabled(False)가 클릭 자체를 차단 → 허공 발행·허위 이벤트 로그 방지.
-        # 연결 판정은 전 화면 단일 출처(is_robot_connected) 공유 — behaviour 생존
-        # AND Nav2 lifecycle active (DEC-045). 긴급제어도 같은 기준으로 통일.
-        ok = self.ros.is_robot_connected(self._selected_robot)
-        for btn, normal in (
-            (self._pause_btn,   _PAUSE_NORMAL),
-            (self._resume_btn,  _RESUME_NORMAL),
-            (self._abort_btn,   _ABORT_NORMAL),
-            (self._recover_btn, _RECOVER_NORMAL),
+        robot     = self._selected_robot
+        behaviour = self.ros.is_behaviour_alive(robot)      # 명령 수신 주체(FSM)
+        # pause/resume/abort: navigator.cancelTask/새 goal 발행 → Nav2 navigation 필요
+        nav_ctrl_ok = behaviour and self.ros.is_navigation_ready(robot)
+        # recover: 목적지 이동 없이 /initialpose만 발행(AMCL 리셋) → localization 필요,
+        #   navigation 무관. FAILED 상태에서만 의미. AMCL이 죽었으면 리셋이 허공에 사라져
+        #   잘못된 위치추정으로 IDLE 복귀 → 더 위험하므로 localization을 필수로 건다.
+        recover_ok  = (
+            behaviour
+            and self.ros.is_localization_ready(robot)
+            and self.ros.robots[robot].status == 'FAILED'
+        )
+        for btn, normal, enabled in (
+            (self._pause_btn,   _PAUSE_NORMAL,   nav_ctrl_ok),
+            (self._resume_btn,  _RESUME_NORMAL,  nav_ctrl_ok),
+            (self._abort_btn,   _ABORT_NORMAL,   nav_ctrl_ok),
+            (self._recover_btn, _RECOVER_NORMAL, recover_ok),
         ):
-            btn.setEnabled(ok)
-            btn.setStyleSheet(normal if ok else _BTN_DISABLED)
+            btn.setEnabled(enabled)
+            btn.setStyleSheet(normal if enabled else _BTN_DISABLED)
 
     @staticmethod
     def _flash_btn(btn: QPushButton, flash_style: str, normal_style: str) -> None:
@@ -812,23 +870,57 @@ class MapView(QWidget):
         self.ros.signals.sig_gui_log.emit('system', label, '복구완료 (FAILED 해제)')
         self._flash_btn(self._recover_btn, _RECOVER_FLASH, _RECOVER_NORMAL)
 
+    def _set_sys_val(self, key: str, ok: bool, ok_text: str = '연결', bad_text: str = '미연결') -> None:
+        val = self._sys_vals[key]
+        if ok:
+            val.setText(f'● {ok_text}')
+            val.setStyleSheet('color:#059669; border:none;')
+        else:
+            val.setText(f'● {bad_text}')
+            val.setStyleSheet('color:#ef4444; border:none;')
+
+    def _log_conn_change(self, key: str, label: str, ok: bool,
+                         name: str, up: str = '연결', down: str = '끊김') -> None:
+        # 전이(상태 변화) 시에만 이벤트 로그. baseline=끊김(False) 가정 →
+        #   부팅 시 올라오는 항목은 False→True로 '연결'이 찍히고(맵서버 등 초기 연결도 기록),
+        #   부팅 시 꺼져있는 항목은 False→False라 불필요한 '끊김'은 안 찍힘.
+        prev = self._sys_prev.get(key, False)
+        if ok != prev:
+            self._sys_prev[key] = ok
+            self.ros.signals.sig_gui_log.emit(
+                'system' if ok else 'alert', label, f'{name} {up if ok else down}')
+
     def _check_connections(self) -> None:
-        # 로봇 연결 단일 판정(is_robot_connected) — 시스템 패널·지도 마커·상태 카드·
-        # 상단 요약 칩이 모두 이 결과를 공유해 화면 간 불일치를 제거
+        # 연결(로봇 HW)·자율주행(navigation)·위치추정(localization)을 분리 표시(DEC-047).
+        # 연결 표시·지도 마커·요약 칩·상세 탭은 로봇 연결(is_robot_connected=limo_status)을 공유.
+        # 모든 항목의 연결/끊김 전이는 이벤트 로그로도 남긴다(_log_conn_change).
         for robot in ROBOTS:
+            rlabel    = robot_label(robot)
             connected = self.ros.is_robot_connected(robot)
-            val = self._sys_vals[f'{robot}_conn']
+            nav_ok    = self.ros.is_navigation_ready(robot)
+            loc_ok    = self.ros.is_localization_ready(robot)
+            person_ok = self.ros.is_person_detect_alive(robot)
+            voice_ok  = self.ros.is_voice_alive(robot)
+
+            self._set_sys_val(f'{robot}_hw',     connected)
+            self._set_sys_val(f'{robot}_nav',    nav_ok,    ok_text='준비', bad_text='중단')
+            self._set_sys_val(f'{robot}_loc',    loc_ok,    ok_text='준비', bad_text='중단')
+            self._set_sys_val(f'{robot}_person', person_ok, ok_text='정상', bad_text='미연결')
+            self._set_sys_val(f'{robot}_voice',  voice_ok,  ok_text='정상', bad_text='미연결')
+
+            self._log_conn_change(f'{robot}_hw',     rlabel, connected, '로봇(HW)')
+            self._log_conn_change(f'{robot}_nav',    rlabel, nav_ok,    '자율주행',  '준비', '중단')
+            self._log_conn_change(f'{robot}_loc',    rlabel, loc_ok,    '위치추정',  '준비', '중단')
+            self._log_conn_change(f'{robot}_person', rlabel, person_ok, '사람감지')
+            self._log_conn_change(f'{robot}_voice',  rlabel, voice_ok,  '음성(TTS)')
+
             if connected:
-                val.setText('● 연결')
-                val.setStyleSheet('color:#059669; border:none;')
                 # 재연결 시 마지막 위치로 마커 복원 (amcl_pose 재발행 전 공백 방지)
                 if not self._canvas.has_pose(robot):
                     last = self.ros.robots[robot].pose
                     if last is not None:
                         self._canvas.update_pose(robot, last)
             else:
-                val.setText('● 미연결')
-                val.setStyleSheet('color:#ef4444; border:none;')
                 self._canvas.clear_pose(robot)
 
             # 상태 카드 동기화 + 변화 시 요약 칩·상세 탭에 통지
@@ -839,44 +931,31 @@ class MapView(QWidget):
                 self._conn_prev[robot] = connected
                 self.ros.signals.sig_connection.emit(robot, connected)
 
-        # 선택된 로봇 연결 상태 반영 → 긴급제어 버튼 활성/비활성 갱신
+        # 선택된 로봇 서브시스템 상태 반영 → 긴급제어 버튼 활성/비활성 갱신
         self._refresh_emergency_buttons()
 
         # 맵 서버: /map 수신 여부 기준 (Nav2 map_server가 diagnostics 미보장)
-        val = self._sys_vals['map_server']
-        if self.ros.latest_map is not None:
-            val.setText('● 연결')
-            val.setStyleSheet('color:#059669; border:none;')
-        else:
-            val.setText('● 미연결')
-            val.setStyleSheet('color:#ef4444; border:none;')
+        map_ok = self.ros.latest_map is not None
+        self._set_sys_val('map_server', map_ok)
+        self._log_conn_change('map_server', '시스템', map_ok, '맵 서버')
 
         # FastAPI: HTTP ping 기준 (비동기 — _on_fastapi_result에서 업데이트)
         if not self._api_checker.isRunning():
             self._api_checker.start()
 
         # dispatcher/traffic: /diagnostics 수신 시각 기준
-        for key, node_key in (
-            ('dispatcher', 'wego_dispatcher'),
-            ('traffic',    'wego_traffic'),
+        for key, node_key, name in (
+            ('dispatcher', 'wego_dispatcher', '배차 노드'),
+            ('traffic',    'wego_traffic',    '충돌 방지'),
         ):
-            val = self._sys_vals[key]
-            if self.ros.is_node_ok(node_key):
-                val.setText('● 연결')
-                val.setStyleSheet('color:#059669; border:none;')
-            else:
-                val.setText('● 미연결')
-                val.setStyleSheet('color:#ef4444; border:none;')
+            ok = self.ros.is_node_ok(node_key)
+            self._set_sys_val(key, ok)
+            self._log_conn_change(key, '시스템', ok, name)
 
     def _on_fastapi_result(self, response) -> None:
         ok = response is not None
-        val = self._sys_vals['fastapi']
-        if ok:
-            val.setText('● 연결')
-            val.setStyleSheet('color:#059669; border:none;')
-        else:
-            val.setText('● 미연결')
-            val.setStyleSheet('color:#ef4444; border:none;')
+        self._set_sys_val('fastapi', ok)
+        self._log_conn_change('fastapi', '시스템', ok, 'FastAPI')
 
     @staticmethod
     def _rsel_style(active: bool) -> str:

@@ -30,7 +30,7 @@ ulsan_ws/src/
 │   ├── behavior_trees/*.xml               # 커스텀 BT (DEC-039, DEC-041)
 │   ├── maps/map.yaml                      # 저장된 맵
 │   └── params/diff_navigation_params.yaml # Nav2 파라미터
-├── limo_msgs/             # msg/LimoStatus.msg (도메인 브릿지용 로봇 상태)
+├── limo_msgs/             # LimoStatus(상태) + GuideGoal(목적지+멘트) + Speak.srv(발화서비스) — DEC-048
 ├── wego_behaviour/        # Yasmin FSM (states.py, behaviour_node.py)
 ├── wego_aruco/            # 홈 도킹 PBVS (aruco_home_dock.py) — 로봇 실행 (DEC-043)
 ├── ulsan_person_detect/   # YOLOv8 사람 감지 (person_detect_node.py) — 로봇 실행 (DEC-043)
@@ -104,13 +104,13 @@ ros2 launch ulsan_gui gui_launch.py
 |--------|-----------|------|
 | `wego` | teleop_launch.py, navigation_diff_launch.py | LIMO 드라이버 + Nav2 통합 런치 |
 | `wego_2d_nav` | localization_launch.py, navigation_only_launch.py, diff_navigation_params.yaml | navigation_diff_launch.py에서 include |
-| `limo_msgs` | msg/LimoStatus.msg | 도메인 브릿지용 로봇 상태 메시지. 코드 import: `from limo_msgs.msg import LimoStatus` (wego_msgs/Chalkak.srv는 현재 미존재) |
-| `wego_bridge` | bridge_robot.yaml(템플릿), bridge_launch.py | 서버 노트북 LIMO 도메인 터미널에서 실행. ROS_DOMAIN_ID로 자동 결정. amcl_pose/robot_status(6,7→5) + pause/resume/goal/speak(5→6,7) |
+| `limo_msgs` | msg/LimoStatus.msg, msg/GuideGoal.msg, srv/Speak.srv | 도메인 브릿지용 메시지 정본. `LimoStatus`(로봇 상태), `GuideGoal{destination,tts_text}`(목적지+출발멘트 묶음 — dispatcher→behaviour, DEC-048), `Speak{text→success}`(발화-후-응답 서비스 — behaviour→voice, DEC-048) |
+| `wego_bridge` | bridge_robot.yaml(템플릿), bridge_launch.py | 서버 노트북 LIMO 도메인 터미널에서 실행. ROS_DOMAIN_ID로 자동 결정. amcl_pose/robot_status/diagnostics/limo_status/person_detected(6,7→5) + pause/resume/abort/recover/goal_destination(GuideGoal)/cmd_vel(5→6,7). ※ dispatcher→voice speak_text 라우트는 폐지(출발멘트는 GuideGoal로 behaviour 경유, DEC-048) |
 | `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — IDLE/GUIDING/RETURNING/WAITING/FAILED (DEC-033). 데스크탑 domain 6/7 |
 | `wego_aruco` | aruco_home_dock.py, aruco_measure.py | **LIMO 도메인 6/7(로봇) 실행 (DEC-043).** aruco_home_dock: PBVS staged 홈 도킹 서비스 `/aruco_home_dock` → 정차 후 waypoints.yaml home 좌표로 /initialpose AMCL 리셋 (DEC-038/041/042). waypoints.yaml은 wego_behaviour 소유(로봇도 해당 패키지 빌드 필요). aruco_measure.py: 마커 상대 포즈(거리·각도) 실시간 측정 도구 — `ros2 run`으로 수동 실행, target_dist 튜닝용(운영 비포함, 구 pose_corrector 대체 2026-06-01) |
-| `wego_voice` | voice_node.py, tts | TTS only (DEC-024). /speak_text 구독 → edge-tts + mpg123 |
+| `wego_voice` | voice_node.py, tts | TTS only (DEC-024). 데스크탑 domain 6/7. `/speak_text` 구독(도착·실패 비동기) + **`/speak` 서비스(발화-후-응답, 출발 안내 동기화 DEC-048)** → edge-tts + mpg123. MultiThreadedExecutor+콜백그룹(발화 블로킹 중 진단 유지) |
 | `wego_traffic` | traffic_node.py | 데스크탑 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
-| `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 goal/speak 배정 (DEC-027) |
+| `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 `GuideGoal`(목적지+출발멘트) 배정 (DEC-027/048). 출발멘트는 voice로 직접 안 보내고 GuideGoal에 실어 behaviour 경유 |
 | `ulsan_person_detect` | person_detect_node.py | **LIMO 도메인 6/7(로봇)에서 실행 (DEC-043).** YOLOv8n + Depth 0.7m 게이팅 → /person_detected 발행 (DEC-041). `ros2 run` 직접 실행(노드 1개, 런치 불필요) |
 | `ulsan_bt_plugins` | person_clear_condition.cpp | Nav2 BT 커스텀 C++ 플러그인. PersonClearCondition: /person_detected 감지 시 RUNNING → FollowPath halt (DEC-041) |
 | `ulsan_obstacle_layer` | PeerObstacleLayer | **폐기 (DEC-022)**: 우선순위 FSM pause 방식으로 대체 |
@@ -151,7 +151,7 @@ ros2 launch ulsan_gui gui_launch.py
 ├── ulsan_ws/src/           # ROS2 워크스페이스
 │   ├── wego/               # 드라이버 + 런치 (teleop/cartographer/navigation_diff)
 │   ├── wego_2d_nav/        # Nav2 스택 + 커스텀 BT XML + maps
-│   ├── limo_msgs/          # msg/LimoStatus.msg
+│   ├── limo_msgs/          # msg/LimoStatus, msg/GuideGoal, srv/Speak (DEC-048)
 │   ├── wego_bridge/        # domain bridge (amcl_pose/status/diagnostics 브릿징)
 │   ├── wego_behaviour/     # Yasmin FSM (IDLE/GUIDING/RETURNING/WAITING/FAILED)
 │   ├── wego_aruco/         # 홈 도킹 PBVS — 로봇 실행 (DEC-043)

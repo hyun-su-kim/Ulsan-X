@@ -13,16 +13,22 @@
 FastAPI(ulsan_reservation) 예약 DB 조회
   │  오늘 날짜 + 현재 시간대 예약 확인 → 배정 상담실 + 안내 멘트 확정 → mission PENDING
   ▼
-wego_dispatcher (domain 5, 0.5s 폴링) → IDLE 로봇에 발행
-  ├─ /speak_text       → wego_voice voice_node
-  │     │  "{이름}님 {시간}시 상담 예약으로 {상담실}로 안내합니다."
-  │     │  구현: edge-tts (Microsoft Neural TTS, ko-KR-SunHiNeural), 클라우드 합성
-  │     │  출력 장치: mpg123 -a plughw:1,3 (로봇 HDMI 오디오, Jetson Orin)
-  │     ▼  TTS 음성 출력
-  └─ /goal_destination → wego_behaviour FSM → Nav2 navigate_to_pose / navigate_through_poses
+wego_dispatcher (domain 5, 0.5s 폴링) → IDLE 로봇에 GuideGoal 발행
+  │  GuideGoal{destination, tts_text} — 목적지 + 출발 안내멘트를 한 메시지로 묶음(DEC-048)
+  │  "{이름}님 {시간}시 상담 예약으로 {상담실}로 안내합니다."
+  ▼
+wego_behaviour FSM (GuidingState, 출발 시)
+  ├─ /speak 서비스 호출 → wego_voice  (발화-후-응답: 재생 끝까지 블로킹)
+  │     │  구현: edge-tts (Microsoft Neural TTS, ko-KR-SunHiNeural) + mpg123 -a plughw:1,3
+  │     ▼  TTS 음성 출력 (완료까지 대기)
+  └─ 발화 완료 후 → Spin → Nav2 navigate_to_pose / navigate_through_poses (발화 중 주행 없음)
 ```
 
-> 음성 발행 경로: 목적지 결정은 예약 DB, TTS 트리거는 `/speak_text`(dispatcher→voice). voice_node는 DB를 직접 조회하지 않고 받은 문구를 합성만 한다 (DEC-024/027).
+> **발화 경로 2종 (DEC-048)**:
+> - **출발 안내**: dispatcher가 `GuideGoal`(목적지+멘트)로 묶어 behaviour에 전달 → behaviour가 `/speak` **서비스**로 발화하고 **완료를 기다린 뒤 주행**(발화 중 주행 방지). goal·tts를 따로 보내던 도착 레이스 제거.
+> - **도착·실패 안내**: behaviour가 `/speak_text`로 **비동기** 발행(완료 대기 없음). 도착 "목적지에 도착했습니다.", 실패는 **안내(GUIDING) 중 실패에서만** "안내 주행 중 문제가 발생했습니다. 관리자를 기다려주세요."(복귀·도킹 실패는 무인이라 발화 생략 — 관제 GUI가 표시).
+>
+> voice_node는 DB를 직접 조회하지 않고 받은 문구를 합성만 한다 (DEC-024/027). MultiThreadedExecutor+콜백그룹으로 발화 블로킹 중에도 `/diagnostics` 하트비트 유지(GUI '음성' 행 false 미연결 방지).
 
 ### TTS 선택 근거 (edge-tts)
 - 별도 모델 설치 없이 `pip install edge-tts` 한 줄로 즉시 사용 가능

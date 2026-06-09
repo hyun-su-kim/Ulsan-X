@@ -10,6 +10,8 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from std_msgs.msg import String, Empty
 from std_srvs.srv import Trigger
+from limo_msgs.msg import GuideGoal
+from limo_msgs.srv import Speak
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from yasmin import StateMachine, Blackboard
 from diagnostic_updater import Updater
@@ -31,6 +33,7 @@ class BehaviourNode(Node):
         self.get_logger().info(f'home_key: {self.home_key} (DOMAIN_ID={domain_id})')
 
         self.pending_destination: str | None = None
+        self.pending_tts: str = ''   # 출발 안내 멘트 — GuideGoal로 목적지와 함께 도착
         self.latest_amcl_pose: PoseWithCovarianceStamped | None = None
         self._pause_flag   = False
         self._resume_flag  = False
@@ -48,7 +51,7 @@ class BehaviourNode(Node):
         self._initialpose_pub = self.create_publisher(
             PoseWithCovarianceStamped, '/initialpose', 1)
 
-        self.create_subscription(String, '/goal_destination', self._dest_cb, 10)
+        self.create_subscription(GuideGoal, '/goal_destination', self._dest_cb, 10)
         self.create_subscription(Empty,  '/pause',   self._pause_cb,   10)
         self.create_subscription(Empty,  '/resume',  self._resume_cb,  10)
         self.create_subscription(Empty,  '/abort',   self._abort_cb,   10)
@@ -58,6 +61,7 @@ class BehaviourNode(Node):
 
 
         self._home_dock_cli = self.create_client(Trigger, '/aruco_home_dock')
+        self._speak_cli     = self.create_client(Speak, '/speak')
 
     # ── 콜백 ──────────────────────────────────────────────────────────
 
@@ -82,12 +86,13 @@ class BehaviourNode(Node):
     def _amcl_cb(self, msg: PoseWithCovarianceStamped) -> None:
         self.latest_amcl_pose = msg
 
-    def _dest_cb(self, msg: String) -> None:
+    def _dest_cb(self, msg: GuideGoal) -> None:
         with self._waypoints_lock:
-            if msg.data in self.waypoints:
-                self.pending_destination = msg.data
+            if msg.destination in self.waypoints:
+                self.pending_destination = msg.destination
+                self.pending_tts = msg.tts_text   # 출발 발화 문구 (목적지와 원자적으로 도착)
             else:
-                self.get_logger().warn(f'알 수 없는 목적지 키: {msg.data}')
+                self.get_logger().warn(f'알 수 없는 목적지 키: {msg.destination}')
 
 
     # ── diagnostics ──────────────────────────────────────────────────
@@ -138,6 +143,25 @@ class BehaviourNode(Node):
             f'[복구 AMCL 리셋] {self.home_key} x={wp["x"]} y={wp["y"]} '
             f'yaw={math.degrees(yaw):.1f}°'
         )
+
+    def speak_and_wait(self, text: str) -> bool:
+        """발화 서비스(/speak)를 동기 호출 — 재생이 끝난 뒤 반환.
+
+        출발 안내를 '발화 완료 후 주행'으로 동기화하기 위함. 서비스가 없거나 실패해도
+        주행은 진행한다(발화는 부가 기능). 빈 문구면 즉시 통과.
+        """
+        if not text:
+            return True
+        if not self._speak_cli.wait_for_service(timeout_sec=2.0):
+            self.get_logger().warn('/speak 서비스 없음 — 발화 생략하고 진행')
+            return False
+        req = Speak.Request()
+        req.text = text
+        future = self._speak_cli.call_async(req)
+        while not future.done():
+            time.sleep(0.05)
+        result = future.result()
+        return bool(result and result.success)
 
     def call_home_dock(self) -> bool:
         if not self._home_dock_cli.wait_for_service(timeout_sec=2.0):

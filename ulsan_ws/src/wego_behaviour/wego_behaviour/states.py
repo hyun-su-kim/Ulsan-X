@@ -45,6 +45,9 @@ class IdleState(State):
                 self._node.pending_destination = None
                 blackboard['destination'] = self._node.waypoints[dest_key]
                 blackboard['destination_key'] = dest_key
+                # 출발 안내 멘트 — GuidingState가 발화-완료대기-주행으로 처리
+                blackboard['departure_tts'] = self._node.pending_tts
+                self._node.pending_tts = ''
                 # 홈 출발임을 표시 — GuidingState에서 Spin 선실행 트리거
                 blackboard['from_home'] = True
                 self._node.get_logger().info(
@@ -58,19 +61,19 @@ class IdleState(State):
 
 
 class FailedState(State):
-    """임무 실패 상태: 실패 출처별 TTS 발화 후 관리자 복구(/recover) 대기.
+    """임무 실패 상태: (안내 중 실패만) TTS 발화 후 관리자 복구(/recover) 대기.
 
     Nav2 주행 실패(GUIDING/RETURNING)·PBVS 도킹 실패(DOCKING)는 모두 '주행 능력이
     깨진' 상태이므로 자동 재주행을 하지 않는다(고장난 기능으로 자가복구 시도하는
     모순 + 무한루프 방지). 관리자가 로봇을 물리적으로 home에 가져다 놓고 관제 UI에서
     복구 신호(/recover)를 보내면, home 좌표로 AMCL 리셋 후 IDLE로 복귀한다.
+
+    TTS는 **안내(GUIDING) 중 실패에서만** 발화한다 — 그때만 방문자가 곁에 있어 상황을
+    음성으로 인지시킬 필요가 있다. 복귀·도킹 실패는 방문자가 없고 관제 GUI가 표시하므로
+    TTS 불필요 (2026-06-09).
     """
 
-    _FAIL_TTS = {
-        'GUIDING':   '안내 주행 중 문제가 발생했습니다. 관리자를 기다립니다.',
-        'RETURNING': '홈으로 복귀하는 중 문제가 발생했습니다. 관리자를 기다립니다.',
-        'DOCKING':   '홈 정밀 정차에 실패했습니다. 관리자를 기다립니다.',
-    }
+    _FAIL_TTS_GUIDING = '안내 주행 중 문제가 발생했습니다. 관리자를 기다려주세요.'
 
     def __init__(self, node):
         super().__init__(outcomes=['recovered'])
@@ -80,7 +83,8 @@ class FailedState(State):
         self._node.publish_status('FAILED')
         failed_from = blackboard.get('failed_from', 'GUIDING')
         self._node.get_logger().error(f'임무 실패 ({failed_from}) — 관리자 복구 대기')
-        self._node.speak_text(self._FAIL_TTS.get(failed_from, self._FAIL_TTS['GUIDING']))
+        if failed_from == 'GUIDING':
+            self._node.speak_text(self._FAIL_TTS_GUIDING)
 
         # 관리자가 로봇을 home에 가져다 놓고 관제 UI에서 [복구완료] → /recover 발행 대기
         self._node._recover_flag = False
@@ -119,6 +123,11 @@ class GuidingState(State):
         # WAITING resume 재진입 시에는 from_home=False이므로 이중 Spin 없음
         if blackboard.get('from_home'):
             blackboard['from_home'] = False  # 재진입 시 이중 Spin 방지 — 즉시 초기화
+            # 출발 안내: 발화가 다 끝난 뒤에 모션 시작(발화 중 주행 방지). Spin 포함 모든 모션 전.
+            tts = blackboard.get('departure_tts', '')
+            if tts:
+                self._node.get_logger().info('출발 안내 발화 — 완료까지 대기')
+                self._node.speak_and_wait(tts)
             self._node.get_logger().info('홈 출발 — 180° Spin 시작 (AMCL 수렴)')
             self._navigator.spin(spin_dist=math.pi)  # 180° 회전
 

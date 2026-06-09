@@ -27,13 +27,12 @@ class TTS:
         self._audio_device = audio_device
 
     def speak(self, text: str) -> None:
-        """텍스트를 음성으로 출력. 재생 완료까지 블로킹."""
-        try:
-            asyncio.run(self._async_speak(text))
-        except Exception as e:
-            # 네트워크 단절, mpg123 에러 등 — 로봇 안내는 계속 진행
-            import logging
-            logging.getLogger(__name__).error(f'TTS 실패: {e}')
+        """텍스트를 음성으로 출력. 재생 완료까지 블로킹.
+
+        실패(네트워크 단절·mpg123 에러 등)는 **예외로 전파**한다 — 호출자(voice_node)가
+        ROS 로거로 표면화하기 위함. (과거: 파이썬 logging으로 삼켜 ROS 콘솔에 안 보였음)
+        """
+        asyncio.run(self._async_speak(text))
 
     async def _async_speak(self, text: str) -> None:
         """edge-tts로 MP3 생성 → mpg123으로 재생 → 임시 파일 삭제."""

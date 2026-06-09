@@ -36,6 +36,10 @@ class LogView(QWidget):
         self._all_logs: list[dict] = []
         self._build_ui()
 
+        # HTTP GET 스레드 단일 인스턴스 재사용 (폴링마다 새 QThread 생성 방지)
+        self._thread = HttpGetThread(API_URL)
+        self._thread.done.connect(self._on_fetched)
+
         self._timer = QTimer()
         self._timer.timeout.connect(self._fetch)
         self._timer.start(5000)
@@ -116,11 +120,8 @@ class LogView(QWidget):
     # ── 데이터 ────────────────────────────────────────────────────────
 
     def _fetch(self) -> None:
-        if hasattr(self, '_thread') and self._thread.isRunning():
-            return
-        self._thread = HttpGetThread(API_URL)
-        self._thread.done.connect(self._on_fetched)
-        self._thread.start()
+        if not self._thread.isRunning():
+            self._thread.start()
 
     def _on_fetched(self, response) -> None:
         if response is None:
@@ -147,6 +148,10 @@ class LogView(QWidget):
         self._render(filtered)
 
     def _render(self, logs: list) -> None:
+        # 사용자가 위로 스크롤해 읽는 중이면 바닥으로 튕기지 않도록, 갱신 전에 바닥 근처였는지 확인
+        sb = self._table.verticalScrollBar()
+        at_bottom = sb.value() >= sb.maximum() - 2
+
         self._table.setRowCount(len(logs))
         for row, log in enumerate(logs):
             log_type = log.get('type', 'system')
@@ -163,7 +168,8 @@ class LogView(QWidget):
                 item.setBackground(QColor(bg))
                 self._table.setItem(row, col, item)
 
-        self._table.scrollToBottom()
+        if at_bottom:
+            self._table.scrollToBottom()
         self._count_label.setText(f'총 {len(logs)}건')
 
     def _export_csv(self) -> None:

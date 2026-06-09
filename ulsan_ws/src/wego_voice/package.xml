@@ -9,6 +9,9 @@
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
+  <depend>diagnostic_updater</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>limo_msgs</depend>
   <exec_depend>wego_behaviour</exec_depend>
 
   <buildtool_depend>ament_python</buildtool_depend>

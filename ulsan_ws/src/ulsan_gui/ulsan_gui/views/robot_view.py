@@ -11,18 +11,7 @@ from PyQt5.QtGui import QFont, QImage, QPixmap, QKeyEvent, QPainter, QPen, QColo
 from ulsan_gui.ros_node    import ROBOTS, robot_label, FASTAPI_URL
 from ulsan_gui.http_thread import HttpGetThread
 
-STATUS_COLOR = {
-    'IDLE':      '#16a34a', 'BUSY': '#d97706',
-    'RETURNING': '#2563eb', 'WAITING': '#9333ea',
-    'FAILED':    '#dc2626', 'UNKNOWN': '#9ca3af',
-}
-STATUS_BG = {
-    'IDLE':      '#f0fdf4', 'BUSY': '#fffbeb',
-    'RETURNING': '#eff6ff', 'WAITING': '#faf5ff',
-    'FAILED':    '#fef2f2', 'UNKNOWN': '#f8fafc',
-}
-
-from ulsan_gui.styles import LOG_TYPE_COLOR
+from ulsan_gui.styles import LOG_TYPE_COLOR, STATUS_COLOR, STATUS_BG, status_badge
 
 _BATT_V_MAX = 12.6
 _BATT_V_MIN = 9.0
@@ -630,21 +619,15 @@ class RobotPanel(QWidget):
         self._render_status()
 
     def _render_status(self) -> None:
-        # 미연결이면 FSM 상태와 무관하게 '미연결' 우선 표시 (전 화면 통일)
-        if not self._connected:
-            self._status_badge.setText('미연결')
-            self._status_badge.setStyleSheet(
-                'border-radius:8px; padding:3px 10px; border:none;'
-                'color:#9ca3af; background:#f1f5f9;'
-            )
-            return
-        status = self._status
-        self._status_badge.setText(status)
-        c  = STATUS_COLOR.get(status, STATUS_COLOR['UNKNOWN'])
-        bg = STATUS_BG.get(status, STATUS_BG['UNKNOWN'])
+        # 배지 결정은 전 화면 공통 헬퍼(status_badge) — 미연결이면 '미연결' 우선
+        text, c, bg = status_badge(self._connected, self._status)
+        self._status_badge.setText(text)
         self._status_badge.setStyleSheet(
             f'border-radius:8px; padding:3px 10px; border:none; color:{c}; background:{bg};'
         )
+        if not self._connected:
+            return
+        status = self._status
         if status == 'IDLE':
             self._mission_lbl_dest.setText('HOME — 대기 중')
             self._mission_box.setStyleSheet(
@@ -768,12 +751,18 @@ class RobotView(QWidget):
     def __init__(self, ros_node):
         super().__init__()
         self.setFocusPolicy(Qt.StrongFocus)
+        self.ros = ros_node
         self._statuses = {r: 'UNKNOWN' for r in ROBOTS}
         self._connected = {r: False for r in ROBOTS}
+        self._current_robot = ROBOTS[0]
         self._build_ui(ros_node)
 
         ros_node.signals.sig_status.connect(self._on_tab_status)
         ros_node.signals.sig_connection.connect(self._on_tab_connection)
+
+        # HTTP GET 스레드 단일 인스턴스 재사용 (폴링/showEvent마다 새 QThread 생성 방지)
+        self._today_thread = HttpGetThread(f'{FASTAPI_URL}/assign/today/by-robot')
+        self._today_thread.done.connect(self._on_today_tasks)
 
         self._task_timer = QTimer(self)
         self._task_timer.timeout.connect(self._fetch_today_tasks)
@@ -854,13 +843,19 @@ class RobotView(QWidget):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._fetch_today_tasks()
+        self._update_active_camera()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self.ros.set_active_camera(None)   # 로봇 뷰를 벗어나면 카메라 처리 중단
+
+    def _update_active_camera(self) -> None:
+        # 로봇 뷰가 보일 때만, 현재 선택한 로봇의 카메라만 처리하도록 통지
+        self.ros.set_active_camera(self._current_robot if self.isVisible() else None)
 
     def _fetch_today_tasks(self) -> None:
-        if hasattr(self, '_today_thread') and self._today_thread.isRunning():
-            return
-        self._today_thread = HttpGetThread(f'{FASTAPI_URL}/assign/today/by-robot')
-        self._today_thread.done.connect(self._on_today_tasks)
-        self._today_thread.start()
+        if not self._today_thread.isRunning():
+            self._today_thread.start()
 
     def _on_today_tasks(self, response) -> None:
         if response is None:
@@ -881,24 +876,17 @@ class RobotView(QWidget):
     def _render_tab(self, robot: str) -> None:
         badge = self._tab_badges[robot]
         active = (self._stack.currentWidget() == self._panels[robot])
-        # 미연결이면 FSM 상태와 무관하게 '미연결' 우선 표시 (전 화면 통일)
-        if not self._connected[robot]:
-            badge.setText('미연결')
-            badge.setStyleSheet(
-                f'border-radius:8px; padding:1px 6px; border:none;'
-                f'color:#9ca3af; background:{"rgba(0,0,0,0.1)" if active else "#f1f5f9"};'
-            )
-            return
-        status = self._statuses[robot]
-        c  = STATUS_COLOR.get(status, STATUS_COLOR['UNKNOWN'])
-        bg = STATUS_BG.get(status, STATUS_BG['UNKNOWN'])
-        badge.setText(status)
+        # 배지 결정은 전 화면 공통 헬퍼(status_badge), 활성 탭이면 배경만 오버라이드
+        text, c, bg = status_badge(self._connected[robot], self._statuses[robot])
+        badge.setText(text)
         badge.setStyleSheet(
             f'border-radius:8px; padding:1px 6px; border:none;'
             f'color:{c}; background:{"rgba(0,0,0,0.1)" if active else bg};'
         )
 
     def _select(self, robot: str, animated: bool = True) -> None:
+        self._current_robot = robot
+        self._update_active_camera()   # 탭 전환 즉시 활성 카메라 갱신
         if self._tab_anim:
             self._tab_anim.stop()
             self._tab_overlay.set_alpha(0)

@@ -85,12 +85,13 @@ export ROS_DOMAIN_ID=7 && ros2 launch wego_bridge bridge_launch.py  # LIMO 2
 |------|------|--------------|
 | `/amcl_pose` | robot → 5 | wego_traffic 거리감지, ulsan_gui 위치 마커 |
 | `/robot_status` | robot → 5 | wego_traffic, wego_dispatcher |
-| `/diagnostics` | robot → 5 | ulsan_gui 시스템 상태 패널 (노드 연결 판단, DEC-040) |
-| `/limo_status` | robot → 5 | ulsan_gui 배터리 표시 (`limo_msgs/LimoStatus`) |
+| `/diagnostics` | robot → 5 | ulsan_gui 연결/준비 판정 — behaviour·Nav2·voice (DEC-040/047) |
+| `/limo_status` | robot → 5 | ulsan_gui 배터리 + **로봇 연결(연결 판정 정본, DEC-047)** (`limo_msgs/LimoStatus`) |
+| `/person_detected` | robot → 5 | ulsan_gui '사람감지' liveness (10Hz, DEC-047) |
 | `/camera/image/compressed` | robot → 5 | ulsan_gui 카메라 뷰 |
 | `/pause`, `/resume` | 5 → robot | wego_traffic → wego_behaviour |
-| `/goal_destination`, `/speak_text` | 5 → robot | wego_dispatcher → wego_behaviour/voice |
-| `/abort`, `/cmd_vel` | 5 → robot | ulsan_gui (임무중단/텔레옵) |
+| `/goal_destination` (`limo_msgs/GuideGoal`) | 5 → robot | wego_dispatcher → wego_behaviour (목적지+출발멘트, DEC-048). ※ `/speak_text` 5→robot 라우트 폐지 |
+| `/abort`, `/recover`, `/cmd_vel` | 5 → robot | ulsan_gui (임무중단/복구완료/텔레옵) |
 
 > **제거된 브릿지**: `/tf`, `/tf_static`, `/map` — 브릿징 불필요(각 기기 로컬 데이터). 로봇↔로봇 `/amcl_pose` peer 브릿지 — FleetObstacleLayer 폐기로 제거.
 

@@ -219,6 +219,12 @@
   - wakeword / VAD / STT / NLU 파이프라인 전체 제거 (DEC-024)
   - `/speak_text` 구독 → edge-tts + mpg123으로 출력
   - wego_dispatcher가 발행, wego_bridge가 domain 5→6/7 브릿징
+- [x] **출발 안내 발화-주행 동기화 (GuideGoal + Speak 서비스)** — done (2026-06-09). DEC-048 참고
+  - 기존: dispatcher가 goal·speak_text를 따로 fire-and-forget → **발화 중 주행**(동시). 변경: 목적지+멘트를 `limo_msgs/GuideGoal`로 묶어 behaviour로 전달 → behaviour가 `/speak` 서비스로 **발화→완료대기→Spin→주행**(발화 중 주행 없음). 도착·실패 발화는 `/speak_text` 비동기 유지
+  - bridge goal 타입 `String`→`GuideGoal`, 죽은 dispatcher→voice `/speak_text` 라우트 폐지. voice_node `MultiThreadedExecutor`+콜백그룹(발화 블로킹 중 진단 하트비트 유지 → '음성' 행 깜빡임 제거)
+- [x] **FAILED 발화 GUIDING 한정** — done (2026-06-09). DEC-048 참고. 복귀·도킹 실패는 무인이라 발화 제거(관제 GUI 표시), 안내 중 실패만 "안내 주행 중 문제가 발생했습니다. 관리자를 기다려주세요."
+- [x] **TTS 실패 진단 계측** — done (2026-06-09). `tts.py`가 삼키던 발화 실패를 예외 전파→`voice_node`가 ROS 로거로 출력 + 시작 로그 `audio_device` 표시. DEC-048 참고
+- [ ] **도착 TTS 미발화 원인 규명(②)** — 실기기 로그 확인 대기. 출발(브릿지 경로)은 정상인데 behaviour 직결 경로(도착·FAILED)만 무음 → voice 콘솔 `TTS 발화` 수신 여부 + `ros2 topic info /speak_text -v` 퍼블리셔 확인으로 판별 예정
 
 #### 예약 시스템 (DEC-023, DEC-024, DEC-027)
 - [x] `ulsan_reservation` FastAPI 서버 구현 — done (2026-05-12)
@@ -370,6 +376,20 @@
   - `is_robot_connected`(behaviour 생존 AND Nav2 lifecycle 전부 active) 단일 판정 → 시스템 패널·지도 마커·상태 카드·요약 칩·상세 탭이 공유. lifecycle_manager가 맺은 bond 결과를 diagnostics로 받아 판정(도메인 브릿지 너머 생사 반영 — bond 직접 사용 불가 이유는 DEC-045)
   - `sig_connection` 시그널 신규, 변화 시에만 발행. 재연결 시 마지막 pose로 마커 복원. 요약 칩 집계에서 미연결 로봇 제외. 지도 마커 시각 정리(크기·화살표·범례 색-로봇 매핑 키)
   - ※ 코드 머지 완료(미커밋 아님). **실기기 검증 남음**
+- [x] **연결 판정 재설계 — liveness(연결)/readiness(준비) 분리 + 동작별 버튼 게이트 + 패널 카테고리화** — done (2026-06-09). DEC-047 참고. *(DEC-045 정련)*
+  - 실주행에서 FAILED·PBVS 도킹 중 로봇이 살아있는데 '미연결'로 떠 복구완료 버튼이 잠기는 모순 발견 → 연결을 **`/limo_status`(로봇 HW 발) 하트비트**로 교체(데스크탑 behaviour/Nav2와 분리). 로봇 전원 off인데 연결됨으로 뜨던 반대 오류도 해소
+  - 버튼 동작별 게이트: pause/resume/abort=`behaviour AND navigation`, **recover=`behaviour AND localization(AMCL) AND status==FAILED`(navigation 무관)**. navigation/localization은 lifecycle_manager 진단 `status.name`으로 독립 판정
+  - 시스템 패널 카테고리화(🤖 로봇 N / 🖥 시스템) + 로봇별 5행(로봇HW/자율주행/위치추정/**사람감지**/**음성TTS**). `/person_detected`(10Hz) 브릿지 추가, `voice_node`에 diagnostics 추가
+  - ※ 코드 머지 완료(미커밋). **실기기 검증 남음** — `/limo_status` 주기 발행 여부 + `status.name`의 navigation/localization 명명 1회 확인 권장
+- [x] **FAILED 진입 비모달 팝업(②)** — done (2026-06-09)
+  - 방문자 안내 중 로봇이 멈춰 사람이 물리 복구해야 하는 즉시조치 상황이라, 카드/로그와 별도로 주의를 끄는 팝업으로 격상. FAILED만 격상(연결끊김·인프라는 카드/패널이 담당 — alert fatigue 회피)
+  - **비모달**(`setModal(False)`)이라 떠 있어도 [복구완료] 등 조작 가능. 진입 엣지 1회, FAILED 이탈 시 자동 닫힘, 로봇별 1개 추적
+- [x] **연결 전이 이벤트 로그 전수 기록** — done (2026-06-09)
+  - 로봇별 5종(로봇HW/자율주행/위치추정/사람감지/음성) + 인프라 4종(맵서버/FastAPI/배차/충돌방지)의 **연결↔끊김 전이를 이벤트 로그에** 기록. baseline=끊김 가정 → 부팅 시 올라오는 항목의 최초 '연결'도 기록, 부팅 시 꺼진 항목의 헛 '끊김'은 억제
+  - 끊김은 `alert`(주황) 신규 로그 타입으로 시각 구분(`styles.py`). 끊김은 메시지가 안 와서 `_status_cb`로는 못 잡던 것 → 폴링(2초)+타임아웃(5초) 기반 `_check_connections`가 감지
+- [x] **관제 GUI 코드 리뷰 정리(8종)** — done (2026-06-09)
+  - **최적화**: 카메라를 **현재 보는 로봇 1대·로봇 뷰 표시 중에만** 디코드(`set_active_camera` 게이트 — 안 보는 뷰/탭의 헛 디코드 제거), HTTP 스레드 단일 인스턴스 재사용 통일(reservation_view의 `QThread destroyed while running` 잠재 크래시 수정 포함)
+  - **정리**: 데드코드 `pose_to_xyyaw`·`import math` 제거, `STATUS_COLOR/BG/BORDER`·`status_badge()` `styles.py` 단일화(map/robot 뷰 복붙 제거), 로그뷰 자동스크롤을 "바닥 근처일 때만"으로(읽는 중 튕김 해결)
 
 #### 전체 통합 테스트
 - [ ] LIMO 2대 + 노트북 전체 파이프라인 실기기 검증
