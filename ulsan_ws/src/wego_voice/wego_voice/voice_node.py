@@ -21,12 +21,12 @@ class VoiceNode(Node):
         super().__init__('voice_node')
 
         self.declare_parameter('tts_voice', 'ko-KR-SunHiNeural')
-        self.declare_parameter('audio_device', 'plughw:1,3')
+        self.declare_parameter('pulse_sink', 'alsa_output.platform-3510000.hda.hdmi-stereo')
 
-        self._audio_device = self.get_parameter('audio_device').value
+        self._pulse_sink = self.get_parameter('pulse_sink').value
         self._tts = TTS(
             voice=self.get_parameter('tts_voice').value,
-            audio_device=self._audio_device,
+            pulse_sink=self._pulse_sink,
         )
 
         # 발화 콜백(블로킹)은 전용 MutuallyExclusive 그룹에 둔다 →
@@ -50,7 +50,7 @@ class VoiceNode(Node):
         self._diag.add('wego_voice', self._diag_check)
 
         self.get_logger().info(
-            f'TTS 노드 준비 완료 — audio_device={self._audio_device}, /speak_text 대기 중')
+            f'TTS 노드 준비 완료 — pulse_sink={self._pulse_sink}, /speak_text 대기 중')
 
     def _diag_check(self, stat: DiagnosticStatus) -> DiagnosticStatus:
         stat.summary(DiagnosticStatus.OK, 'TTS 준비')
@@ -59,7 +59,7 @@ class VoiceNode(Node):
     def _speak_cb(self, msg: String) -> None:
         self.get_logger().info(f'TTS 발화: "{msg.data}"')
         # speak()는 블로킹 — 재생 완료까지 다음 메시지를 처리하지 않음
-        # 실패(edge-tts 네트워크/mpg123 오디오 장치 등)를 ROS 로거로 표면화 → 원인 진단.
+        # 실패(edge-tts 네트워크/mpg123 pulse 싱크 등)를 ROS 로거로 표면화 → 원인 진단.
         # 발화 실패가 안내 진행을 막지 않도록 콜백은 정상 반환.
         try:
             self._tts.speak(msg.data)

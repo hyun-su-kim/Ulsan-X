@@ -19,7 +19,7 @@ wego_dispatcher (domain 5, 0.5s 폴링) → IDLE 로봇에 GuideGoal 발행
   ▼
 wego_behaviour FSM (GuidingState, 출발 시)
   ├─ /speak 서비스 호출 → wego_voice  (발화-후-응답: 재생 끝까지 블로킹)
-  │     │  구현: edge-tts (Microsoft Neural TTS, ko-KR-SunHiNeural) + mpg123 -a plughw:1,3
+  │     │  구현: edge-tts (Microsoft Neural TTS, ko-KR-SunHiNeural) + mpg123 -o pulse
   │     ▼  TTS 음성 출력 (완료까지 대기)
   └─ 발화 완료 후 → Spin → Nav2 navigate_to_pose / navigate_through_poses (발화 중 주행 없음)
 ```
@@ -36,10 +36,11 @@ wego_behaviour FSM (GuidingState, 출발 시)
 - 학원 안내 로봇 특성상 안내 멘트가 짧고 정형화돼 있어 응답 지연(~1s) 허용 가능
 - 오프라인 대안(Piper)은 추후 개발 사항으로 보류
 
-### 오디오 출력 장치 설정
-- Jetson Orin NX 기본 ALSA 장치는 HDMI가 아님 → mpg123에 `-a` 장치 명시 필수
-- 로봇 오디오 출력이 HDMI 경로(card 1, device 3)라 `plughw:1,3` 사용
-- `voice_params.yaml`의 `audio_device` 파라미터로 변경 가능
+### 오디오 출력 장치 설정 (PulseAudio 경유)
+- **실행 위치 = 로봇**: mpg123 재생은 voice_node가 실행되는 기계의 스피커로 나간다. 스피커(빌트인 디스플레이 HDMI 오디오)가 로봇에 있으므로 voice_node도 **로봇에서 실행**(domain 6/7). 데스크탑에서 띄우면 데스크탑 스피커로 나가버림.
+- **ALSA 직접(`-a plughw:1,3`) → PulseAudio 경유(`-o pulse`)로 전환**: Jetson 그래픽 세션에서는 PulseAudio가 사운드 장치를 점유하므로 ALSA hw 직접 출력은 무음이 됨(mpg123은 exit 0 반환 → 에러도 안 남). `pactl`/GUI Test가 소리 나던 경로와 동일하게 pulse 경유로 통일.
+- **`PULSE_SINK` 환경변수로 싱크 고정**: `voice_params.yaml`의 `pulse_sink`(기본 `alsa_output.platform-3510000.hda.hdmi-stereo`)를 `PULSE_SINK`로 지정 → 기본 싱크 변경/재부팅과 무관하게 항상 그 출력으로. (구 방식은 부팅마다 `pactl set-default-sink` 수동 실행 필요 → 제거)
+- 전제: voice_node가 **PulseAudio가 도는 사용자 세션 안에서** 실행돼야 함(로봇 데스크톱 세션 또는 `XDG_RUNTIME_DIR`이 잡힌 SSH). 싱크 이름은 `pactl list short sinks`로 확인.
 
 ---
 

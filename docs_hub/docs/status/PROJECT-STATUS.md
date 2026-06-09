@@ -223,8 +223,11 @@
   - 기존: dispatcher가 goal·speak_text를 따로 fire-and-forget → **발화 중 주행**(동시). 변경: 목적지+멘트를 `limo_msgs/GuideGoal`로 묶어 behaviour로 전달 → behaviour가 `/speak` 서비스로 **발화→완료대기→Spin→주행**(발화 중 주행 없음). 도착·실패 발화는 `/speak_text` 비동기 유지
   - bridge goal 타입 `String`→`GuideGoal`, 죽은 dispatcher→voice `/speak_text` 라우트 폐지. voice_node `MultiThreadedExecutor`+콜백그룹(발화 블로킹 중 진단 하트비트 유지 → '음성' 행 깜빡임 제거)
 - [x] **FAILED 발화 GUIDING 한정** — done (2026-06-09). DEC-048 참고. 복귀·도킹 실패는 무인이라 발화 제거(관제 GUI 표시), 안내 중 실패만 "안내 주행 중 문제가 발생했습니다. 관리자를 기다려주세요."
-- [x] **TTS 실패 진단 계측** — done (2026-06-09). `tts.py`가 삼키던 발화 실패를 예외 전파→`voice_node`가 ROS 로거로 출력 + 시작 로그 `audio_device` 표시. DEC-048 참고
-- [ ] **도착 TTS 미발화 원인 규명(②)** — 실기기 로그 확인 대기. 출발(브릿지 경로)은 정상인데 behaviour 직결 경로(도착·FAILED)만 무음 → voice 콘솔 `TTS 발화` 수신 여부 + `ros2 topic info /speak_text -v` 퍼블리셔 확인으로 판별 예정
+- [x] **TTS 실패 진단 계측** — done (2026-06-09). `tts.py`가 삼키던 발화 실패를 예외 전파→`voice_node`가 ROS 로거로 출력 + 시작 로그 `pulse_sink` 표시. DEC-048 참고
+- [x] **TTS 무음 원인 규명 + 오디오 백엔드 교체** — done (2026-06-09). 실기기에서 `mpg123 -a plughw:1,3`(ALSA hw 직접)이 **무음**(mpg123은 exit 0 → 에러도 안 남). Jetson 그래픽 세션에서 PulseAudio가 장치를 점유해 ALSA 직접 출력이 묻힌 것. GUI Test·`mpg123 -o pulse`는 소리 남을 확인 → **`-o pulse` + `PULSE_SINK`(빌트인 디스플레이 HDMI 싱크 고정)로 전환**. 부팅마다 `pactl set-default-sink` 하던 수동 단계 제거. 파라미터 `audio_device`→`pulse_sink` 리네임
+  - **실행 위치 정정: wego_voice = 로봇 실행**(스피커가 로봇 빌트인 디스플레이에 있음 → mpg123 재생도 로봇에서). CLAUDE.md/VOICE-PIPELINE/WEGO_VOICE 문서 갱신. 데스크탑 표기는 오류였음
+  - 변경: `wego_voice/wego_voice/tts.py`, `voice_node.py`, `config/voice_params.yaml`
+- [ ] **TTS 실기기 재검증(②)** — 위 교체 후 로봇에서 `voice_launch` 띄우고 `/speak_text`·`/speak` 양쪽 발화 확인. 출발/도착/FAILED 멘트 전부 소리 나는지 1회 확인(이전 "출발만 정상" 관찰이 ALSA-직접 무음과 어떻게 양립했는지도 함께 점검)
 
 #### 예약 시스템 (DEC-023, DEC-024, DEC-027)
 - [x] `ulsan_reservation` FastAPI 서버 구현 — done (2026-05-12)

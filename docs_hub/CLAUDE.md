@@ -50,39 +50,39 @@ ulsan_ws/src/
 
 | 기기 | 도메인 | 실행 내용 |
 |------|--------|-----------|
-| LIMO 1 | 6 | 드라이버(limo_base, ydlidar, orbbec, EKF) + **wego_aruco, ulsan_person_detect** (perception 엣지, DEC-043) |
-| LIMO 2 | 7 | 드라이버(limo_base, ydlidar, orbbec, EKF) + **wego_aruco, ulsan_person_detect** (perception 엣지, DEC-043) |
-| 데스크탑 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_voice, wego_bridge (LIMO 1 담당) |
-| 데스크탑 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_voice, wego_bridge (LIMO 2 담당) |
+| LIMO 1 | 6 | 드라이버(limo_base, ydlidar, orbbec, EKF) + **wego_aruco, ulsan_person_detect, wego_voice** (perception·출력 엣지 — 스피커가 로봇에 있음, DEC-043) |
+| LIMO 2 | 7 | 드라이버(limo_base, ydlidar, orbbec, EKF) + **wego_aruco, ulsan_person_detect, wego_voice** (perception·출력 엣지 — 스피커가 로봇에 있음, DEC-043) |
+| 데스크탑 | 6 | Nav2(AMCL+planner+controller), wego_behaviour, wego_bridge (LIMO 1 담당) |
+| 데스크탑 | 7 | Nav2(AMCL+planner+controller), wego_behaviour, wego_bridge (LIMO 2 담당) |
 | 데스크탑 | 5 | wego_traffic, wego_dispatcher, ulsan_reservation(FastAPI+MySQL) |
 | 노트북 | 5 | **ulsan_gui** (관제 GUI, PyQt) / ulsan-visitor-ui (방문자 UI, 브라우저). wego_ui는 RViz 맵 모니터링(보조) |
 
 ```bash
-# LIMO 1 (domain 6) — 드라이버 + perception(엣지, DEC-043)
+# LIMO 1 (domain 6) — 드라이버 + perception·출력(엣지, DEC-043)
 export ROS_DOMAIN_ID=6
 ros2 launch wego teleop_launch.py                            # 하드웨어 드라이버
 ros2 launch wego_aruco aruco_corrector_launch.py            # 홈 도킹 PBVS (카메라 로컬 처리)
 ros2 run ulsan_person_detect person_detect_node             # 사람 감지 (런치 불필요)
+ros2 launch wego_voice voice_launch.py                       # TTS (스피커가 로봇에 있어 로봇 실행, mpg123 -o pulse)
 
-# LIMO 2 (domain 7) — 드라이버 + perception(엣지, DEC-043)
+# LIMO 2 (domain 7) — 드라이버 + perception·출력(엣지, DEC-043)
 export ROS_DOMAIN_ID=7
 ros2 launch wego teleop_launch.py
 ros2 launch wego_aruco aruco_corrector_launch.py
 ros2 run ulsan_person_detect person_detect_node
+ros2 launch wego_voice voice_launch.py
 
 # 데스크탑 — LIMO 1 담당 터미널 (domain 6)
 export ROS_DOMAIN_ID=6
 ros2 launch wego navigation_diff_launch.py use_rviz:=false   # Nav2 전체 (localization + navigation)
 ros2 launch wego_behaviour behaviour_launch.py
 ros2 launch wego_bridge bridge_launch.py                     # bridge_robot.yaml 템플릿 → domain 6↔5 브릿지
-ros2 launch wego_voice voice_launch.py
 
 # 데스크탑 — LIMO 2 담당 터미널 (domain 7)
 export ROS_DOMAIN_ID=7
 ros2 launch wego navigation_diff_launch.py use_rviz:=false
 ros2 launch wego_behaviour behaviour_launch.py
 ros2 launch wego_bridge bridge_launch.py                     # bridge_robot.yaml 템플릿 → domain 7↔5 브릿지
-ros2 launch wego_voice voice_launch.py
 
 # 데스크탑 — domain 5 터미널
 export ROS_DOMAIN_ID=5
@@ -108,7 +108,7 @@ ros2 launch ulsan_gui gui_launch.py
 | `wego_bridge` | bridge_robot.yaml(템플릿), bridge_launch.py | 서버 노트북 LIMO 도메인 터미널에서 실행. ROS_DOMAIN_ID로 자동 결정. amcl_pose/robot_status/diagnostics/limo_status/person_detected(6,7→5) + pause/resume/abort/recover/goal_destination(GuideGoal)/cmd_vel(5→6,7). ※ dispatcher→voice speak_text 라우트는 폐지(출발멘트는 GuideGoal로 behaviour 경유, DEC-048) |
 | `wego_behaviour` | behaviour_node.py, states.py | Yasmin FSM — IDLE/GUIDING/RETURNING/WAITING/FAILED (DEC-033). 데스크탑 domain 6/7 |
 | `wego_aruco` | aruco_home_dock.py, aruco_measure.py | **LIMO 도메인 6/7(로봇) 실행 (DEC-043).** aruco_home_dock: PBVS staged 홈 도킹 서비스 `/aruco_home_dock` → 정차 후 waypoints.yaml home 좌표로 /initialpose AMCL 리셋 (DEC-038/041/042). waypoints.yaml은 wego_behaviour 소유(로봇도 해당 패키지 빌드 필요). aruco_measure.py: 마커 상대 포즈(거리·각도) 실시간 측정 도구 — `ros2 run`으로 수동 실행, target_dist 튜닝용(운영 비포함, 구 pose_corrector 대체 2026-06-01) |
-| `wego_voice` | voice_node.py, tts | TTS only (DEC-024). 데스크탑 domain 6/7. `/speak_text` 구독(도착·실패 비동기) + **`/speak` 서비스(발화-후-응답, 출발 안내 동기화 DEC-048)** → edge-tts + mpg123. MultiThreadedExecutor+콜백그룹(발화 블로킹 중 진단 유지) |
+| `wego_voice` | voice_node.py, tts | TTS only (DEC-024). **로봇 domain 6/7 실행 — 스피커가 로봇에 있음**. `/speak_text` 구독(도착·실패 비동기) + **`/speak` 서비스(발화-후-응답, 출발 안내 동기화 DEC-048)** → edge-tts + **mpg123 -o pulse**(PULSE_SINK로 빌트인 디스플레이 HDMI 싱크 고정 — ALSA 직접 출력은 pulse 점유 세션에서 무음). MultiThreadedExecutor+콜백그룹(발화 블로킹 중 진단 유지) |
 | `wego_traffic` | traffic_node.py | 데스크탑 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
 | `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 `GuideGoal`(목적지+출발멘트) 배정 (DEC-027/048). 출발멘트는 voice로 직접 안 보내고 GuideGoal에 실어 behaviour 경유 |
 | `ulsan_person_detect` | person_detect_node.py | **LIMO 도메인 6/7(로봇)에서 실행 (DEC-043).** YOLOv8n + Depth 0.7m 게이팅 → /person_detected 발행 (DEC-041). `ros2 run` 직접 실행(노드 1개, 런치 불필요) |

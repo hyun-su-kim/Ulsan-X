@@ -8,7 +8,10 @@ import edge_tts
 # ko-KR-SunHiNeural: Microsoft Neural TTS 한국어 여성 음성
 # 인터넷 연결 필요 — edge-tts가 Microsoft 서버에서 오디오 스트림을 받아옴
 DEFAULT_VOICE = 'ko-KR-SunHiNeural'
-DEFAULT_AUDIO_DEVICE = 'plughw:1,3'  # HDMI 0 (Jetson Orin NX HDA, card 1, device 3)
+# PulseAudio 싱크 이름. mpg123 -o pulse + PULSE_SINK로 이 싱크에 직접 출력한다.
+# 로봇 빌트인 디스플레이의 HDMI 오디오 싱크(Jetson Orin NX). `pactl list short sinks`로 확인.
+# (구: ALSA 직접 'plughw:1,3' → PulseAudio가 장치를 점유한 그래픽 세션에서 무음 → pulse 경유로 전환)
+DEFAULT_PULSE_SINK = 'alsa_output.platform-3510000.hda.hdmi-stereo'
 
 
 class TTS:
@@ -22,9 +25,9 @@ class TTS:
         - sudo apt install mpg123
     """
 
-    def __init__(self, voice: str = DEFAULT_VOICE, audio_device: str = DEFAULT_AUDIO_DEVICE):
+    def __init__(self, voice: str = DEFAULT_VOICE, pulse_sink: str = DEFAULT_PULSE_SINK):
         self._voice = voice
-        self._audio_device = audio_device
+        self._pulse_sink = pulse_sink
 
     def speak(self, text: str) -> None:
         """텍스트를 음성으로 출력. 재생 완료까지 블로킹.
@@ -44,8 +47,13 @@ class TTS:
             communicate = edge_tts.Communicate(text, self._voice)
             await communicate.save(tmp_path)
 
-            # -a: ALSA 출력 장치 지정, -q: quiet 모드
-            subprocess.run(['mpg123', '-q', '-a', self._audio_device, tmp_path], check=True)
+            # -o pulse: PulseAudio 경유 출력(-q: quiet). ALSA 직접(-a)은 pulse가 장치를
+            # 점유한 그래픽 세션에서 무음이 됨. PULSE_SINK로 특정 싱크를 고정해 기본 싱크
+            # 변경/재부팅에 영향받지 않게 한다(실행 전 pactl set-default-sink 불요).
+            env = os.environ.copy()
+            if self._pulse_sink:
+                env['PULSE_SINK'] = self._pulse_sink
+            subprocess.run(['mpg123', '-q', '-o', 'pulse', tmp_path], check=True, env=env)
 
         finally:
             if tmp_path and os.path.exists(tmp_path):

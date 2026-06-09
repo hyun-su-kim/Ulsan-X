@@ -286,17 +286,18 @@ source install/setup.bash
 
 ## 실행
 
-```bash
-# LIMO 스피커(Jieli Technology USB) 출력 장치로 설정 — 재부팅 시 초기화되므로 매번 실행
-pactl set-default-sink alsa_output.usb-Jieli_Technology_UACDemoV1.0_5025A838B349649F-00.analog-stereo
+**로봇에서 실행** (스피커가 로봇에 있으므로 — domain 6/7). 사전 오디오 설정 불요:
 
-source ~/Ulsan-X/activate_voice.sh
+```bash
+export ROS_DOMAIN_ID=6        # LIMO 2는 7
+source /opt/ros/humble/setup.bash
 source ~/Ulsan-X/ulsan_ws/install/setup.bash
-ros2 launch wego_voice voice_launch.py
+ros2 run wego_voice voice_node
 ```
 
-> **오디오 장치 확인**: `pactl list sinks short`로 Jieli 장치 인덱스 확인.
-> 장치가 없으면 USB 연결 상태 점검.
+> **오디오 출력**: `mpg123 -o pulse` + `PULSE_SINK`(`voice_params.yaml`의 `pulse_sink`)로 특정 싱크에 직접 출력 → 부팅마다 `pactl set-default-sink` 하던 수동 설정 제거.
+> **싱크 확인**: `pactl list short sinks`로 이름 확인(기본 `alsa_output.platform-3510000.hda.hdmi-stereo` = 빌트인 디스플레이 HDMI). 다르면 `pulse_sink` 값 교체.
+> **전제**: PulseAudio가 도는 사용자 세션에서 실행(로봇 데스크톱 세션 / `XDG_RUNTIME_DIR` 잡힌 SSH). `ros2 launch wego_voice voice_launch.py`로 띄우면 `voice_params.yaml`을 읽는다.
 
 ---
 
