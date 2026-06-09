@@ -56,7 +56,7 @@ waypoints:
     yaw: -1.588
   home_robot2_staging:
     label: 로봇2 홈 스테이징
-    x: 0.385
+    x: 0.3
     y: 0.9123
     yaw: -1.588
   intensive_counseling_1:
