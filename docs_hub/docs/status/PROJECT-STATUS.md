@@ -1,8 +1,23 @@
 # AI 기반 학원 안내 로봇 — Project Status
 
 ## Current Phase
-**Phase 3 — 1차 데모 준비 (2026-05-29)**
-핵심 기능 구현 완료. 실기기 검증 진행 중. 잔여: FSM 통합 테스트 + LIMO 2 검증 + 사람 감지 정지 기능.
+**Phase 3 — 1차 데모 마무리 (2026-06-09)**
+LIMO 1·2 단독 주행/경유지/마커 도킹 모두 검증 완료. 데모 영상 촬영까지 잔여 6건(아래).
+
+---
+
+## 1차 데모 — 남은 작업 (2026-06-09 확정, 이거 끝나면 데모 영상)
+
+| # | 작업 | 상태 | 비고 |
+|---|------|------|------|
+| ① | **spin failed 원인 규명·해결** | `todo` | 홈 출발 180° Spin이 실패(주행은 graceful degradation으로 계속). behavior_server 로그 확인 → 회전 중 벽 충돌 예측(`simulate_ahead_time`) 의심(home이 마커 벽 0.47m 앞으로 좁음). 각도 축소/staging spin/수용 중 택1 |
+| ② | **도착 TTS 발화-복귀 동기화** | `todo` | "목적지에 도착했습니다" 발화는 **정상**(무음 문제 해결됨). 단 비동기(`/speak_text`)라 발화 중/전에 복귀 시작 → 출발(DEC-048)처럼 **발화 완료 후 복귀**로 동기화 필요 |
+| ③ | **2대 임무 할당 + 우선순위 회피 검증** | `todo` | LIMO 2대 가용. dispatcher 순차 배정(3-1) + wego_traffic 우선순위 pause/resume(3-2, GUIDING>RETURNING, 동순위 LIMO1) 실기기 확인 |
+| ④ | **FAILED 흐름 검증** | `todo` | FAILED 시 발화 + 관제 GUI 팝업 + [복구완료] 버튼 → LIMO1/2 각자 home1/2 AMCL 리셋 → IDLE 복귀 (DEC-044/047 실기기 검증) |
+| Ⓐ | **관제 GUI 전체 점검** | `todo` | 지도+두 로봇 실시간 위치, 긴급제어(pause/resume/abort), 이벤트/미션 로그, 시스템 상태 패널 (데모 포함) |
+| Ⓑ | **방문자 UI end-to-end** | `todo` | 방문자 UI(예약 조회/현장방문) → FastAPI → dispatcher 배정 → 로봇 출발, 데모 도입부 (데모 포함) |
+
+> 오늘(2026-06-09) 완료: LIMO2 도킹 셋업 — target_dist 도메인 분기(dom7=0.471), home_robot2/staging 좌표 측정·갱신(home1과 동일 y, staging x=0.3), goal_test_node GuideGoal 타입 정정. LIMO2 주행/경유/도킹 실기기 검증 완료.
 
 ---
 
@@ -34,10 +49,10 @@
 
 | # | 항목 | 상태 |
 |---|------|------|
-| 2-1 | 유리 구간 경유지 통과 주행 | `todo` |
-| 2-2 | FSM 각 상태 동작 | `todo` |
-| 2-3 | BT 수정 사항 동작 | `todo` |
-| 2-4 | PBVS 홈 도킹 (markers.yaml ID 1 측정 완료 2026-05-28) | `todo` |
+| 2-1 | 유리 구간 경유지 통과 주행 | `done (2026-06-09)` |
+| 2-2 | FSM 각 상태 동작 | `부분 (2026-06-09)` — IDLE/GUIDING/RETURNING 주행 검증. WAITING/FAILED는 잔여 ③④에서 |
+| 2-3 | BT 수정 사항 동작 | `부분 (2026-06-09)` — 주행 중 BT 정상. 복구/사람정지 등은 ③④와 함께 |
+| 2-4 | PBVS 홈 도킹 | `done (2026-06-09)` — target_dist 0.471, home2/staging 좌표 측정·갱신 |
 
 ### 3단계 — 2대 통합
 
@@ -222,12 +237,14 @@
 - [x] **출발 안내 발화-주행 동기화 (GuideGoal + Speak 서비스)** — done (2026-06-09). DEC-048 참고
   - 기존: dispatcher가 goal·speak_text를 따로 fire-and-forget → **발화 중 주행**(동시). 변경: 목적지+멘트를 `limo_msgs/GuideGoal`로 묶어 behaviour로 전달 → behaviour가 `/speak` 서비스로 **발화→완료대기→Spin→주행**(발화 중 주행 없음). 도착·실패 발화는 `/speak_text` 비동기 유지
   - bridge goal 타입 `String`→`GuideGoal`, 죽은 dispatcher→voice `/speak_text` 라우트 폐지. voice_node `MultiThreadedExecutor`+콜백그룹(발화 블로킹 중 진단 하트비트 유지 → '음성' 행 깜빡임 제거)
+  - ※ 후속 정정 (2026-06-09): `goal_test_node`가 옛 `std_msgs/String`으로 `/goal_destination` 발행 중이라 GuideGoal 구독자와 타입 불일치 → 조용히 무시되던 것 발견. `GuideGoal`(destination+tts_text)로 정정(FSM 검증용 노드라 DEC-048 때 누락됐던 것)
 - [x] **FAILED 발화 GUIDING 한정** — done (2026-06-09). DEC-048 참고. 복귀·도킹 실패는 무인이라 발화 제거(관제 GUI 표시), 안내 중 실패만 "안내 주행 중 문제가 발생했습니다. 관리자를 기다려주세요."
 - [x] **TTS 실패 진단 계측** — done (2026-06-09). `tts.py`가 삼키던 발화 실패를 예외 전파→`voice_node`가 ROS 로거로 출력 + 시작 로그 `pulse_sink` 표시. DEC-048 참고
 - [x] **TTS 무음 원인 규명 + 오디오 백엔드 교체** — done (2026-06-09). 실기기에서 `mpg123 -a plughw:1,3`(ALSA hw 직접)이 **무음**(mpg123은 exit 0 → 에러도 안 남). Jetson 그래픽 세션에서 PulseAudio가 장치를 점유해 ALSA 직접 출력이 묻힌 것. GUI Test·`mpg123 -o pulse`는 소리 남을 확인 → **`-o pulse` + `PULSE_SINK`(빌트인 디스플레이 HDMI 싱크 고정)로 전환**. 부팅마다 `pactl set-default-sink` 하던 수동 단계 제거. 파라미터 `audio_device`→`pulse_sink` 리네임
   - **실행 위치 정정: wego_voice = 로봇 실행**(스피커가 로봇 빌트인 디스플레이에 있음 → mpg123 재생도 로봇에서). CLAUDE.md/VOICE-PIPELINE/WEGO_VOICE 문서 갱신. 데스크탑 표기는 오류였음
   - 변경: `wego_voice/wego_voice/tts.py`, `voice_node.py`, `config/voice_params.yaml`
-- [ ] **TTS 실기기 재검증(②)** — 위 교체 후 로봇에서 `voice_launch` 띄우고 `/speak_text`·`/speak` 양쪽 발화 확인. 출발/도착/FAILED 멘트 전부 소리 나는지 1회 확인(이전 "출발만 정상" 관찰이 ALSA-직접 무음과 어떻게 양립했는지도 함께 점검)
+- [x] **TTS 실기기 재검증(②)** — done (2026-06-09). PulseAudio(`-o pulse`) 전환 후 출발/도착/FAILED 멘트 모두 정상 발화 확인(무음 문제 해결). voice는 하드웨어(스피커) 사유로 LIMO 본체 PC에서 실행 검토 중
+- [ ] **도착 발화-복귀 동기화 (잔여 ②)** — 도착 "목적지에 도착했습니다"가 비동기(`/speak_text`)라 발화 완료 전 RETURNING 시작. 출발(DEC-048 `/speak` 서비스+완료대기) 방식을 **도착에도 적용** → 발화 끝나고 복귀. `GuidingState` 도착 분기(`states.py` succeeded 직전 `speak_text`)를 `speak_and_wait`로 교체 검토. 방법 미정
 
 #### 예약 시스템 (DEC-023, DEC-024, DEC-027)
 - [x] `ulsan_reservation` FastAPI 서버 구현 — done (2026-05-12)
@@ -359,6 +376,11 @@
   - `yaw_tol` 0.10 → 0.02rad(≈1.15°): 차체 ~4° 틀어짐 → phase2 정렬 끝까지 수행. 측정 노이즈 ±0.5° 위 한계값
   - `rho_tol` 0.03 → 0.01m: 위치 1cm 정밀. 실기기 정밀주차 완료 확인
   - waypoints: home_robot1_staging x -0.1111→-0.18·y 0.5123→0.9123, counter y→3.0 (현장 조정)
+- [x] **LIMO2 도킹 셋업 + 실기기 검증** — done (2026-06-09)
+  - aruco_measure(`-p marker_id:=1`)로 home2 마커 실측: depth 0.471m(안정), lateral~0, yaw~0 → LIMO2 `target_dist=0.471` (LIMO1 0.519보다 3~5cm 가까움 = 카메라 개체차)
+  - `aruco_corrector_launch.py`: target_dist 도메인 분기 추가(`{'6':0.519,'7':0.471}`). home_key는 기존 도메인 분기 유지(7→home_robot2→마커 ID1)
+  - `waypoints.yaml`: home_robot2 AMCL 실측 갱신(x=0.385, y=0.0123[home1과 동일], yaw=-1.588≈-90°), home_robot2_staging(x=0.3, y=0.9123, yaw=-1.588). 두 로봇 같은 y줄·남향 나란히(x 0.5m 간격) 배치
+  - 유리 경유·마커 정밀 도킹 실기기 검증 완료. glass 경유는 목적지 기반(로봇 무관)이라 LIMO1과 공유
 - [ ] Orbbec 카메라 프로파일 고정 — done (2026-05-07) teleop_launch.py에 depth_height=400 명시
 
 #### 데모용 관제 UI
