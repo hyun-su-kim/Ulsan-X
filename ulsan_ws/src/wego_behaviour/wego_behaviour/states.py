@@ -17,6 +17,15 @@ def _needs_glass_via(dest_key: str) -> bool:
     return dest_key in _GLASS_ROUTE_DESTINATIONS
 
 
+def _bb_get(bb, key, default=None):
+    """yasmin Blackboard.get()은 기본값 인자가 없고 키가 없으면 예외를 던진다.
+    (dict.get(key, default)처럼 쓰면 TypeError) — 안전하게 기본값을 제공한다."""
+    try:
+        return bb[key]
+    except Exception:
+        return default
+
+
 def _make_pose(wp: dict) -> PoseStamped:
     pose = PoseStamped()
     pose.header.frame_id = 'map'
@@ -81,7 +90,7 @@ class FailedState(State):
 
     def execute(self, blackboard):
         self._node.publish_status('FAILED')
-        failed_from = blackboard.get('failed_from', 'GUIDING')
+        failed_from = _bb_get(blackboard, 'failed_from', 'GUIDING')
         self._node.get_logger().error(f'임무 실패 ({failed_from}) — 관리자 복구 대기')
         if failed_from == 'GUIDING':
             self._node.speak_text(self._FAIL_TTS_GUIDING)
@@ -121,10 +130,10 @@ class GuidingState(State):
         # 목적: (1) AMCL 파티클 수렴 — 제자리 회전으로 다양한 각도 스캔 수집
         #        (2) Nav2 출발 직후 180° 회전 부담 제거 — SimpleProgressChecker 실패 방지
         # WAITING resume 재진입 시에는 from_home=False이므로 이중 Spin 없음
-        if blackboard.get('from_home'):
+        if _bb_get(blackboard, 'from_home'):
             blackboard['from_home'] = False  # 재진입 시 이중 Spin 방지 — 즉시 초기화
             # 출발 안내: 발화가 다 끝난 뒤에 모션 시작(발화 중 주행 방지). Spin 포함 모든 모션 전.
-            tts = blackboard.get('departure_tts', '')
+            tts = _bb_get(blackboard, 'departure_tts', '')
             if tts:
                 self._node.get_logger().info('출발 안내 발화 — 완료까지 대기')
                 self._node.speak_and_wait(tts)
@@ -224,7 +233,7 @@ class WaitingState(State):
         while not self._node._resume_flag:
             if self._node._abort_flag:
                 self._node._abort_flag = False
-                if blackboard.get('return_to') == 'GUIDING':
+                if _bb_get(blackboard, 'return_to') == 'GUIDING':
                     blackboard['return_to'] = 'RETURNING'
                     self._node.get_logger().info('WAITING: abort → return_to 변경 (GUIDING→RETURNING)')
             time.sleep(0.1)
