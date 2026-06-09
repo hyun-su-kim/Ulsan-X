@@ -8,7 +8,8 @@ import yaml
 import rclpy
 from rclpy.node import Node
 from ament_index_python.packages import get_package_share_directory
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool
+from limo_msgs.msg import GuideGoal
 
 
 class GoalTestNode(Node):
@@ -16,7 +17,7 @@ class GoalTestNode(Node):
         super().__init__('goal_test_node')
         self._waypoints = waypoints
         self._on_duty_pub = self.create_publisher(Bool, '/on_duty', 10)
-        self._dest_pub = self.create_publisher(String, '/goal_destination', 10)
+        self._dest_pub = self.create_publisher(GuideGoal, '/goal_destination', 10)
 
         # on_duty=True 고정 발행 (1Hz)
         self.create_timer(1.0, self._publish_on_duty)
@@ -33,10 +34,11 @@ class GoalTestNode(Node):
             print(f'[!] 없는 키: {key}')
             self._print_menu()
             return
-        msg = String()
-        msg.data = key
-        self._dest_pub.publish(msg)
         label = self._waypoints[key]['label']
+        msg = GuideGoal()
+        msg.destination = key
+        msg.tts_text = '테스트 시작합니다.'   # 발화 테스트용 — 비우면 발화 생략
+        self._dest_pub.publish(msg)
         print(f'[→] /goal_destination 발행: {key} ({label})')
 
     def _print_menu(self):
