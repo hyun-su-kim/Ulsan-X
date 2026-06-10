@@ -17,6 +17,25 @@ def _needs_glass_via(dest_key: str) -> bool:
     return dest_key in _GLASS_ROUTE_DESTINATIONS
 
 
+# 상담 계열 목적지 라벨 — 도착 멘트 개인화용(예약/현장방문 공통, destination_key로만 분기).
+# FastAPI ROOM_LABELS와 같은 문구이나, 도착 멘트는 목적지로만 결정되므로 behaviour가 직접 만든다.
+_COUNSELING_LABELS = {
+    'counseling_1':           '상담실 1',
+    'counseling_2':           '상담실 2',
+    'intensive_counseling_1': '집중상담실 1',
+    'intensive_counseling_2': '집중상담실 2',
+}
+
+
+def _arrival_tts(dest_key: str) -> str:
+    """도착 안내 멘트. 상담 계열은 라벨+대기 안내, 그 외(강의실 등)는 일반 문구."""
+    label = _COUNSELING_LABELS.get(dest_key)
+    if label:
+        return (f'{label}에 도착했습니다. '
+                f'상담실에서 기다리고 계시면 상담을 도와드리겠습니다.')
+    return '목적지에 도착했습니다.'
+
+
 def _bb_get(bb, key, default=None):
     """yasmin Blackboard.get()은 기본값 인자가 없고 키가 없으면 예외를 던진다.
     (dict.get(key, default)처럼 쓰면 TypeError) — 안전하게 기본값을 제공한다."""
@@ -209,7 +228,10 @@ class GuidingState(State):
                     f'x={pos.x:.3f} y={pos.y:.3f} yaw={math.degrees(yaw):.1f}°'
                 )
             # [DEBUG] end
-            self._node.speak_text('목적지에 도착했습니다.')
+            # 도착 안내: 발화 완료까지 대기한 뒤 복귀 시작(발화 중 복귀 방지).
+            # 출발(speak_and_wait)과 동일하게 동기화. 멘트는 destination_key로 분기.
+            self._node.get_logger().info('도착 안내 발화 — 완료까지 대기')
+            self._node.speak_and_wait(_arrival_tts(dest_key))
             return 'succeeded'
 
         self._node.get_logger().warn(f'목적지 이동 실패: {result}')
