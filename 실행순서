@@ -31,22 +31,18 @@ ros2 launch wego_behaviour behaviour_launch.py
 # 터미널 3 — ArUco
 ros2 launch wego_aruco aruco_corrector_launch.py
 
-# 터미널 4 — TTS
-ros2 launch wego_voice voice_launch.py
-
 # 터미널 5 — domain_bridge
 ros2 launch wego_bridge bridge_launch.py
-
-# 터미널 6 - 사람감지노드
-ros2 run ulsan_person_detect person_detect_node --ros-args -p publish_debug:=true
 -------------------------------------------------------------
 로봇 본체 (domain 6, 7)
 # 터미널 1 - 하드웨어 드라이버
 ros2 launch wego teleop_launch.py
 
+# 터미널 4 — TTS
+ros2 launch wego_voice voice_launch.py
 
-
-
+# 터미널 6 - 사람감지노드
+ros2 run ulsan_person_detect person_detect_node --ros-args -p publish_debug:=true
 ------------------------------------------------------------
 디버깅 용 rviz
 rviz2 -d ~/Ulsan-X/ulsan_ws/src/wego_ui/rviz/navigation_monitor.rviz
