@@ -27,8 +27,8 @@ def generate_launch_description():
                 'markers_file': markers_file,
                 'home_key':     home_key,
                 'target_dist':  target_dist,
-                'rho_tol':      0.01,
-                'yaw_tol':      0.02,
+                'rho_tol':      0.02,
+                'yaw_tol':      0.04,
                 'max_linear':   0.08,
                 'max_angular':  0.3,
                 # 단계 분리(staged) 게인
