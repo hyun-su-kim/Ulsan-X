@@ -14,6 +14,7 @@ from nav_msgs.msg import OccupancyGrid
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 try:
     from limo_msgs.msg import LimoStatus as _LimoStatus
+    from limo_msgs.msg import GuideGoal as _GuideGoal
     _LIMO_MSGS_OK = True
 except ImportError:
     _LIMO_MSGS_OK = False
@@ -121,10 +122,11 @@ class RosNode(Node):
                 CompressedImage, f'/{robot}/camera/image/compressed',
                 lambda m, r=robot: self._camera_cb(r, m), 10,
             )
-            self.create_subscription(
-                String, f'/{robot}/goal_destination',
-                lambda m, r=robot: self._dest_cb(r, m), 10,
-            )
+            if _LIMO_MSGS_OK:
+                self.create_subscription(
+                    _GuideGoal, f'/{robot}/goal_destination',
+                    lambda m, r=robot: self._dest_cb(r, m), 10,
+                )
             self.create_subscription(
                 Bool, f'/{robot}/person_detected',
                 lambda m, r=robot: self._person_detected_cb(r, m), 10,
@@ -150,9 +152,6 @@ class RosNode(Node):
         # 발행 — 로봇별 dict
         self._cmd_vel_pubs = {
             r: self.create_publisher(Twist, f'/{r}/cmd_vel', 10) for r in ROBOTS
-        }
-        self._goal_pubs = {
-            r: self.create_publisher(String, f'/{r}/goal_destination', 10) for r in ROBOTS
         }
         self._pause_pubs = {
             r: self.create_publisher(Empty, f'/{r}/pause', 10) for r in ROBOTS
@@ -209,9 +208,10 @@ class RosNode(Node):
             return
         self.signals.sig_camera.emit(robot, bytes(msg.data), msg.format)
 
-    def _dest_cb(self, robot: str, msg: String) -> None:
-        self.robots[robot].dest = msg.data
-        self.signals.sig_dest.emit(robot, msg.data)
+    def _dest_cb(self, robot: str, msg) -> None:
+        # /goal_destination은 GuideGoal(destination + tts_text) — DEC-048
+        self.robots[robot].dest = msg.destination
+        self.signals.sig_dest.emit(robot, msg.destination)
 
     def _battery_cb(self, robot: str, msg) -> None:
         # /limo_status = 로봇 HW 드라이버 발 — 로봇 '연결' 판정의 하트비트(DEC-047)
