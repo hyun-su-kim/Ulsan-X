@@ -37,14 +37,11 @@ def assign_walkin(db: Session = Depends(get_db)):
 
     동작 순서:
     1. 현재 시간대 빈 상담실 탐색 (없으면 503)
-    2. reservations 테이블에 walk-in 행 삽입 (동시 방문자 중복 배정 방지)
-    3. IDLE 로봇을 즉시 선택해 robot_assigned를 확정한 뒤 PENDING 미션 생성
-    4. wego_dispatcher가 미션을 수락할 때까지 대기하지 않고 즉시 응답
-
-    robot_assigned를 생성 시점에 기록하는 이유:
-    태블릿 GuidingPage는 반환받은 robot으로 GET /robots/status를 폴링한다.
-    dispatcher가 나중에 다른 로봇을 선택하면 폴링 대상이 어긋나므로
-    FastAPI 선택 로봇을 미션에 먼저 기록해 일관성을 보장한다.
+    2. 가용(IDLE) 로봇 유무 확인 (없으면 503 즉답)
+    3. reservations 테이블에 walk-in 행 삽입 (동시 방문자 중복 배정 방지)
+    4. PENDING 미션 생성 — 어느 로봇이 맡을지는 wego_dispatcher가 디스패치
+       시점에 단독 결정하고 PATCH /start로 robot_assigned를 채운다.
+       태블릿 GuidingPage는 GET /assign/{mission_id}로 배정 결과를 폴링한다.
     """
     from routers.robots import robot_status
 
@@ -53,9 +50,7 @@ def assign_walkin(db: Session = Depends(get_db)):
     if not room:
         raise HTTPException(status_code=503, detail="현재 시간대 빈 상담실 없음")
 
-    # IDLE 로봇 선택 (limo1 우선)
-    robot = pick_idle_robot(robot_status)
-    if not robot:
+    if not pick_idle_robot(robot_status):
         raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
 
     # walk-in 예약 행 삽입 (중복 배정 방지)
@@ -68,16 +63,14 @@ def assign_walkin(db: Session = Depends(get_db)):
         reservation_id=reservation.id,
         destination=room,
         tts_text=tts_text,
-        robot_assigned=robot,
     )
     mission = crud.create_mission(db, mission_data)
 
     crud.create_log(db, log_type="mission_start",
-                    message=f"현장방문 안내 배정: {label} ({robot})")
+                    message=f"현장방문 안내 배정: {label}")
 
     return schemas.WalkinAssignResponse(
         mission_id=mission.id,
-        robot=robot,
         room=room,
     )
 

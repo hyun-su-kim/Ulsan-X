@@ -36,7 +36,7 @@ function ClassroomPage() {
       const result = await assignClassroom(classroom.key);
       navigate('/guiding', {
         state: {
-          robot:       result.robot,
+          missionId:   result.mission_id,
           destination: classroom.label,
         },
       });

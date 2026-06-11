@@ -55,7 +55,7 @@ function WalkinRoomPage() {
       const result = await assignWalkin(room);
       navigate('/guiding', {
         state: {
-          robot:       result.robot,
+          missionId:   result.mission_id,
           destination: ROOM_LABELS[room] || room,
         },
       });

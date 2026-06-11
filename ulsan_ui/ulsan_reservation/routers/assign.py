@@ -1,10 +1,15 @@
 # 임무 배정 라우터
 #
-# POST  /assign                — 예약 체크인 후 로봇 임무 배정 (중복 시 409)
-# POST  /assign/classroom      — 강의실 안내 배정 (DB 기록 없음)
+# 로봇 "선택"의 단일 주체는 wego_dispatcher다 (디스패치 시점 FSM 상태 기준).
+# 여기서는 임무 생성 시 가용 로봇 유무만 확인해 만차(503)를 즉답하고,
+# robot_assigned는 dispatcher의 PATCH /start 때 채워진다.
+#
+# POST  /assign                — 예약 체크인 후 임무 생성 (중복 시 409, 만차 503)
+# POST  /assign/classroom      — 강의실 안내 임무 생성 (DB 기록 없음)
 # GET   /assign/pending        — wego_dispatcher 폴링용 미결 미션 조회
 # GET   /assign/today/by-robot — 관제 GUI용 금일 로봇별 임무 카운트
-# PATCH /assign/{id}/start     — wego_dispatcher: PENDING → ACTIVE
+# GET   /assign/{id}           — 태블릿 GuidingPage 폴링 (상태 + 배정 로봇)
+# PATCH /assign/{id}/start     — wego_dispatcher: PENDING → ACTIVE + robot_assigned 기록
 # PATCH /assign/{id}/complete  — wego_dispatcher: ACTIVE → COMPLETED
 # PATCH /assign/{id}/fail      — wego_dispatcher: ACTIVE → COMPLETED (실패 로그)
 
@@ -27,9 +32,8 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
 
     CheckinResultPage에서 [안내 시작] 클릭 시 호출된다.
     같은 예약에 PENDING/ACTIVE 미션이 이미 있으면 409 반환 (중복 안내 방지).
-    IDLE 로봇을 즉시 선택해 missions 테이블에 PENDING 미션으로 생성한다.
-    robot_assigned를 생성 시점에 기록해 GuidingPage 폴링 대상 로봇을 확정한다.
-    wego_dispatcher는 폴링으로 이 미션을 수락한다.
+    가용(IDLE) 로봇이 없으면 503 즉답 — 어느 로봇이 맡을지는 wego_dispatcher가
+    디스패치 시점에 단독 결정하고 PATCH /start로 robot_assigned를 채운다.
     """
     from routers.robots import robot_status
 
@@ -45,8 +49,7 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
     if existing:
         raise HTTPException(status_code=409, detail="이미 진행 중인 안내가 있습니다")
 
-    robot = pick_idle_robot(robot_status)
-    if not robot:
+    if not pick_idle_robot(robot_status):
         raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
 
     label = ROOM_LABELS.get(reservation.room, reservation.room)
@@ -56,13 +59,12 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
         reservation_id=body.reservation_id,
         destination=reservation.room,
         tts_text=tts_text,
-        robot_assigned=robot,
     ))
 
     crud.create_log(db, log_type="mission_start",
-                    message=f"예약 안내 배정: {reservation.name}님 → {label} ({robot})")
+                    message=f"예약 안내 배정: {reservation.name}님 → {label}")
 
-    return schemas.AssignResponse(mission_id=mission.id, robot=robot)
+    return schemas.AssignResponse(mission_id=mission.id)
 
 
 @router.post("/classroom", response_model=schemas.AssignResponse)
@@ -80,8 +82,7 @@ def assign_classroom(body: schemas.AssignClassroomRequest, db: Session = Depends
     if body.classroom not in CLASSROOM_LABELS:
         raise HTTPException(status_code=400, detail=f"알 수 없는 강의실: {body.classroom}")
 
-    robot = pick_idle_robot(robot_status)
-    if not robot:
+    if not pick_idle_robot(robot_status):
         raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
 
     label = CLASSROOM_LABELS[body.classroom]
@@ -94,9 +95,9 @@ def assign_classroom(body: schemas.AssignClassroomRequest, db: Session = Depends
     ))
 
     crud.create_log(db, log_type="mission_start",
-                    message=f"강의실 안내 배정: {label} ({robot})")
+                    message=f"강의실 안내 배정: {label}")
 
-    return schemas.AssignResponse(mission_id=mission.id, robot=robot)
+    return schemas.AssignResponse(mission_id=mission.id)
 
 
 @router.get("/today/by-robot")
@@ -168,5 +169,22 @@ def fail_mission(mission_id: int, db: Session = Depends(get_db)):
                     message=f"임무 실패: {mission.destination} ({mission.robot_assigned})")
 
     return {"ok": True}
+
+
+@router.get("/{mission_id}", response_model=schemas.MissionStatusResponse)
+def get_mission_status(mission_id: int, db: Session = Depends(get_db)):
+    """
+    태블릿 GuidingPage 폴링용 — 임무 상태 + 배정 로봇 조회.
+
+    PENDING(배정 대기) → ACTIVE(robot_assigned 확정, 안내 중) → COMPLETED(복귀 완료).
+    ※ 경로 충돌 방지를 위해 /pending, /today/by-robot보다 뒤에 선언해야 한다.
+    """
+    mission = db.query(models.Mission).filter(models.Mission.id == mission_id).first()
+    if not mission:
+        raise HTTPException(status_code=404, detail="미션을 찾을 수 없음")
+    return schemas.MissionStatusResponse(
+        status=mission.status.value if hasattr(mission.status, "value") else mission.status,
+        robot_assigned=mission.robot_assigned,
+    )
 
 

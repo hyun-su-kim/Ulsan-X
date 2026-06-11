@@ -43,10 +43,11 @@ function CheckinResultPage() {
     setLoading(true);
     try {
       const result = await assignReservation(reservation.id);
-      // 안내 중 화면으로 이동 — 배정 로봇명과 목적지 표시명 전달
+      // 안내 중 화면으로 이동 — 임무 id와 목적지 표시명 전달
+      // (배정 로봇은 GuidingPage가 GET /assign/{id} 폴링으로 확인)
       navigate('/guiding', {
         state: {
-          robot:       result.robot,
+          missionId:   result.mission_id,
           destination: roomLabel,
         },
       });

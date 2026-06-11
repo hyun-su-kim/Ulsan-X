@@ -130,9 +130,19 @@ class MissionResponse(BaseModel):
 
 
 class AssignResponse(BaseModel):
-    """POST /assign 성공 응답 — 태블릿 UI가 받는 형식"""
+    """POST /assign 성공 응답 — 태블릿 UI가 받는 형식
+
+    로봇 선택은 wego_dispatcher가 디스패치 시점에 단독 수행하므로
+    생성 응답에는 robot이 없다. 태블릿은 GET /assign/{mission_id}를
+    폴링해 배정 로봇과 진행 상태를 확인한다.
+    """
     mission_id: int
-    robot:      str   # "limo1" | "limo2" — GuidingPage 폴링에 필요
+
+
+class MissionStatusResponse(BaseModel):
+    """GET /assign/{mission_id} 응답 — 태블릿 GuidingPage 폴링용"""
+    status:         MissionStatus
+    robot_assigned: Optional[str]   # PENDING 동안 None, dispatcher 배정 후 채워짐
 
 
 class RobotStatusUpdate(BaseModel):
@@ -155,7 +165,6 @@ class LogResponse(BaseModel):
 # ── 현장 방문 스키마 ─────────────────────────────────────────────────────────
 
 class WalkinAssignResponse(BaseModel):
-    """POST /walkin/assign 성공 응답"""
+    """POST /walkin/assign 성공 응답 — 배정 로봇은 GET /assign/{mission_id}로 확인"""
     mission_id: int
-    robot:      str
     room:       str   # 배정된 상담실 키 (예: counseling_1)

@@ -29,11 +29,12 @@ export const checkReservation = async (name, phoneLast4) => {
 };
 
 /**
- * 예약 체크인 후 IDLE 로봇에 임무 배정 요청
- * wego_dispatcher가 이 요청을 감지해 /goal_destination, /speak_text 토픽을 발행한다
+ * 예약 체크인 후 임무 생성 요청
+ * 로봇 선택은 wego_dispatcher가 디스패치 시점에 수행한다 — 배정 결과는
+ * getMission(missionId) 폴링으로 확인
  *
  * @param {number} reservationId - 예약 id
- * @returns { robot: "limo1" | "limo2" }
+ * @returns { mission_id: number }
  * @throws 503: 사용 가능한 로봇 없음
  */
 export const assignReservation = async (reservationId) => {
@@ -62,7 +63,7 @@ export const getAvailableRoom = async () => {
  * 관제 UI 알림 로그도 이 엔드포인트에서 생성된다
  *
  * @param {string} room - 배정할 상담실 키 (예: "counseling_2")
- * @returns { reservation_id: 5, robot: "limo1" }
+ * @returns { mission_id: number, room: string }
  * @throws 503: 사용 가능한 로봇 없음
  */
 export const assignWalkin = async (room) => {
@@ -77,7 +78,7 @@ export const assignWalkin = async (room) => {
  * 수업 강의실을 아는 학생이 로봇 안내만 요청하는 경우
  *
  * @param {string} destination - waypoints.yaml 키 (예: "classroom_1")
- * @returns { robot: "limo1" }
+ * @returns { mission_id: number }
  * @throws 503: 사용 가능한 로봇 없음
  */
 export const assignClassroom = async (destination) => {
@@ -85,16 +86,16 @@ export const assignClassroom = async (destination) => {
   return response.data;
 };
 
-// ── 로봇 상태 조회 ───────────────────────────────────────────────────────────
+// ── 임무 상태 조회 ───────────────────────────────────────────────────────────
 
 /**
- * 두 로봇의 현재 상태 조회
- * GuidingPage에서 0.5초마다 폴링해 로봇 귀환 여부를 감지한다
- * wego_dispatcher가 robot_status 토픽을 구독해 FastAPI에 상태를 업데이트한다
+ * 임무 상태 + 배정 로봇 조회
+ * GuidingPage가 폴링해 배정(PENDING→ACTIVE)과 완료(COMPLETED)를 감지한다
  *
- * @returns { limo1: "IDLE"|"BUSY"|"RETURNING"|"WAITING", limo2: ... }
+ * @param {number} missionId - 임무 id
+ * @returns { status: "PENDING"|"ACTIVE"|"COMPLETED", robot_assigned: "limo1"|"limo2"|null }
  */
-export const getRobotStatus = async () => {
-  const response = await api.get('/robots/status');
+export const getMission = async (missionId) => {
+  const response = await api.get(`/assign/${missionId}`);
   return response.data;
 };
