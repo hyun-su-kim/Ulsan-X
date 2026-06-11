@@ -279,6 +279,13 @@ LIMO 1·2 단독 주행/경유지/마커 도킹 모두 검증 완료. 데모 영
   - rosbridge 없음. HTTP only. (DEC-027)
 
 #### 멀티로봇 코디네이터
+- [x] **로봇 할당 단일 주체를 dispatcher로 정리 (DEC-049)** — done (2026-06-11, 커밋 b8d3c83d)
+  - 이중 선택(FastAPI 생성 시 + dispatcher 디스패치 시) → 태블릿 폴링 대상 어긋날 수 있던 불일치 제거
+  - FastAPI는 만차 503 즉답만, robot_assigned는 dispatcher PATCH /start에서만 기록, `GET /assign/{id}` 신규
+  - GuidingPage: 로봇 상태 전환 추적 → 임무 상태(PENDING→ACTIVE→COMPLETED) 폴링으로 교체
+  - **React 빌드 + 실기기 end-to-end 검증 남음** (잔여 Ⓑ에서 함께)
+- [x] **관제 GUI goal_destination 타입 버그 수정** — done (2026-06-11, 커밋 7c4b0cf0)
+  - 구독이 String으로 남아 GuideGoal(DEC-048)과 타입 불일치 → 목적지 표시(sig_dest) 먹통이던 것. GuideGoal 구독으로 정정 + 죽은 _goal_pubs 제거
 - [x] `wego_traffic` 패키지: 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) — done (2026-05-13)
 - [x] `wego_behaviour` WAITING 상태 추가 및 연동 — done (2026-05-13)
 - [x] `wego_bridge` goal_destination + speak_text 브릿지 추가 — done (2026-05-13)

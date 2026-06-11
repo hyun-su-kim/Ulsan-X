@@ -57,20 +57,22 @@
 | `ClassroomPage.js` | `/walkin/classroom` | 1~5강의실 버튼 |
 | `GuidingPage.js` | `/guiding` | 안내 중 스피너 + 귀환 감지 |
 
-### GuidingPage 폴링 로직
+### GuidingPage 폴링 로직 (DEC-049, 2026-06-11)
 
 ```
-로봇 배정 성공
-    ↓ 2초 대기 (BUSY 전환 여유)
-    ↓ GET /robots/status 폴링 (0.5초 간격)
+임무 생성 성공 (mission_id 수신 — 로봇은 아직 미정)
+    ↓ GET /assign/{mission_id} 폴링 (0.5초 간격)
     ↓
-WAITING_START: 로봇이 IDLE → non-IDLE 전환 감지
+PENDING:   "로봇 배정 중" 표시 (dispatcher가 선택 전)
     ↓
-WAITING_IDLE: 로봇이 non-IDLE → IDLE 전환 감지 (홈 복귀)
+ACTIVE:    "안내 중" + robot_assigned 로봇명 표시
     ↓
 COMPLETED: "안내 완료" 표시 → 4초 후 홈으로
     (10분 타임아웃: 네트워크 이상 대비 자동 홈 복귀)
 ```
+
+> 구 방식(`GET /robots/status`로 로봇 상태 전환 추적 + 오감지 방지 2초 대기)은
+> 폐기 — 임무 상태가 단일 정본이라 로봇이 어느 쪽으로 배정되든 정확하다.
 
 ---
 
@@ -121,21 +123,27 @@ COMPLETED: "안내 완료" 표시 → 4초 후 홈으로
 
 폴링:
   GET /assign/pending (0.5초 간격)
-    → 미션 있으면:
-       /goal_destination 발행 (domain 5 → wego_bridge → domain 6 or 7)
-       /speak_text       발행 (domain 5 → wego_bridge → domain 6 or 7)
-    → 완료 시:
-       PATCH /reservations/{id} → COMPLETED
+    → PENDING 미션 있으면:
+       _pick_idle_robot()로 로봇 선택 (할당의 단일 주체, DEC-049)
+       /goal_destination 에 GuideGoal{destination, tts_text} 발행
+         (domain 5 → wego_bridge → domain 6 or 7, DEC-048)
+       PATCH /assign/{id}/start?robot=limoN → FastAPI가 robot_assigned 기록
+    → 로봇 IDLE 복귀 감지 시:
+       PATCH /assign/{id}/complete (FAILED 경유 시 /fail)
 ```
 
-### 임무 할당 규칙
+### 임무 할당 규칙 (DEC-049: 선택은 dispatcher 단독)
 
 | limo1 | limo2 | 배정 |
 |---|---|---|
 | IDLE | IDLE | limo1 (기본 우선순위) |
 | IDLE | BUSY | limo1 |
 | BUSY | IDLE | limo2 |
-| BUSY | BUSY | 503 반환 → 태블릿 "잠시 후 다시 시도" |
+| BUSY | BUSY | 미션 대기 (다음 폴링에서 재시도) |
+
+> **만차 503은 임무 생성 시점에 FastAPI가 즉답**한다(태블릿 "잠시 후 다시 시도"
+> 동기 응답 필요). 단 이는 가용 여부 확인일 뿐, 어느 로봇이 맡을지는
+> dispatcher가 디스패치 시점에 결정한다.
 
 ---
 
@@ -175,7 +183,8 @@ COMPLETED: "안내 완료" 표시 → 4초 후 홈으로
 | POST | `/assign` | 예약 체크인 후 로봇 임무 배정 (mission_start 로그) |
 | POST | `/assign/classroom` | 강의실 안내 로봇 배정 (mission_start 로그) |
 | GET | `/assign/pending` | wego_dispatcher 폴링용 미결 미션 조회 |
-| PATCH | `/assign/{id}/start` | wego_dispatcher PENDING → ACTIVE |
+| GET | `/assign/{id}` | 태블릿 GuidingPage 폴링 — 상태+배정 로봇 (DEC-049) |
+| PATCH | `/assign/{id}/start` | wego_dispatcher PENDING → ACTIVE + robot_assigned 기록 (DEC-049) |
 | PATCH | `/assign/{id}/complete` | wego_dispatcher 정상 복귀 (mission_complete 로그) |
 | PATCH | `/assign/{id}/fail` | wego_dispatcher FAILED 거친 복귀 (mission_fail 로그, DEC-036) |
 | GET | `/assign/today/by-robot` | 로봇별 오늘 임무/완료 카운트 (관제 GUI 로봇 뷰) |

@@ -26,7 +26,17 @@
 
 # DECISION-LOG에서 이관 (2026-06-01 정리)
 
-> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-048(최신)부터 시간 역순.
+> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-049(최신)부터 시간 역순.
+
+### DEC-049: 로봇 할당 단일 주체를 wego_dispatcher로 정리 (done 2026-06-11)
+- **Context**: 로봇 선택이 **두 곳에서 이중으로** 일어나고 있었다 — ① FastAPI가 임무 생성 시 `pick_idle_robot()`으로 선택해 `robot_assigned` 기록 + 응답으로 태블릿에 전달, ② dispatcher가 디스패치 시점(최대 0.5s 후)에 `_pick_idle_robot()`으로 **다시 선택**해 GuideGoal 발행(생성 시 기록을 무시). 둘 사이에 로봇 상태가 바뀌면 태블릿 GuidingPage가 엉뚱한 로봇의 복귀를 폴링하는 불일치 가능. 강의실 배정은 생성 시 robot_assigned를 아예 안 넣는 등 엔드포인트 간 일관성도 없었다.
+- **Options**:
+  - A) dispatcher가 생성 시 기록된 `robot_assigned`를 그대로 사용 — 선택 주체를 FastAPI로 단일화
+  - B) FastAPI는 가용 여부만 판단(만차 503 즉답용), 선택·기록은 dispatcher가 디스패치 시점에 단독 수행
+- **Decision**: **B 채택.** FastAPI 3개 배정 엔드포인트는 `pick_idle_robot()`을 boolean 가용성 확인으로만 사용(만차 503), `robot_assigned`는 dispatcher의 `PATCH /assign/{id}/start`에서만 기록. 태블릿용 `GET /assign/{mission_id}`(status+robot_assigned) 신규. GuidingPage는 로봇 상태 전환 추적(2초 대기 + IDLE 전이 휴리스틱)을 버리고 **임무 상태(PENDING→ACTIVE→COMPLETED) 폴링**으로 교체.
+- **Rationale**: "어느 로봇이 맡나"는 임무 할당이고, 할당은 FSM 상태를 직접 구독하는 dispatcher의 책임이 맞다(ROS 쪽이 최신 상태의 정본). FastAPI 선택은 0.5s 묵은 캐시 기반 추정이라 디스패치 시점 재선택과 어긋날 수 있던 것. 태블릿이 임무 자체를 폴링하면 로봇이 어느 쪽이든 정확하고, UI의 상태 전환 휴리스틱(오감지 방지용 2초 대기 등)도 제거된다. 만차 즉답(503)은 사용자 경험상 동기 응답이 필요해 FastAPI에 남김.
+- **변경**: `assign.py`·`walkin.py`·`schemas.py`(robot 응답 제거, MissionStatusResponse 신규), visitor-ui `api`·3개 페이지·`GuidingPage.js`. dispatcher는 무변경(기존 경로가 유일해짐). 커밋 b8d3c83d. **React 빌드·실기기 검증 잔여.**
+- **연관**: 같은 날 GUI `goal_destination` 구독 String→GuideGoal 타입 버그 수정(7c4b0cf0 — DEC-048 이후 목적지 표시 먹통이던 것).
 
 ### DEC-048: 출발 안내 발화-주행 동기화 (GuideGoal 메시지 + Speak 서비스) + FAILED 발화 범위 축소 + 음성노드 진단 분리 (done 2026-06-09)
 - **Context**: 출발 안내 TTS가 **주행과 동시에** 재생됐다 — `wego_dispatcher`가 `/goal_destination`(String)과 `/speak_text`(String)를 **별도 토픽 2개로** fire-and-forget 발행하고, 둘은 서로 다른 노드(behaviour, voice)로 가 독립 실행됐기 때문(게다가 goal을 먼저 보내 로봇이 먼저 움직임). "발화가 다 끝난 뒤 출발"로 만들 필요. 추가로 FAILED 발화가 GUIDING/RETURNING/DOCKING 3종 모두 나왔는데, 복귀·도킹 실패는 방문자가 곁에 없어 발화 의미가 없었다.
