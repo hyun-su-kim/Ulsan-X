@@ -59,6 +59,7 @@ ulsan_ws/src/
 
 ```bash
 # LIMO 1 (domain 6) — 드라이버 + perception·출력(엣지, DEC-043)
+# ※ 부팅 후 sudo jetson_clocks 필수 (729MHz 고정 → EKF stall/Nav2 정지, NAVIGATION.md 트러블슈팅 참조)
 export ROS_DOMAIN_ID=6
 ros2 launch wego teleop_launch.py                            # 하드웨어 드라이버
 ros2 launch wego_aruco aruco_corrector_launch.py            # 홈 도킹 PBVS (카메라 로컬 처리)

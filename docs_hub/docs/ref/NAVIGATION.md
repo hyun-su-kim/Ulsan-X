@@ -373,3 +373,45 @@ export ROS_DOMAIN_ID=7 && ros2 launch wego_behaviour behaviour_launch.py  # LIMO
 
 ArUco 보정은 홈에만 적용. 목적지 도착 시 보정 없음 — Nav2 정밀도로 충분.
 ※ STT 기반 "추가 용무 확인 대화"는 음성 인식 파이프라인 폐기(DEC-024)로 미적용.
+
+---
+
+## 트러블슈팅 — EKF stall / Nav2 정지 (Jetson 클럭 고정 문제)
+
+### 증상 (2026-06-01 최초 발생, 2026-06-12 재발)
+주행/도킹 중 아래 에러가 반복되고, 이어서 Nav2가 로봇을 세움:
+```
+[ekf_node] [ERROR] [ekf_filter_node_odom]: Failed to meet update rate! Took 0.58...seconds.
+[controller_server] Transform data too old (odom→map)
+```
+인과 사슬: **EKF stall → odom TF 지연 → Nav2 pose 변환 실패 → 안전 정지**.
+Nav2 기동 시점이면 `Invalid frame ID "odom" ... frame does not exist`로 나타나기도 함.
+
+### 원인
+CPU 과부하가 아님. **Orin Nano 전 코어 클럭이 최저 729MHz에 고정**되어 부스트하지 않는 DVFS 거버너 문제.
+- 확인: `sudo tegrastats` → `CPU [0%@729,0%@729,...]` (사용률 ~0%, 온도 ~55°C인데 전 코어 @729면 확정)
+- `nvpmodel`은 이미 최대(15W = mode 0)이므로 `nvpmodel -m 0`은 효과 없음
+
+### 해결 — 로봇(LIMO)에서 실행
+```bash
+sudo jetson_clocks        # 클럭을 15W 모드 최대(~1.5GHz)로 고정
+sudo tegrastats           # @729 → @1510 근처로 올라왔는지 확인
+```
+
+### 주의: 재부팅하면 풀림 → 부팅 자동실행 등록 권장 (두 로봇 모두)
+```bash
+sudo tee /etc/systemd/system/jetson-clocks.service > /dev/null <<'UNIT'
+[Unit]
+Description=Lock Jetson clocks to max
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/jetson_clocks
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl enable jetson-clocks.service
+```
+미등록 시 로봇 재부팅 때마다 수동으로 `sudo jetson_clocks` 실행 필요.
