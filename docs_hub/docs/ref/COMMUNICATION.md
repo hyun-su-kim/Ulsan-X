@@ -161,6 +161,41 @@ scp ~/Ulsan-X/ulsan_ws/src/wego_2d_nav/maps/map.pgm \
 
 ## 트러블슈트 기록
 
+### TS-004: `ros2 topic list`·`ros2 doctor`·`ros2 daemon stop`이 멈춤(hang) — resolved (2026-06-15)
+
+**증상**: 도메인·RMW가 다 맞는데도 `ros2 topic list`가 무한 대기(커서만 깜빡). `ros2 doctor`, `ros2 daemon stop`도 동일하게 멈춤. 반면 `ros2 pkg list`는 즉시 정상.
+
+**핵심 판별 (통신 문제 아님)**:
+- `ros2 run demo_nodes_cpp talker` → 정상 발행 ✓
+- `ros2 topic list --no-daemon` → 토픽 **전부 정상**으로 보임 ✓
+
+→ talker(C++ rmw 직접)와 `--no-daemon`이 되면 **DDS·네트워크·디스커버리는 정상**이고, 문제는 **ros2 CLI 데몬(파이썬 캐시 프로세스) 하나**다. 멀티캐스트 auto-discovery는 처음부터 동작 중이었음.
+
+**원인**: 네트워크가 불안정한 상태(예: 케이블 분리됐는데 죽은 유선 인터페이스에 고정 IP 잔류, 또는 잘못된 `CYCLONEDDS_URI` peers 파일 적용)에서 **데몬이 떠버린 뒤 그 상태로 굳음(hung)**. 이후 `ros2 topic list` 등이 그 굳은 데몬에 붙어 무한 대기. 데몬은 `ROS_DOMAIN_ID`별로 하나씩 뜨므로 특정 도메인 데몬만 굳을 수 있다.
+
+**해결**:
+```bash
+# 1) 실제 데몬 프로세스 확인 (도메인별로 뜸)
+ps -ef | grep -iE "ros2cli|daemonize" | grep -v grep
+#  예) ... ros2cli.daemon.daemonize ... --ros-domain-id 7 ...  ← 이게 굳은 놈
+
+# 2) 죽이기  ※ pkill -f ros2_daemon(언더스코어)은 안 먹힘 —
+#    실제 cmdline은 ros2cli.daemon / ros2-daemon(하이픈)이라 패턴이 빗나감
+pkill -9 -f ros2cli.daemon        # 모든 도메인 데몬 정리 (다음 호출 때 자동 재생성)
+#  또는 특정 PID만: kill -9 <PID>
+
+# 3) 깨끗한 네트워크 상태로 새로 시작
+ros2 daemon start
+ros2 topic list                   # 정상 복귀
+```
+
+**예방**:
+- 같은 AP 환경에선 **멀티캐스트 auto-discovery로 충분** — `CYCLONEDDS_URI`/peers 파일을 걸지 말 것(`RMW_IMPLEMENTATION`만). 잘못된 URI + 죽은 인터페이스가 데몬을 굳게 만든 유발 요인이었다.
+- 네트워크/인터페이스를 바꾼 뒤(랜선 분리·IP 변경 등)에는 데몬을 재시작: `pkill -9 -f ros2cli.daemon`.
+- 급하면 데몬 우회: 모든 `ros2` 명령에 `--no-daemon` (기능 차이 없음, 매번 새로 discovery).
+
+---
+
 ### TS-003: domain_bridge YAML 형식 오류 — resolved (2026-04-22)
 
 **증상**: `domain_bridge::YamlParsingError: expected map value for 'topics'`
