@@ -2,14 +2,25 @@
 <CycloneDDS xmlns="https://cdds.io/config"
             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
             xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <!-- ============================================================
+       안내로봇 프로젝트 CycloneDDS 설정
+       - 구성: 4 PC (로봇 2 + 노트북 2), 동일 WiFi(192.168.0.x)
+       - 도메인 분리(5/6/7)는 ROS_DOMAIN_ID로 유지 → 여기는 id="any"로 전 도메인 공통 적용
+       - WiFi 멀티캐스트 불안정 회피 → 유니캐스트 피어 디스커버리
+       ============================================================ -->
   <Domain id="any">
     <General>
-      <!-- WiFi 멀티캐스트 회피: 멀티캐스트 끄고 아래 Peers로 유니캐스트 디스커버리만 사용 -->
+      <!-- WiFi 멀티캐스트 끔 → 아래 Peers 유니캐스트로만 디스커버리 -->
       <AllowMulticast>false</AllowMulticast>
       <MaxMessageSize>65500B</MaxMessageSize>
     </General>
+
     <Discovery>
+      <!-- 유니캐스트는 참가자 인덱스(=고정 포트)가 필수.
+           로봇 한 대에 노드(드라이버/라이다/카메라/EKF/static_tf 다수/aruco/person/voice)가
+           10개를 훌쩍 넘어 기본 한도(9)로는 'free participant index' 고갈 → 60으로 확대. -->
       <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
       <Peers>
         <Peer address="192.168.0.85"/>
         <Peer address="192.168.0.23"/>
@@ -17,5 +28,11 @@
         <Peer address="192.168.0.89"/>
       </Peers>
     </Discovery>
+
+    <Internal>
+      <!-- WiFi 순간 혼잡/버스트 완충 (TF·odom 등 크로스머신 토픽 stall 완화 목적).
+           실제 적용엔 OS 수신버퍼 한도 필요: sudo sysctl -w net.core.rmem_max=8388608 -->
+      <SocketReceiveBufferSize min="4MB"/>
+    </Internal>
   </Domain>
 </CycloneDDS>
