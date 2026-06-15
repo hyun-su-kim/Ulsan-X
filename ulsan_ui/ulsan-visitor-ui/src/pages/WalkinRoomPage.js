@@ -89,9 +89,9 @@ function WalkinRoomPage() {
         {!fetching && noRoom && (
           <>
             <div style={styles.icon}>😔</div>
-            <h2 style={styles.title}>현재 빈 상담실이 없습니다</h2>
+            <h2 style={styles.title}>현재 바로 상담 가능한 일정이 없습니다</h2>
             <p style={styles.desc}>
-              카운터에 문의하시거나 잠시 후 다시 시도해주세요.
+              관계자와 예약 일정 확인이 필요합니다.
             </p>
             <button style={styles.backSecondary} onClick={() => navigate('/')}>
               처음으로
