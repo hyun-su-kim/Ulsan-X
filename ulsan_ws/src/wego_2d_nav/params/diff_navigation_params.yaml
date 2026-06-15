@@ -145,7 +145,7 @@ controller_server:
       max_vel_y: 0.0
       max_vel_theta: 1.0
       min_speed_xy: 0.0
-      max_speed_xy: 0.5
+      max_speed_xy: 0.3
       min_speed_theta: 0.0
       acc_lim_x: 2.5
       acc_lim_y: 0.0
@@ -306,7 +306,7 @@ velocity_smoother:
     smoothing_frequency: 3.0  # [수정] 5.0 → 3.0 : velocity smoother 실행 빈도 감소 — CPU 여유 확보
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.5, 0.0, 1.0]  # [수정] 0.26 → 0.5 : DWB max_speed_xy(0.5)와 일치 — 안내 동행 속도 확보 (2026-06-12)
+    max_velocity: [0.3, 0.0, 1.0]  # [수정] 0.5 → 0.3 : 안내 주행 속도 하향 (2026-06-15). DWB max_speed_xy(0.3)와 일치
     min_velocity: [-0.26, 0.0, -1.0]
     max_accel: [2.5, 0.0, 3.2]
     max_decel: [-2.5, 0.0, -3.2]

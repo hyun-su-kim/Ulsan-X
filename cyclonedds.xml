@@ -1,12 +1,22 @@
-<CycloneDDS>
-    <Domain>
-        <Discovery>
-            <Peers>
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <!-- 안내로봇: 4 PC(로봇2+노트북2) WiFi, 도메인 5/6/7은 ROS_DOMAIN_ID로 분리, 유니캐스트 디스커버리 -->
+  <Domain id="any">
+    <General>
+      <AllowMulticast>false</AllowMulticast>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
+      <Peers>
         <Peer address="192.168.0.85"/>
         <Peer address="192.168.0.23"/>
         <Peer address="192.168.0.37"/>
         <Peer address="192.168.0.89"/>
-            </Peers>
-        </Discovery>
-    </Domain>
+      </Peers>
+    </Discovery>
+  </Domain>
 </CycloneDDS>
