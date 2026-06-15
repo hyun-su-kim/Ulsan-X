@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self._robot_statuses = {r: 'UNKNOWN' for r in ROBOTS}
         self._connected = {r: False for r in ROBOTS}
 
-        self.setWindowTitle('wego 관제 대시보드')
+        self.setWindowTitle('Ulsan-X 관제 대시보드')
         self.resize(1280, 800)
 
         self._root = QStackedWidget()
@@ -111,7 +111,7 @@ class MainWindow(QMainWindow):
         hbox.setSpacing(0)
 
         # 로고 아이콘 박스
-        logo_icon = QLabel('W')
+        logo_icon = QLabel('U')
         logo_icon.setFixedSize(28, 28)
         logo_icon.setAlignment(Qt.AlignCenter)
         logo_icon.setFont(QFont('Segoe UI', 13, QFont.Bold))
@@ -119,7 +119,7 @@ class MainWindow(QMainWindow):
         hbox.addWidget(logo_icon)
         hbox.addSpacing(8)
 
-        logo_text = QLabel('wego_ui')
+        logo_text = QLabel('Ulsan-X')
         logo_text.setFont(QFont('Segoe UI', 16, QFont.Bold))
         logo_text.setStyleSheet('color:#1e40af;')
         hbox.addWidget(logo_text)

@@ -113,7 +113,7 @@ class LoginView(QWidget):
         logo_row.setAlignment(Qt.AlignCenter)
         logo_row.setSpacing(10)
 
-        icon_box = QLabel('W')
+        icon_box = QLabel('U')
         icon_box.setFixedSize(38, 38)
         icon_box.setAlignment(Qt.AlignCenter)
         icon_box.setFont(QFont('Segoe UI', 16, QFont.Bold))
@@ -122,7 +122,7 @@ class LoginView(QWidget):
         )
         logo_row.addWidget(icon_box)
 
-        logo_text = QLabel('wego_ui')
+        logo_text = QLabel('Ulsan-X')
         logo_text.setFont(QFont('Segoe UI', 22, QFont.Bold))
         logo_text.setStyleSheet('color:#60a5fa; border:none;')
         logo_row.addWidget(logo_text)
