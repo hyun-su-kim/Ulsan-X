@@ -34,8 +34,7 @@ export const checkReservation = async (name, phoneLast4) => {
  * getMission(missionId) 폴링으로 확인
  *
  * @param {number} reservationId - 예약 id
- * @returns { mission_id: number }
- * @throws 503: 사용 가능한 로봇 없음
+ * @returns { mission_id: number, queued: boolean }  queued=true면 대기열 진입(로봇 만차)
  */
 export const assignReservation = async (reservationId) => {
   const response = await api.post('/assign', { reservation_id: reservationId });
@@ -63,8 +62,7 @@ export const getAvailableRoom = async () => {
  * 관제 UI 알림 로그도 이 엔드포인트에서 생성된다
  *
  * @param {string} room - 배정할 상담실 키 (예: "counseling_2")
- * @returns { mission_id: number, room: string }
- * @throws 503: 사용 가능한 로봇 없음
+ * @returns { mission_id: number, room: string, queued: boolean }
  */
 export const assignWalkin = async (room) => {
   const response = await api.post('/walkin/assign', { room });
@@ -78,8 +76,7 @@ export const assignWalkin = async (room) => {
  * 수업 강의실을 아는 학생이 로봇 안내만 요청하는 경우
  *
  * @param {string} destination - waypoints.yaml 키 (예: "classroom_1")
- * @returns { mission_id: number }
- * @throws 503: 사용 가능한 로봇 없음
+ * @returns { mission_id: number, queued: boolean }
  */
 export const assignClassroom = async (destination) => {
   const response = await api.post('/assign/classroom', { classroom: destination });

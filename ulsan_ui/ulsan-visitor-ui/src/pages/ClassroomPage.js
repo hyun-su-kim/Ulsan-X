@@ -5,8 +5,8 @@
 //
 // 흐름:
 //   버튼 선택 → POST /assign/classroom { destination: "classroom_N" }
-//     → 성공: /guiding으로 이동
-//     → 실패(503): 에러 표시
+//     → queued=false: /guiding으로 이동 (배정 폴링)
+//     → queued=true : /waiting으로 이동 (대기 안내 후 홈 복귀)
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -34,18 +34,18 @@ function ClassroomPage() {
     setLoading(true);
     try {
       const result = await assignClassroom(classroom.key);
-      navigate('/guiding', {
-        state: {
-          missionId:   result.mission_id,
-          destination: classroom.label,
-        },
-      });
-    } catch (err) {
-      if (err.response?.status === 503) {
-        setError('현재 안내 로봇이 모두 사용 중입니다. 잠시 후 다시 시도해주세요.');
+      if (result.queued) {
+        navigate('/waiting', { state: { destination: classroom.label } });
       } else {
-        setError('오류가 발생했습니다. 다시 시도해주세요.');
+        navigate('/guiding', {
+          state: {
+            missionId:   result.mission_id,
+            destination: classroom.label,
+          },
+        });
       }
+    } catch (err) {
+      setError('오류가 발생했습니다. 다시 시도해주세요.');
       setSelected(null);
     } finally {
       setLoading(false);

@@ -4,9 +4,9 @@
 // 예약 정보(이름, 시간, 상담실)를 표시하고 안내 시작 버튼을 제공한다
 //
 // [안내 시작] 클릭 시:
-//   1. POST /assign → wego_dispatcher가 IDLE 로봇 선택 후 임무 배정
-//   2. 성공: /guiding으로 이동 (배정된 로봇명, 목적지 표시명 전달)
-//   3. 실패(503): "안내 로봇이 모두 사용 중" 에러 표시
+//   1. POST /assign → 임무(PENDING) 생성. 로봇 배정은 wego_dispatcher 담당
+//   2. queued=false (로봇 가용): /guiding으로 이동 (배정 폴링)
+//   3. queued=true  (로봇 만차): /waiting으로 이동 (대기 안내 후 홈 복귀)
 
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -43,21 +43,20 @@ function CheckinResultPage() {
     setLoading(true);
     try {
       const result = await assignReservation(reservation.id);
-      // 안내 중 화면으로 이동 — 임무 id와 목적지 표시명 전달
-      // (배정 로봇은 GuidingPage가 GET /assign/{id} 폴링으로 확인)
-      navigate('/guiding', {
-        state: {
-          missionId:   result.mission_id,
-          destination: roomLabel,
-        },
-      });
-    } catch (err) {
-      // 503: 두 로봇 모두 안내 중인 경우
-      if (err.response?.status === 503) {
-        setError('현재 안내 로봇이 모두 사용 중입니다. 잠시 후 다시 시도해주세요.');
+      if (result.queued) {
+        // 로봇 만차 → 대기열 진입. 대기 안내 화면으로 (잠시 후 홈 복귀)
+        navigate('/waiting', { state: { destination: roomLabel } });
       } else {
-        setError('오류가 발생했습니다. 다시 시도해주세요.');
+        // 로봇 가용 → 배정 폴링 화면으로 (배정 로봇은 GuidingPage가 확인)
+        navigate('/guiding', {
+          state: {
+            missionId:   result.mission_id,
+            destination: roomLabel,
+          },
+        });
       }
+    } catch (err) {
+      setError('오류가 발생했습니다. 다시 시도해주세요.');
     } finally {
       setLoading(false);
     }

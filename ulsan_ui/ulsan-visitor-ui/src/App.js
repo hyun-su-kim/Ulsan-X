@@ -11,6 +11,7 @@ import WalkinPage         from './pages/WalkinPage';
 import WalkinRoomPage     from './pages/WalkinRoomPage';
 import ClassroomPage      from './pages/ClassroomPage';
 import GuidingPage        from './pages/GuidingPage';
+import WaitingPage        from './pages/WaitingPage';
 
 function App() {
   return (
@@ -30,6 +31,9 @@ function App() {
 
         {/* 공통 — 로봇 안내 중 화면 */}
         <Route path="/guiding"         element={<GuidingPage />} />
+
+        {/* 공통 — 로봇 만차 시 대기 안내 화면 (큐 진입) */}
+        <Route path="/waiting"         element={<WaitingPage />} />
       </Routes>
     </BrowserRouter>
   );

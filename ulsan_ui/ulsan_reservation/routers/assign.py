@@ -1,10 +1,11 @@
 # 임무 배정 라우터
 #
 # 로봇 "선택"의 단일 주체는 wego_dispatcher다 (디스패치 시점 FSM 상태 기준).
-# 여기서는 임무 생성 시 가용 로봇 유무만 확인해 만차(503)를 즉답하고,
-# robot_assigned는 dispatcher의 PATCH /start 때 채워진다.
+# 임무 생성 시 가용 로봇이 없어도 거절하지 않고 PENDING으로 큐잉한다 —
+# 응답의 queued 플래그로 태블릿이 "대기 안내"를 띄우고, 로봇이 복귀하면
+# wego_dispatcher가 FIFO로 꺼내 배정한다. robot_assigned는 PATCH /start 때 채워진다.
 #
-# POST  /assign                — 예약 체크인 후 임무 생성 (중복 시 409, 만차 503)
+# POST  /assign                — 예약 체크인 후 임무 생성 (중복 시 409, 가용 없으면 queued=True)
 # POST  /assign/classroom      — 강의실 안내 임무 생성 (DB 기록 없음)
 # GET   /assign/pending        — wego_dispatcher 폴링용 미결 미션 조회
 # GET   /assign/today/by-robot — 관제 GUI용 금일 로봇별 임무 카운트
@@ -32,8 +33,9 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
 
     CheckinResultPage에서 [안내 시작] 클릭 시 호출된다.
     같은 예약에 PENDING/ACTIVE 미션이 이미 있으면 409 반환 (중복 안내 방지).
-    가용(IDLE) 로봇이 없으면 503 즉답 — 어느 로봇이 맡을지는 wego_dispatcher가
-    디스패치 시점에 단독 결정하고 PATCH /start로 robot_assigned를 채운다.
+    가용(IDLE) 로봇이 없어도 거절하지 않고 PENDING으로 큐잉한다 — 응답
+    queued=True로 태블릿이 대기 안내를 띄운다. 어느 로봇이 맡을지는
+    wego_dispatcher가 디스패치 시점에 단독 결정하고 PATCH /start로 채운다.
     """
     from routers.robots import robot_status
 
@@ -49,8 +51,8 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
     if existing:
         raise HTTPException(status_code=409, detail="이미 진행 중인 안내가 있습니다")
 
-    if not pick_idle_robot(robot_status):
-        raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
+    # 가용 로봇이 없으면 대기열 진입(queued=True) — 거절하지 않고 PENDING 생성
+    queued = pick_idle_robot(robot_status) is None
 
     label = ROOM_LABELS.get(reservation.room, reservation.room)
     tts_text = f"{reservation.name}님 {reservation.time_slot}시 상담 예약으로 {label}로 안내합니다."
@@ -64,7 +66,7 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
     crud.create_log(db, log_type="mission_start",
                     message=f"예약 안내 배정: {reservation.name}님 → {label}")
 
-    return schemas.AssignResponse(mission_id=mission.id)
+    return schemas.AssignResponse(mission_id=mission.id, queued=queued)
 
 
 @router.post("/classroom", response_model=schemas.AssignResponse)
@@ -82,8 +84,7 @@ def assign_classroom(body: schemas.AssignClassroomRequest, db: Session = Depends
     if body.classroom not in CLASSROOM_LABELS:
         raise HTTPException(status_code=400, detail=f"알 수 없는 강의실: {body.classroom}")
 
-    if not pick_idle_robot(robot_status):
-        raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
+    queued = pick_idle_robot(robot_status) is None
 
     label = CLASSROOM_LABELS[body.classroom]
     tts_text = f"{label}로 안내해드릴게요."
@@ -97,7 +98,7 @@ def assign_classroom(body: schemas.AssignClassroomRequest, db: Session = Depends
     crud.create_log(db, log_type="mission_start",
                     message=f"강의실 안내 배정: {label}")
 
-    return schemas.AssignResponse(mission_id=mission.id)
+    return schemas.AssignResponse(mission_id=mission.id, queued=queued)
 
 
 @router.get("/today/by-robot")

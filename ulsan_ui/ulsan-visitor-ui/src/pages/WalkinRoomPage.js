@@ -4,10 +4,10 @@
 // 현재 시간대에 예약이 없는 상담실(우선순위 1번)을 표시한다
 //
 // [안내 시작] 클릭 시:
-//   1. POST /walkin/assign → DB에 walk-in 행 삽입 + IDLE 로봇 임무 배정
+//   1. POST /walkin/assign → DB에 walk-in 행 삽입 + 임무(PENDING) 생성
 //      → 관제 UI 알림 로그도 이 엔드포인트에서 생성
-//   2. 성공: /guiding으로 이동
-//   3. 실패: 에러 메시지 표시
+//   2. queued=false: /guiding으로 이동 (배정 폴링)
+//   3. queued=true : /waiting으로 이동 (대기 안내 후 홈 복귀)
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -53,18 +53,19 @@ function WalkinRoomPage() {
     setLoading(true);
     try {
       const result = await assignWalkin(room);
-      navigate('/guiding', {
-        state: {
-          missionId:   result.mission_id,
-          destination: ROOM_LABELS[room] || room,
-        },
-      });
-    } catch (err) {
-      if (err.response?.status === 503) {
-        setError('현재 안내 로봇이 모두 사용 중입니다. 잠시 후 다시 시도해주세요.');
+      const destLabel = ROOM_LABELS[room] || room;
+      if (result.queued) {
+        navigate('/waiting', { state: { destination: destLabel } });
       } else {
-        setError('오류가 발생했습니다. 다시 시도해주세요.');
+        navigate('/guiding', {
+          state: {
+            missionId:   result.mission_id,
+            destination: destLabel,
+          },
+        });
       }
+    } catch (err) {
+      setError('오류가 발생했습니다. 다시 시도해주세요.');
     } finally {
       setLoading(false);
     }

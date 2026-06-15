@@ -135,8 +135,13 @@ class AssignResponse(BaseModel):
     로봇 선택은 wego_dispatcher가 디스패치 시점에 단독 수행하므로
     생성 응답에는 robot이 없다. 태블릿은 GET /assign/{mission_id}를
     폴링해 배정 로봇과 진행 상태를 확인한다.
+
+    queued=True면 임무 생성 시점에 가용(IDLE) 로봇이 없어 대기열에
+    들어간 것 — 태블릿은 "대기 안내" 화면을 띄운다. 로봇이 복귀하면
+    wego_dispatcher가 FIFO로 꺼내 배정한다.
     """
     mission_id: int
+    queued:     bool = False
 
 
 class MissionStatusResponse(BaseModel):
@@ -168,3 +173,4 @@ class WalkinAssignResponse(BaseModel):
     """POST /walkin/assign 성공 응답 — 배정 로봇은 GET /assign/{mission_id}로 확인"""
     mission_id: int
     room:       str   # 배정된 상담실 키 (예: counseling_1)
+    queued:     bool = False   # True면 가용 로봇 없어 대기열 진입

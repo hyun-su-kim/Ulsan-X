@@ -37,11 +37,11 @@ def assign_walkin(db: Session = Depends(get_db)):
 
     동작 순서:
     1. 현재 시간대 빈 상담실 탐색 (없으면 503)
-    2. 가용(IDLE) 로봇 유무 확인 (없으면 503 즉답)
+    2. 가용(IDLE) 로봇 유무 확인 — 없어도 거절하지 않고 queued=True로 큐잉
     3. reservations 테이블에 walk-in 행 삽입 (동시 방문자 중복 배정 방지)
     4. PENDING 미션 생성 — 어느 로봇이 맡을지는 wego_dispatcher가 디스패치
        시점에 단독 결정하고 PATCH /start로 robot_assigned를 채운다.
-       태블릿 GuidingPage는 GET /assign/{mission_id}로 배정 결과를 폴링한다.
+       태블릿은 queued면 대기 안내, 아니면 GET /assign/{mission_id}로 폴링한다.
     """
     from routers.robots import robot_status
 
@@ -50,8 +50,8 @@ def assign_walkin(db: Session = Depends(get_db)):
     if not room:
         raise HTTPException(status_code=503, detail="현재 시간대 빈 상담실 없음")
 
-    if not pick_idle_robot(robot_status):
-        raise HTTPException(status_code=503, detail="안내 로봇이 모두 사용 중")
+    # 가용 로봇이 없어도 거절하지 않고 대기열 진입(queued=True)
+    queued = pick_idle_robot(robot_status) is None
 
     # walk-in 예약 행 삽입 (중복 배정 방지)
     reservation = crud.create_walkin_reservation(db, room, current_hour)
@@ -72,6 +72,7 @@ def assign_walkin(db: Session = Depends(get_db)):
     return schemas.WalkinAssignResponse(
         mission_id=mission.id,
         room=room,
+        queued=queued,
     )
 
 
