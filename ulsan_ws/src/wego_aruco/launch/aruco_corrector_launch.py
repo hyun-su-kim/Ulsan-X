@@ -13,8 +13,8 @@ def generate_launch_description():
     home_key = domain_home_map.get(domain, 'home_robot1')
 
     # target_dist는 "home 정차 시 마커까지 실측 depth" — 로봇(카메라 개체차)마다 다름.
-    # LIMO1(dom6)=0.480, LIMO2(dom7)=0.471 (aruco_measure 실측, lateral~0/yaw~0)
-    domain_target_dist = {'6': 0.480, '7': 0.471}
+    # LIMO1(dom6)=0.471, LIMO2(dom7)=0.471 (aruco_measure 실측, lateral~0/yaw~0)
+    domain_target_dist = {'6': 0.471, '7': 0.471}
     target_dist = domain_target_dist.get(domain, 0.519)
 
     return LaunchDescription([
