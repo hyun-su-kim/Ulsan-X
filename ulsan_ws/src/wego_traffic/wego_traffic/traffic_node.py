@@ -79,6 +79,11 @@ class TrafficNode(Node):
         for r in ('limo1', 'limo2'):
             if self._pose[r] is None:
                 return
+            # 정지(paused)된 로봇은 안 움직여 AMCL이 /amcl_pose 발행을 멈춘다 →
+            # 마지막 pose가 여전히 공간적으로 유효하므로 staleness 면제.
+            # (면제하지 않으면 stale로 매 tick return → resume-by-distance 교착)
+            if r == self._paused_robot:
+                continue
             if now - self._last_pose_time[r] > self.STALE_SEC:
                 self.get_logger().warn(f'{r} amcl_pose 오래됨 — 스킵', throttle_duration_sec=5.0)
                 return
