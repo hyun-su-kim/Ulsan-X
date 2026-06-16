@@ -13,9 +13,9 @@
       <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
       <Peers>
         <Peer address="192.168.0.134"/>
+        <Peer address="192.168.0.124"/>
         <Peer address="192.168.0.109"/>
-        <Peer address="192.168.0.37"/>
-        <Peer address="192.168.0.89"/>
+        <Peer address="192.168.0.23"/>
       </Peers>
     </Discovery>
   </Domain>
