@@ -53,12 +53,15 @@ from std_srvs.srv import Trigger
 
 
 ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-ARUCO_PARAMS = cv2.aruco.DetectorParameters_create()
+ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 ARUCO_PARAMS.adaptiveThreshWinSizeMin    = 3
 ARUCO_PARAMS.adaptiveThreshWinSizeMax    = 53
 ARUCO_PARAMS.adaptiveThreshWinSizeStep   = 5
 ARUCO_PARAMS.minMarkerPerimeterRate      = 0.02
 ARUCO_PARAMS.errorCorrectionRate         = 0.8
+
+# 파라미터 튜닝 완료 후 detector 생성 (OpenCV 4.7+ API)
+ARUCO_DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
 
 
 def _norm(a: float) -> float:
@@ -177,7 +180,7 @@ class ArucoHomeDock(Node):
             return
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = cv2.aruco.detectMarkers(gray, ARUCO_DICT, parameters=ARUCO_PARAMS)
+        corners, ids, _ = ARUCO_DETECTOR.detectMarkers(gray)
 
         if ids is None or self._marker_id not in ids.flatten().tolist():
             with self._tvec_lock:
