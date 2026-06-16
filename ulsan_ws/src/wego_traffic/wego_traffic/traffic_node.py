@@ -17,7 +17,7 @@ class TrafficNode(Node):
     def __init__(self):
         super().__init__('wego_traffic')
 
-        self.declare_parameter('pause_dist',  0.7)
+        self.declare_parameter('pause_dist',  1.5)
         self.declare_parameter('resume_dist', 1.0)
         self._pause_dist  = self.get_parameter('pause_dist').get_parameter_value().double_value
         self._resume_dist = self.get_parameter('resume_dist').get_parameter_value().double_value
