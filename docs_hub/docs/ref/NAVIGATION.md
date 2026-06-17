@@ -164,6 +164,8 @@ ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=<path>/map.yaml
 
 현재 방식: `wego_traffic`(domain 5)이 두 로봇 `/amcl_pose` 거리를 감지 → 우선순위(GUIDING>RETURNING, 동순위 LIMO1 우선)에 따라 `/pause`·`/resume` 발행 → 후순위 로봇이 `wego_behaviour` **WAITING** 상태로 대기.
 
+> **정지 트리거 통합 (DEC-050)**: traffic pause는 사람 감지(`/person_detected`)·관제 GUI 수동 pause와 함께 `wego_behaviour` 게이트(`motion_blocked()` = OR)로 합쳐진다. GUIDING/RETURNING 주행 루프가 매 틱 게이트를 감시 → 충족 시 WAITING 전이. WAITING은 주행 목표를 **cancel하지 않고** `/motion_hold`(Bool)를 발행해 Nav2 BT의 `MotionHoldCondition`이 FollowPath만 halt → 게이트 해제 시 `resuming` 플래그로 **같은 목표를 재발행 없이 즉시 재개**(경로 재계획은 정지 중에도 계속). abort(임무중단)는 게이트와 분리 — 안내 중 중단 시 목표 cancel 후 RETURNING(새 home 목표). PBVS 도킹 구간은 무인이라 게이트 미적용.
+
 ---
 
 ## 위치 추정 (AMCL)

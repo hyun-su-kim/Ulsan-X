@@ -31,7 +31,7 @@
 | 5 | **Autonomous Navigation (Nav2)** | AMCL 튜닝, planner/controller, 커스텀 BT XML, waypoints, EKF/TF, 유리구간 경유 | `wego_2d_nav` | 5.2~5.6 |
 | 6 | **Mission Control / Behavior FSM** | Yasmin FSM(5상태), abort/failed/recover, 발화-주행 동기화 연동 | `wego_behaviour` | 5.8 |
 | 7 | **Precision Home Docking** | ArUco PBVS staged 도킹, AMCL 리셋, 마커 캘리브레이션 | `wego_aruco` | 5.7 |
-| 8 | **Human Detection & Safety Stop** | YOLOv8 사람감지 + depth 게이팅, BT PersonClearCondition, **person_leg 근거리 파인튜닝(데모 후)** | `ulsan_person_detect`, `ulsan_bt_plugins` | 5.10 |
+| 8 | **Human Detection & Safety Stop** | YOLOv8 사람감지 + depth 게이팅, behaviour 게이트→WAITING→BT MotionHoldCondition(DEC-050), **person_leg 근거리 파인튜닝(데모 후)** | `ulsan_person_detect`, `ulsan_bt_plugins` | 5.10 |
 | 9 | **Voice Guidance (TTS)** | edge-tts + mpg123, GuideGoal/Speak 발화-주행 동기화 | `wego_voice` | 5.11 |
 | 10 | **Multi-Robot Coordination** | 우선순위 pause/resume 충돌회피, dispatcher 임무 배차 | `wego_traffic`, `wego_dispatcher` | 5.9 |
 | 11 | **Reservation System & Backend** | FastAPI + MySQL 예약 CRUD, 임무 배정 API, 미션 로그, APScheduler | `ulsan_reservation` | 3.4, 5.13 |

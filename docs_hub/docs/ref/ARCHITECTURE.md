@@ -89,7 +89,7 @@ ulsan_ws/src/
 ├── wego_behaviour/        # Yasmin FSM (IDLE/GUIDING/RETURNING/WAITING/FAILED) + Nav2 연동
 ├── wego_aruco/            # 홈 도킹 PBVS (aruco_home_dock) — 로봇 실행 (DEC-043)
 ├── ulsan_person_detect/   # YOLOv8 사람 감지 — 로봇 실행 (DEC-043)
-├── ulsan_bt_plugins/      # Nav2 BT C++ 플러그인 (PersonClearCondition, DEC-041)
+├── ulsan_bt_plugins/      # Nav2 BT C++ 플러그인 (MotionHoldCondition, DEC-041/050)
 ├── wego_voice/            # TTS 전용 (edge-tts + mpg123, DEC-024)
 ├── wego_traffic/          # 멀티로봇 우선순위 pause/resume (domain 5, DEC-022)
 ├── wego_dispatcher/       # FastAPI 폴링 → IDLE 로봇 임무 배정 (domain 5, DEC-027)
@@ -113,7 +113,7 @@ DEC-014: 최상단은 **Yasmin FSM**, 실행 레이어는 **Nav2 BT** (하이브
         ├── IDLE       — /goal_destination 수신 대기
         ├── GUIDING    — 홈 출발 Spin → navigate_to_pose/Through(목적지) → Nav2 BT 위임
         │                 (실패 시 → FAILED → RETURNING)
-        ├── WAITING    — wego_traffic /pause 수신 시 대기 (우선순위 회피, DEC-022)
+        ├── WAITING    — 정지 게이트(사람·관제 pause·traffic) 충족 시 대기 → /motion_hold로 Nav2 BT halt, 목표는 살려 즉시 재개 (DEC-022/050)
         ├── FAILED     — TTS 안내 + 10초 대기 → RETURNING (DEC-033)
         └── RETURNING  — navigate(home staging) → wego_aruco /aruco_home_dock PBVS 정밀 정차
                           → IDLE 복귀 → dispatcher가 /complete(or /fail) 처리
@@ -125,7 +125,7 @@ DEC-014: 최상단은 **Yasmin FSM**, 실행 레이어는 **Nav2 BT** (하이브
 
 | 노드 | 타입 | 상태 | 역할 |
 |------|------|------|------|
-| `PersonClearCondition` | Condition (C++) | **구현 완료** (DEC-041) | `/person_detected` 구독 → 사람 감지 시 RUNNING 반환 → ReactiveSequence가 FollowPath halt |
+| `MotionHoldCondition` | Condition (C++) | **구현 완료** (DEC-041/050) | `/motion_hold` 구독 → WAITING(사람·pause·traffic 통합 게이트) 시 RUNNING 반환 → ReactiveSequence가 FollowPath halt. 구 `PersonClearCondition`(`/person_detected` 직접 구독) 리네임 |
 | `VoiceTriggerCondition` / `PeerRobotBusyCondition` | Condition | **폐기** | 음성 트리거·on_duty 게이팅은 예약+dispatcher 아키텍처(DEC-027)로 대체되어 불필요 |
 
 ---
@@ -142,7 +142,8 @@ DEC-014: 최상단은 **Yasmin FSM**, 실행 레이어는 **Nav2 BT** (하이브
 
 카메라 입력 (RGB + Depth) — 로봇 로컬 처리 (DEC-043)
   → ulsan_person_detect (YOLOv8n + Depth 0.7m 게이팅) → /person_detected
-    → Nav2 BT PersonClearCondition (RUNNING) → FollowPath halt → 주행 정지 (DEC-041)
+    → wego_behaviour 정지 게이트(pause·traffic과 OR) → WAITING → /motion_hold
+      → Nav2 BT MotionHoldCondition (RUNNING) → FollowPath halt → 주행 정지 (DEC-041/050)
     → (Phase 4) 방향 추정 → 회전 + 안내 멘트
   → wego_aruco (홈 복귀 시 마커 감지 → PBVS 정밀 정차 → /initialpose AMCL 리셋)
 ```

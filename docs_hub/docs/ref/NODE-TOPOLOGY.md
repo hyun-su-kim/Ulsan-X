@@ -69,7 +69,7 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 ### ulsan_bt_plugins 패키지 (구현 완료, 2026-06-01)
 | 노드 | 역할 |
 |------|------|
-| `PersonClearCondition` | Nav2 BT 커스텀 C++ 조건 노드(plugin). `/person_detected` 구독 → 사람 없음=SUCCESS, 사람 감지=RUNNING. ReactiveSequence가 FollowPath를 halt → 정지. DEC-041 |
+| `MotionHoldCondition` | Nav2 BT 커스텀 C++ 조건 노드(plugin). `/motion_hold` 구독 → 게이트 OFF=SUCCESS, ON=RUNNING. ReactiveSequence가 FollowPath를 halt → 정지. 구 `PersonClearCondition`(`/person_detected` 직접 구독)을 통합 정지 게이트로 리네임 — 사람·관제 pause·traffic을 wego_behaviour가 OR로 합쳐 WAITING일 때 `/motion_hold` 발행 (DEC-041/050) |
 
 ### wego_voice 패키지 (구현 완료, TTS 전용)
 | 노드 | 역할 |
@@ -94,9 +94,10 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 | `/robot_status` | `std_msgs/String` | wego_behaviour | wego_bridge(→5) |
 | `/speak_text` | `std_msgs/String` | wego_behaviour (도착·실패, 동일 도메인) | wego_voice voice_node |
 | `/speak` | `limo_msgs/Speak` (서비스) | wego_behaviour (client) | wego_voice (server) — 출발멘트 발화-후-응답 (DEC-048) |
-| `/pause`·`/resume` | `std_msgs/Empty` | wego_traffic (5→) | wego_behaviour |
+| `/pause`·`/resume` | `std_msgs/Empty` | wego_traffic, ulsan_gui (5→) | wego_behaviour (정지 게이트 `_manual_pause`, DEC-050) |
 | `/abort`·`/recover` | `std_msgs/Empty` | ulsan_gui (5→) | wego_behaviour |
-| `/person_detected` | `std_msgs/Bool` | person_detect_node | PersonClearCondition (Nav2 BT), wego_bridge(→5 GUI liveness) |
+| `/person_detected` | `std_msgs/Bool` | person_detect_node | wego_behaviour (정지 게이트 `_person_block`, DEC-050), wego_bridge(→5 GUI liveness) |
+| `/motion_hold` | `std_msgs/Bool` | wego_behaviour (WAITING 시 발행) | MotionHoldCondition (Nav2 BT) — 사람·pause·traffic을 합친 통합 정지 신호 (DEC-050) |
 | `/aruco_home_dock` | `std_srvs/Trigger` (서비스) | wego_behaviour (client) | aruco_home_dock (server) |
 | `/initialpose` | `geometry_msgs/PoseWithCovarianceStamped` | aruco_home_dock | amcl |
 
@@ -108,7 +109,7 @@ Domain 간 통신은 `ros2-domain-bridge`로 필요한 토픽만 선택적으로
 | `/limo{1,2}/robot_status` | 로봇 → 서버(5) | wego_traffic, wego_dispatcher |
 | `/limo{1,2}/diagnostics`, `/limo_status`, `/person_detected` | 로봇 → 서버(5) | ulsan_gui 연결/준비 판정(DEC-047)·배터리·사람감지 liveness |
 | `/limo{1,2}/goal_destination` (`GuideGoal`) | 서버(5) → 로봇 | wego_dispatcher 임무 배정(목적지+출발멘트). ※ 출발멘트 `/speak_text` 라우트는 폐지(DEC-048) |
-| `/limo{1,2}/pause`, `/resume` | 서버(5) → 로봇 | wego_traffic 충돌 회피 |
+| `/limo{1,2}/pause`, `/resume` | 서버(5) → 로봇 | wego_traffic 충돌 회피 + ulsan_gui 수동 일시정지/재개 (둘 다 WAITING 게이트, DEC-050) |
 | `/limo{1,2}/abort`, `/recover`, `/cmd_vel` | 서버(5) → 로봇 | ulsan_gui 임무중단/복구완료/텔레옵 |
 
 > 로봇↔로봇 직접 브릿지는 없음 (PeerObstacleLayer 폐기). wego_traffic이 domain 5에서 두 pose를 받아 거리 계산.

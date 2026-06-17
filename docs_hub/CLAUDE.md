@@ -34,7 +34,7 @@ ulsan_ws/src/
 ├── wego_behaviour/        # Yasmin FSM (states.py, behaviour_node.py)
 ├── wego_aruco/            # 홈 도킹 PBVS (aruco_home_dock.py) — 로봇 실행 (DEC-043)
 ├── ulsan_person_detect/   # YOLOv8 사람 감지 (person_detect_node.py) — 로봇 실행 (DEC-043)
-├── ulsan_bt_plugins/      # Nav2 BT C++ 플러그인 (PersonClearCondition)
+├── ulsan_bt_plugins/      # Nav2 BT C++ 플러그인 (MotionHoldCondition)
 ├── wego_bridge/ wego_traffic/ wego_dispatcher/ wego_voice/
 └── ulsan_gui/             # PyQt 관제 GUI
 ```
@@ -113,7 +113,7 @@ ros2 launch ulsan_gui gui_launch.py
 | `wego_traffic` | traffic_node.py | 데스크탑 domain 5. 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) |
 | `wego_dispatcher` | dispatcher_node.py | 데스크탑 domain 5. FastAPI 폴링 → IDLE 로봇에 `GuideGoal`(목적지+출발멘트) 배정 (DEC-027/048). 출발멘트는 voice로 직접 안 보내고 GuideGoal에 실어 behaviour 경유 |
 | `ulsan_person_detect` | person_detect_node.py | **LIMO 도메인 6/7(로봇)에서 실행 (DEC-043).** YOLOv8n + Depth 0.7m 게이팅 → /person_detected 발행 (DEC-041). `ros2 run` 직접 실행(노드 1개, 런치 불필요) |
-| `ulsan_bt_plugins` | person_clear_condition.cpp | Nav2 BT 커스텀 C++ 플러그인. PersonClearCondition: /person_detected 감지 시 RUNNING → FollowPath halt (DEC-041) |
+| `ulsan_bt_plugins` | motion_hold_condition.cpp | Nav2 BT 커스텀 C++ 플러그인. MotionHoldCondition: `/motion_hold`(=WAITING) 시 RUNNING → FollowPath halt. 구 PersonClearCondition(/person_detected 직접 구독)을 통합 정지 게이트로 리네임 — 사람·관제 pause·traffic 3종을 behaviour가 OR로 합쳐 WAITING일 때 발행 (DEC-041/050) |
 | `ulsan_obstacle_layer` | PeerObstacleLayer | **폐기 (DEC-022)**: 우선순위 FSM pause 방식으로 대체 |
 | `ulsan_reservation` | main.py (FastAPI) | 데스크탑. 예약 CRUD + 로봇 임무 배정 API. MySQL + APScheduler |
 | `ulsan-web-ui` | React | 외부 방문자용 예약 웹 UI |
@@ -125,6 +125,7 @@ ros2 launch ulsan_gui gui_launch.py
 - **PeerObstacleLayer 폐기**: global costmap 기반 동적 회피의 구조적 한계 확인
 - **우선순위 기반 FSM pause/resume 채택**: GUIDING > RETURNING, 동순위 시 LIMO 1 우선
 - **구현**: wego_traffic 거리 감지 → pause/resume 토픽 → wego_behaviour WAITING 상태
+- **정지 트리거 통합 (DEC-050)**: 사람감지(`/person_detected`)·관제 pause·traffic을 behaviour 게이트(OR)로 합쳐 GUIDING/RETURNING 주행 루프가 감시 → WAITING. WAITING이 `/motion_hold` 발행 → Nav2 BT `MotionHoldCondition` halt(목표 cancel 안 함 → resuming으로 즉시 재개). abort는 게이트와 분리
 
 ---
 
@@ -157,7 +158,7 @@ ros2 launch ulsan_gui gui_launch.py
 │   ├── wego_behaviour/     # Yasmin FSM (IDLE/GUIDING/RETURNING/WAITING/FAILED)
 │   ├── wego_aruco/         # 홈 도킹 PBVS — 로봇 실행 (DEC-043)
 │   ├── ulsan_person_detect/# YOLOv8 사람 감지 — 로봇 실행 (DEC-043)
-│   ├── ulsan_bt_plugins/   # Nav2 BT C++ 플러그인 (PersonClearCondition)
+│   ├── ulsan_bt_plugins/   # Nav2 BT C++ 플러그인 (MotionHoldCondition)
 │   ├── wego_voice/         # TTS (edge-tts + mpg123, DEC-024)
 │   ├── wego_traffic/       # 멀티로봇 pause/resume (domain 5)
 │   ├── wego_dispatcher/    # FastAPI 폴링 → 임무 배정 (domain 5)

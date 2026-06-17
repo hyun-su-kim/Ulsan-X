@@ -147,7 +147,7 @@
 | 5.7 ArUco PBVS | 🔧 | 비홀로노믹 과소구동 → staged 3단계 + AMCL 리셋 + **staged 상태도(조준→직진→정렬)**. **①왜: 단순 정밀주차가 아니라 복도발 AMCL Y오차·누적오차를 임무마다 초기화하는 구조적 보완(매 임무=리셋 1회). 단안 solvePnP(깊이토픽 미사용 — 마커 크기 기지라 yaw까지 한 번에). ③파생문제: 마커 정면 도킹 자세 → 출발 180° 회전 필요 → Spin 선실행으로 해결(5.2 메모·DEC-037)** | ARUCO-LOCALIZER |
 | 5.8 미션 FSM | 🔧 | 5상태 + 실패통합·관리자 복구(DEC-044). 상태 전이도 정본은 4.3 | ARCHITECTURE, 코드 |
 | 5.9 멀티로봇 충돌회피 | 🔧 | PeerObstacleLayer 한계 → 우선순위 pause/resume | FLEET-COLLISION |
-| 5.10 사람감지 정지 | 🔧 | YOLOv8+Depth 게이팅 → BT PersonClearCondition | NODE-TOPOLOGY |
+| 5.10 사람감지 정지 | 🔧 | YOLOv8+Depth 게이팅 → behaviour 게이트 → WAITING → BT MotionHoldCondition halt (DEC-050) | NODE-TOPOLOGY |
 | 5.11 음성 TTS | 🔧 | STT/NLU 폐기(예약DB) → TTS 전용 | VOICE-PIPELINE |
 | 5.12 통신 | 🔧 | Wi-Fi 대용량토픽 → /map 로컬발행 + 도메인분리(5/6/7) + 도메인브릿지 | COMMUNICATION |
 | 5.13 예약 시스템 | 🔧 | rosbridge 제거 → dispatcher 폴링배정, walk-in DB + **임무 status 상태도(PENDING→ACTIVE→COMPLETED)** | UI-ARCHITECTURE |

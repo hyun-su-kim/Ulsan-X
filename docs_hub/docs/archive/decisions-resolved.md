@@ -26,7 +26,22 @@
 
 # DECISION-LOG에서 이관 (2026-06-01 정리)
 
-> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-049(최신)부터 시간 역순.
+> 아래는 기존 `DECISION-LOG.md`의 확정·폐기 결정 전체(DEC-001~042). 각 항목 헤딩의 `done (날짜)` / `폐기` / `Superseded by` 표기가 resolution 상태를 나타냄. DEC-050(최신)부터 시간 역순.
+
+### DEC-050: 정지 트리거 3종(사람·관제 pause·traffic)을 WAITING 단일 경로 + `/motion_hold` 게이트로 통합 (done 2026-06-17)
+- **Context**: 주행을 멈추는 트리거가 3종인데 메커니즘이 **둘로 갈라져** 있었다 — ① 사람 감지(`/person_detected`)는 **Nav2 BT 내부**에서 `PersonClearCondition`이 FollowPath를 halt(목표 살림, FSM은 BUSY 유지 → GUI에 멈춤이 WAITING이 아닌 BUSY로 표시), ② traffic·관제 pause(`/pause`)는 **FSM에서 `cancelTask()`** 후 WAITING 전이 → resume 시 `goToPose()` **재주행**(재계획·홈출발 재Spin·이중 목표 위험). 같은 "일시정지"인데 코드 경로·재개 비용·GUI 표시가 제각각.
+- **Options (정지 메커니즘 + 인과)**:
+  - A) 현행 분리 유지
+  - B) 게이트(3종 OR)가 `/motion_hold`를 **직접** 구동(BT halt) + WAITING은 병렬 반영 — 정지 지연 최소(~현행), 그러나 halt와 WAITING이 따로 평가돼 잠깐 어긋날 수 있음
+  - C) **WAITING이 `/motion_hold`를 구동**(WAITING이 원인, halt가 결과) + pause는 `cancelTask` 안 하고 `resuming` 플래그로 즉시 재개
+- **Decision**: **C 채택.** 사람·관제 pause·traffic을 `wego_behaviour` 게이트(`motion_blocked()` = `_manual_pause` OR `_person_block`)로 합쳐 GUIDING/RETURNING 주행 루프가 감시 → WAITING 전이. WAITING이 `/motion_hold`(Bool) 발행 → Nav2 BT `MotionHoldCondition`(구 `PersonClearCondition` 리네임)이 RUNNING → ReactiveSequence가 FollowPath halt. 주행 목표는 **cancel하지 않아** `resuming`으로 같은 목표를 재발행 없이 즉시 재개(일회성 출발 행위 = 출발TTS·180°Spin·목표발행만 스킵, 감시 루프·도착처리는 유지). abort는 게이트와 분리.
+- **Rationale**:
+  - **BT halt(목표 살림) 채택** — `cancelTask`+재주행은 경로 재계획·홈출발 재Spin·이중 목표 위험을 동반. halt는 목표를 살려 즉시 이어받으므로 사람감지가 이미 실증한 방식(DEC-041, 2026-06-08 검증)을 traffic·GUI로 일반화.
+  - **A안(WAITING→halt) vs B안(게이트→halt 병렬)** — 인과를 `motion_hold ⟺ WAITING` 하나로 묶으면 디버깅·FSM 다이어그램·면접 설명이 명료. B안의 장점인 "정지 지연 ~100ms 단축"은 실내 저속(~0.2m/s)에서 수 cm라 사람 정지 임계 1.5m 앞에서 무의미.
+  - **BT 노드 1개로 통합** — BT는 합쳐진 신호 하나만 보고, 3소스 OR 결합은 behaviour가 담당(관심사 분리). BT XML·플러그인은 입력 토픽만 교체(로직 동일).
+  - **abort 분리** — pause(임시정지·이어감)와 abort(임무포기·집으로)는 의미가 달라 게이트에 섞지 않음. abort는 목표 cancel + RETURNING(새 home, resuming=False), 게이트 켜진 동안은 정지 유지(안전 우선).
+  - **범위 한정** — PBVS 도킹(`call_home_dock`)은 무인이라 게이트 미적용. IDLE 진입 시 `reset_pause()`로 도킹 중 잔류 pause가 다음 출발을 즉시 WAITING으로 떨구는 것 방지.
+- **변경**: `wego_behaviour/behaviour_node.py`(게이트 플래그·`/person_detected` 구독·`/motion_hold` 발행·`reset_pause`), `states.py`(`resuming` 가드·`WaitingState` motion_hold+abort), `ulsan_bt_plugins`(`person_clear_condition`→`motion_hold_condition` cpp/hpp/CMake), `diff_navigation_params.yaml`(plugin 목록), BT XML 2개(`MotionHoldCondition topic="/motion_hold"`). 커밋 9a00f14a. **colcon build OK, 실기기 검증 잔여**(특히 사람 정지 시 GUI가 BUSY→WAITING 전환·즉시 재개 확인).
 
 ### DEC-049: 로봇 할당 단일 주체를 wego_dispatcher로 정리 (done 2026-06-11)
 - **Context**: 로봇 선택이 **두 곳에서 이중으로** 일어나고 있었다 — ① FastAPI가 임무 생성 시 `pick_idle_robot()`으로 선택해 `robot_assigned` 기록 + 응답으로 태블릿에 전달, ② dispatcher가 디스패치 시점(최대 0.5s 후)에 `_pick_idle_robot()`으로 **다시 선택**해 GuideGoal 발행(생성 시 기록을 무시). 둘 사이에 로봇 상태가 바뀌면 태블릿 GuidingPage가 엉뚱한 로봇의 복귀를 폴링하는 불일치 가능. 강의실 배정은 생성 시 robot_assigned를 아예 안 넣는 등 엔드포인트 간 일관성도 없었다.

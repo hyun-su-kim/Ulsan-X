@@ -42,7 +42,7 @@ LIMO 1·2 단독 주행/경유지/마커 도킹 모두 검증 완료. 데모 영
 |---|------|------|
 | 1-1 | 유리 구간 경유지 통과 주행 | `done (2026-05-29)` |
 | 1-2 | FSM 각 상태 동작 (IDLE/GUIDING/RETURNING/WAITING/FAILED) | `todo` |
-| 1-3 | BT 수정 사항 동작 (표준 복구 Clear/Spin/BackUp DEC-046, RemovePassedGoals, PersonClearCondition) | `todo` |
+| 1-3 | BT 수정 사항 동작 (표준 복구 Clear/Spin/BackUp DEC-046, RemovePassedGoals, MotionHoldCondition DEC-050) | `todo` |
 | 1-4 | PBVS 홈 도킹 | `done (2026-05-26)` |
 
 ### 2단계 — LIMO 2 단독 주행
@@ -288,6 +288,10 @@ LIMO 1·2 단독 주행/경유지/마커 도킹 모두 검증 완료. 데모 영
   - 구독이 String으로 남아 GuideGoal(DEC-048)과 타입 불일치 → 목적지 표시(sig_dest) 먹통이던 것. GuideGoal 구독으로 정정 + 죽은 _goal_pubs 제거
 - [x] `wego_traffic` 패키지: 두 로봇 거리 감지 → pause/resume 발행 (DEC-022) — done (2026-05-13)
 - [x] `wego_behaviour` WAITING 상태 추가 및 연동 — done (2026-05-13)
+- [x] **정지 트리거 3종(사람·관제 pause·traffic) WAITING 단일 경로 통합** — done (2026-06-17). DEC-050 참고. 커밋 9a00f14a (빌드 OK)
+  - 사람감지(BT halt 직접) / traffic·GUI(FSM cancelTask)로 갈렸던 두 메커니즘을 behaviour 게이트(`motion_blocked()`=OR)로 통합 → WAITING이 `/motion_hold` 발행 → Nav2 BT `MotionHoldCondition`(구 PersonClearCondition 리네임) halt
+  - pause는 cancelTask 안 함(목표 살림) → `resuming` 플래그로 즉시 재개. abort는 게이트와 분리(목표 cancel + 새 home). 사람 정지가 이제 GUI에 WAITING으로 표시됨
+  - **실기기 검증 잔여** — 잔여 ③(우선순위 회피)·④(WAITING/FAILED)가 이 통합 경로를 검증
 - [x] `wego_bridge` goal_destination + speak_text 브릿지 추가 — done (2026-05-13)
   - `/limo1/goal_destination` (domain 5→6), `/limo1/speak_text` (domain 5→6)
   - `/limo2/goal_destination` (domain 5→7), `/limo2/speak_text` (domain 5→7)
@@ -365,7 +369,7 @@ LIMO 1·2 단독 주행/경유지/마커 도킹 모두 검증 완료. 데모 영
 - [x] **유리 경로 BT 복구 표준 환원** — done (2026-06-08). DEC-046 참고
   - `navigate_through_poses` BT의 유리 전용 복구(Spin 제거 + BackUp 0.10m)를 폐기, Nav2 표준 `RoundRobin[Clear→Spin(1.57)→Wait(5)→BackUp(0.30)]`로 환원 → `navigate_to_pose` BT와 복구 블록 동일화
   - 근거: Keepout Filter + 경유지(glass_entry/exit) 경로로 난반사 phantom 주행불가가 발생하지 않음 → 유리 전용 복구는 미사용 분기. 검토하던 `PhantomPushThrough` 커스텀 노드도 YAGNI로 폐기(미구현)
-  - `RemovePassedGoals`(0.7)·`PersonClearCondition` 래핑은 유지
+  - `RemovePassedGoals`(0.7)·`MotionHoldCondition`(구 PersonClearCondition, DEC-050) 래핑은 유지
 - [x] **PBVS 도킹 A/B 실험 종료 — polar 제어기 제거, staged 단독 채택** — done (2026-06-01). DEC-042 참고
   - `_ctrl_polar`·`dock_mode`·polar 게인(k_rho/k_alpha/k_beta) 코드·런치에서 제거
   - `dock_mode` 인자 누락 시 기각된 polar로 도킹되던 운영 리스크 제거
