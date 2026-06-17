@@ -8,7 +8,7 @@ from rclpy.executors import MultiThreadedExecutor
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
-from std_msgs.msg import String, Empty
+from std_msgs.msg import String, Empty, Bool
 from std_srvs.srv import Trigger
 from limo_msgs.msg import GuideGoal
 from limo_msgs.srv import Speak
@@ -35,8 +35,9 @@ class BehaviourNode(Node):
         self.pending_destination: str | None = None
         self.pending_tts: str = ''   # 출발 안내 멘트 — GuideGoal로 목적지와 함께 도착
         self.latest_amcl_pose: PoseWithCovarianceStamped | None = None
-        self._pause_flag   = False
-        self._resume_flag  = False
+        # 정지 게이트 — pause/사람/접근(traffic)을 OR로 합쳐 WAITING 전이·motion_hold 발행
+        self._manual_pause = False   # /pause·/resume (관제 GUI·traffic) — 레벨 플래그
+        self._person_block = False   # /person_detected (사람감지) — 최신값
         self._abort_flag   = False
         self._recover_flag = False
         self._fsm_status   = 'UNKNOWN'
@@ -50,12 +51,15 @@ class BehaviourNode(Node):
         self._speak_pub       = self.create_publisher(String, '/speak_text', 10)
         self._initialpose_pub = self.create_publisher(
             PoseWithCovarianceStamped, '/initialpose', 1)
+        # WAITING 상태가 BT(MotionHoldCondition)에 보내는 통합 정지 신호
+        self._motion_hold_pub = self.create_publisher(Bool, '/motion_hold', 10)
 
         self.create_subscription(GuideGoal, '/goal_destination', self._dest_cb, 10)
         self.create_subscription(Empty,  '/pause',   self._pause_cb,   10)
         self.create_subscription(Empty,  '/resume',  self._resume_cb,  10)
         self.create_subscription(Empty,  '/abort',   self._abort_cb,   10)
         self.create_subscription(Empty,  '/recover', self._recover_cb, 10)
+        self.create_subscription(Bool, '/person_detected', self._person_cb, 10)
         self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 1)
 
@@ -66,14 +70,15 @@ class BehaviourNode(Node):
     # ── 콜백 ──────────────────────────────────────────────────────────
 
     def _pause_cb(self, _: Empty) -> None:
-        self._pause_flag  = True
-        self._resume_flag = False
-        self.get_logger().info('pause 수신')
+        self._manual_pause = True
+        self.get_logger().info('pause 수신 (관제·traffic)')
 
     def _resume_cb(self, _: Empty) -> None:
-        self._resume_flag = True
-        self._pause_flag  = False
-        self.get_logger().info('resume 수신')
+        self._manual_pause = False
+        self.get_logger().info('resume 수신 (관제·traffic)')
+
+    def _person_cb(self, msg: Bool) -> None:
+        self._person_block = bool(msg.data)
 
     def _abort_cb(self, _: Empty) -> None:
         self._abort_flag = True
@@ -113,6 +118,24 @@ class BehaviourNode(Node):
         msg = String()
         msg.data = status
         self._status_pub.publish(msg)
+
+    def motion_blocked(self) -> bool:
+        """주행 정지 게이트. 관제·traffic pause(레벨) 또는 사람 감지(최신값) 중
+        하나라도 활성이면 정지. 셋 다 풀려야 해제(OR). GUIDING/RETURNING 주행 루프가
+        매 틱 검사해 WAITING 전이를 결정한다."""
+        return self._manual_pause or self._person_block
+
+    def publish_motion_hold(self, hold: bool) -> None:
+        """WAITING 상태가 BT(MotionHoldCondition)에 보내는 정지 신호.
+        true → BT가 FollowPath halt(목표는 cancel 안 함), false → 재개."""
+        msg = Bool()
+        msg.data = hold
+        self._motion_hold_pub.publish(msg)
+
+    def reset_pause(self) -> None:
+        """IDLE 진입 시 잔류 pause 정리 — 도킹 중 들어온 /pause가 다음 미션 출발을
+        즉시 WAITING으로 떨어뜨리는 것 방지. (사람감지는 10Hz 스트림이라 자가 해제)"""
+        self._manual_pause = False
 
     def speak_text(self, text: str) -> None:
         msg = String()
@@ -202,11 +225,12 @@ def main():
     sm.add_state('GUIDING',   GuidingState(node, navigator),  transitions={'succeeded': 'RETURNING', 'failed': 'FAILED', 'paused': 'WAITING', 'aborted': 'RETURNING'})
     sm.add_state('FAILED',    FailedState(node),              transitions={'recovered': 'IDLE'})
     sm.add_state('RETURNING', ReturningState(node, navigator), transitions={'succeeded': 'IDLE',      'failed': 'FAILED', 'paused': 'WAITING'})
-    sm.add_state('WAITING',   WaitingState(node),             transitions={'resume_guiding': 'GUIDING', 'resume_returning': 'RETURNING'})
+    sm.add_state('WAITING',   WaitingState(node, navigator),  transitions={'resume_guiding': 'GUIDING', 'resume_returning': 'RETURNING'})
 
     try:
         bb = Blackboard()
         bb['from_home'] = False
+        bb['resuming']  = False
         sm(bb)
     except KeyboardInterrupt:
         pass

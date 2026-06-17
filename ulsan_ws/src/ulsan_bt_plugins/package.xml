@@ -3,7 +3,7 @@
 <package format="3">
   <name>ulsan_bt_plugins</name>
   <version>0.0.1</version>
-  <description>Custom Nav2 BT plugins for Ulsan guide robot (PersonClearCondition)</description>
+  <description>Custom Nav2 BT plugins for Ulsan guide robot (MotionHoldCondition)</description>
   <maintainer email="wego@todo.todo">wego</maintainer>
   <license>Apache-2.0</license>
 

@@ -3,9 +3,11 @@
   navigate_to_pose 기반. 강의실 등 유리 구간 미통과 목적지용(복도 경로).
   Nav2 기본값 대비 변경:
     - GoalUpdated 제거 (우리 프로젝트에서 goal은 출발 시 1회만 설정, 항상 FAILURE)
-    - FollowPath를 ReactiveSequence(PersonClearCondition + FollowPath)로 래핑:
-      사람 감지(/person_detected=true) 시 PersonClearCondition이 RUNNING 반환 →
-      ReactiveSequence가 FollowPath를 halt() → cmd_vel 정지. 사람이 벗어나면 재개.
+    - FollowPath를 ReactiveSequence(MotionHoldCondition + FollowPath)로 래핑:
+      정지 게이트(/motion_hold=true) 시 MotionHoldCondition이 RUNNING 반환 →
+      ReactiveSequence가 FollowPath를 halt() → cmd_vel 정지. 게이트 해제 시 재개.
+      /motion_hold는 wego_behaviour가 사람 감지·관제 pause·로봇 접근(traffic)을 OR로
+      합쳐 WAITING 상태일 때 발행(통합 정지 게이트). 살아있는 목표는 cancel 없이 halt만.
       경로 재계획(ComputePathToPose)은 PipelineSequence에 의해 정지 중에도 계속 수행.
   복구(RecoveryFallback)는 표준 Nav2(Spin 포함) 유지.
     이 BT는 유리를 지나지 않는 복도/강의실 경로 전용이므로 유리 phantom이 없음 →
@@ -23,7 +25,7 @@
           </RecoveryNode>
         </RateController>
         <ReactiveSequence name="FollowPathWithPersonCheck">
-          <PersonClearCondition topic="/person_detected"/>
+          <MotionHoldCondition topic="/motion_hold"/>
           <RecoveryNode number_of_retries="1" name="FollowPath">
             <FollowPath path="{path}" controller_id="FollowPath"/>
             <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>

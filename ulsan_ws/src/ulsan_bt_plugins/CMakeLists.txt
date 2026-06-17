@@ -18,11 +18,11 @@ set(dependencies
   std_msgs
 )
 
-# --- PersonClearCondition BT 플러그인 ---
+# --- MotionHoldCondition BT 플러그인 ---
 # 라이브러리명 = plugin_lib_names 항목명 (lib 접두/.so 접미 제외)
-add_library(ulsan_person_clear_condition_bt_node SHARED
-  src/person_clear_condition.cpp)
-list(APPEND plugin_libs ulsan_person_clear_condition_bt_node)
+add_library(ulsan_motion_hold_condition_bt_node SHARED
+  src/motion_hold_condition.cpp)
+list(APPEND plugin_libs ulsan_motion_hold_condition_bt_node)
 
 foreach(bt_plugin ${plugin_libs})
   ament_target_dependencies(${bt_plugin} ${dependencies})

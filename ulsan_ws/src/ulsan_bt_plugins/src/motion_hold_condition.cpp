@@ -1,16 +1,16 @@
-// person_clear_condition.cpp — 사람 감지 시 주행 일시정지 BT 조건 노드
-// 헤더 person_clear_condition.hpp 참고.
+// motion_hold_condition.cpp — 주행 정지 게이트(WAITING) 신호 수신 시 FollowPath halt BT 조건 노드
+// 헤더 motion_hold_condition.hpp 참고.
 
-#include "ulsan_bt_plugins/person_clear_condition.hpp"
+#include "ulsan_bt_plugins/motion_hold_condition.hpp"
 
 namespace ulsan_bt_plugins
 {
 
-PersonClearCondition::PersonClearCondition(
+MotionHoldCondition::MotionHoldCondition(
   const std::string & condition_name,
   const BT::NodeConfiguration & conf)
 : BT::ConditionNode(condition_name, conf),
-  person_present_(false)
+  hold_active_(false)
 {
   // bt_navigator가 blackboard에 넣어주는 공유 rclcpp 노드 획득
   node_ = config().blackboard->get<rclcpp::Node::SharedPtr>("node");
@@ -25,33 +25,33 @@ PersonClearCondition::PersonClearCondition(
 
   rclcpp::SubscriptionOptions sub_option;
   sub_option.callback_group = callback_group_;
-  person_sub_ = node_->create_subscription<std_msgs::msg::Bool>(
+  hold_sub_ = node_->create_subscription<std_msgs::msg::Bool>(
     topic_,
     rclcpp::SystemDefaultsQoS(),
-    std::bind(&PersonClearCondition::personCallback, this, std::placeholders::_1),
+    std::bind(&MotionHoldCondition::holdCallback, this, std::placeholders::_1),
     sub_option);
 
   RCLCPP_INFO(
     node_->get_logger(),
-    "PersonClearCondition 초기화: topic=%s", topic_.c_str());
+    "MotionHoldCondition 초기화: topic=%s", topic_.c_str());
 }
 
-BT::NodeStatus PersonClearCondition::tick()
+BT::NodeStatus MotionHoldCondition::tick()
 {
-  // 최신 /person_detected 콜백 수집 (논블로킹)
+  // 최신 /motion_hold 콜백 수집 (논블로킹)
   callback_group_executor_.spin_some();
 
-  if (person_present_) {
-    // 사람 감지 → RUNNING → ReactiveSequence가 FollowPath halt → cmd_vel 정지
+  if (hold_active_) {
+    // 정지 게이트 ON → RUNNING → ReactiveSequence가 FollowPath halt → cmd_vel 정지
     return BT::NodeStatus::RUNNING;
   }
-  // 사람 없음 → SUCCESS → FollowPath 정상 진행
+  // 게이트 OFF → SUCCESS → FollowPath 정상 진행
   return BT::NodeStatus::SUCCESS;
 }
 
-void PersonClearCondition::personCallback(std_msgs::msg::Bool::SharedPtr msg)
+void MotionHoldCondition::holdCallback(std_msgs::msg::Bool::SharedPtr msg)
 {
-  person_present_ = msg->data;
+  hold_active_ = msg->data;
 }
 
 }  // namespace ulsan_bt_plugins
@@ -59,5 +59,5 @@ void PersonClearCondition::personCallback(std_msgs::msg::Bool::SharedPtr msg)
 #include "behaviortree_cpp_v3/bt_factory.h"
 BT_REGISTER_NODES(factory)
 {
-  factory.registerNodeType<ulsan_bt_plugins::PersonClearCondition>("PersonClearCondition");
+  factory.registerNodeType<ulsan_bt_plugins::MotionHoldCondition>("MotionHoldCondition");
 }
