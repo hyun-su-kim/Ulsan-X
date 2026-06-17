@@ -8,14 +8,17 @@
       <AllowMulticast>false</AllowMulticast>
       <MaxMessageSize>65500B</MaxMessageSize>
     </General>
+    <Internal>
+      <SocketReceiveBufferSize min="8MB"/>
+    </Internal>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
       <MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>
       <Peers>
-        <Peer address="192.168.0.134"/>
         <Peer address="192.168.0.124"/>
-        <Peer address="192.168.0.109"/>
-        <Peer address="192.168.0.23"/>
+        <Peer address="192.168.0.42"/>
+        <Peer address="192.168.0.36"/>
+        <Peer address="192.168.0.28"/>
       </Peers>
     </Discovery>
   </Domain>
