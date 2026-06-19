@@ -2,7 +2,7 @@
 //
 // CheckinResultPage / WalkinRoomPage / ClassroomPage에서 임무 생성 응답이
 // queued=true일 때 이동한다. 임무는 이미 PENDING으로 생성돼 대기열에 있고,
-// 로봇이 복귀하면 wego_dispatcher가 FIFO(먼저 온 순서)로 꺼내 배정한다.
+// 로봇이 복귀하면 ulsan_dispatcher가 FIFO(먼저 온 순서)로 꺼내 배정한다.
 //
 // 이 화면은 폴링하지 않는다 — 방문자는 좌측 의자에서 대기하고, 로봇이
 // 복귀해 발화(예약자는 성함 호명)하면 따라간다. 화면은 잠시 후 홈으로 복귀해

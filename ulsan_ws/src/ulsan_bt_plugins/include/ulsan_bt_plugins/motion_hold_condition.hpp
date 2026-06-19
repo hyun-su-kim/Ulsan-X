@@ -7,8 +7,8 @@
 //     hold=true  → RUNNING  → ReactiveSequence가 FollowPath를 halt() → 정지
 //   FAILURE는 절대 반환하지 않음 → 복구 동작(BackUp/ClearCostmap) 미발동.
 //
-//   /motion_hold는 wego_behaviour가 발행한다. 사람 감지(/person_detected)·관제 GUI
-//   pause·로봇 접근(wego_traffic)을 게이트(OR)로 합쳐 FSM이 WAITING 상태일 때만 true.
+//   /motion_hold는 ulsan_behaviour가 발행한다. 사람 감지(/person_detected)·관제 GUI
+//   pause·로봇 접근(ulsan_traffic)을 게이트(OR)로 합쳐 FSM이 WAITING 상태일 때만 true.
 //   구 PersonClearCondition(/person_detected 단일 소스 직접 구독)을 대체 — 세 정지
 //   트리거를 behaviour 게이트 하나로 통합하고, BT는 단일 신호만 본다.
 //

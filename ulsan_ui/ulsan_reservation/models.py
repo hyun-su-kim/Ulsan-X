@@ -25,9 +25,9 @@ class MissionStatus(enum.Enum):
     """
     로봇 임무 상태 열거형
 
-    PENDING   : 방문자 UI에서 배정 요청 완료, wego_dispatcher가 아직 수락 전
-    ACTIVE    : wego_dispatcher가 로봇에 goal_destination 발행 완료
-    COMPLETED : 로봇 홈 복귀 확인, wego_dispatcher가 완료 처리
+    PENDING   : 방문자 UI에서 배정 요청 완료, ulsan_dispatcher가 아직 수락 전
+    ACTIVE    : ulsan_dispatcher가 로봇에 goal_destination 발행 완료
+    COMPLETED : 로봇 홈 복귀 확인, ulsan_dispatcher가 완료 처리
     """
     PENDING   = "PENDING"
     ACTIVE    = "ACTIVE"
@@ -71,7 +71,7 @@ class Mission(Base):
     missions 테이블: 로봇 임무 1건 = 행 1개
 
     방문자 UI에서 [안내 시작] 클릭 시 생성된다.
-    wego_dispatcher가 0.5초 간격으로 PENDING 미션을 폴링하여 로봇에 전달한다.
+    ulsan_dispatcher가 0.5초 간격으로 PENDING 미션을 폴링하여 로봇에 전달한다.
 
     reservation_id는 nullable — 강의실 안내(DB 기록 없음)처럼 예약 없는 미션도 허용.
     """
@@ -80,12 +80,12 @@ class Mission(Base):
     id             = Column(Integer, primary_key=True, index=True)
     # 예약 체크인/현장상담 배정 시에만 존재, 강의실 안내는 NULL
     reservation_id = Column(Integer, ForeignKey("reservations.id"), nullable=True)
-    # wego_behaviour가 waypoints.yaml에서 좌표를 찾을 때 쓰는 키 (예: counseling_1, classroom_3)
+    # ulsan_behaviour가 waypoints.yaml에서 좌표를 찾을 때 쓰는 키 (예: counseling_1, classroom_3)
     destination    = Column(String(50), nullable=False)
-    # wego_dispatcher가 /speak_text에 발행할 TTS 멘트
+    # ulsan_dispatcher가 /speak_text에 발행할 TTS 멘트
     tts_text       = Column(String(200), nullable=False)
     status         = Column(Enum(MissionStatus), default=MissionStatus.PENDING)
-    # 배정된 로봇 이름 (limo1 / limo2). wego_dispatcher가 결정 후 업데이트
+    # 배정된 로봇 이름 (limo1 / limo2). ulsan_dispatcher가 결정 후 업데이트
     robot_assigned = Column(String(20), nullable=True)
     created_at     = Column(DateTime, server_default=func.now())
 

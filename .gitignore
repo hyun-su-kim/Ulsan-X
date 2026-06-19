@@ -21,6 +21,9 @@ ulsan_ws/Log/
 # 압축 원본
 *.tar.gz
 
+# 내부 문서 관리 폴더 (로컬 전용 — 저장소 제외)
+docs_hub/
+
 # Node.js
 **/node_modules/
 **/build/

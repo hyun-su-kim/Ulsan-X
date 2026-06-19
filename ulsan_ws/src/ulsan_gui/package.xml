@@ -3,7 +3,7 @@
 <package format="3">
   <name>ulsan_gui</name>
   <version>0.0.1</version>
-  <description>관제 대시보드 — PyQt5 기반 wego 멀티로봇 모니터링 UI</description>
+  <description>관제 대시보드 — PyQt5 기반 ulsan 멀티로봇 모니터링 UI</description>
   <maintainer email="rpehd2904@gmail.com">cks2904</maintainer>
   <license>Apache-2.0</license>
 

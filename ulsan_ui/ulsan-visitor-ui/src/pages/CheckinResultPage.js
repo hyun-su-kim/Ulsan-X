@@ -4,7 +4,7 @@
 // 예약 정보(이름, 시간, 상담실)를 표시하고 안내 시작 버튼을 제공한다
 //
 // [안내 시작] 클릭 시:
-//   1. POST /assign → 임무(PENDING) 생성. 로봇 배정은 wego_dispatcher 담당
+//   1. POST /assign → 임무(PENDING) 생성. 로봇 배정은 ulsan_dispatcher 담당
 //   2. queued=false (로봇 가용): /guiding으로 이동 (배정 폴링)
 //   3. queued=true  (로봇 만차): /waiting으로 이동 (대기 안내 후 홈 복귀)
 

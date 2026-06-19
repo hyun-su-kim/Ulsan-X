@@ -16,7 +16,7 @@ setup(
     zip_safe=True,
     maintainer='cks2904',
     maintainer_email='rpehd2904@gmail.com',
-    description='관제 대시보드 — PyQt5 기반 wego 멀티로봇 모니터링 UI',
+    description='관제 대시보드 — PyQt5 기반 ulsan 멀티로봇 모니터링 UI',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [

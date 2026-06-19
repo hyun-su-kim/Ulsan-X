@@ -4,7 +4,7 @@
   <name>ulsan_person_detect</name>
   <version>0.0.1</version>
   <description>YOLOv8 person detection with depth gating for Nav2 BT pause/resume</description>
-  <maintainer email="wego@todo.todo">wego</maintainer>
+  <maintainer email="ulsan@todo.todo">ulsan</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>

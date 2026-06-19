@@ -174,7 +174,7 @@ class LogView(QWidget):
 
     def _export_csv(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
-            self, 'CSV 저장', f'wego_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
+            self, 'CSV 저장', f'ulsan_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
             'CSV Files (*.csv)'
         )
         if not path:

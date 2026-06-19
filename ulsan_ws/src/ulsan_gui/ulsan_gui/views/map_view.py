@@ -945,8 +945,8 @@ class MapView(QWidget):
 
         # dispatcher/traffic: /diagnostics 수신 시각 기준
         for key, node_key, name in (
-            ('dispatcher', 'wego_dispatcher', '배차 노드'),
-            ('traffic',    'wego_traffic',    '충돌 방지'),
+            ('dispatcher', 'ulsan_dispatcher', '배차 노드'),
+            ('traffic',    'ulsan_traffic',    '충돌 방지'),
         ):
             ok = self.ros.is_node_ok(node_key)
             self._set_sys_val(key, ok)

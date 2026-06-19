@@ -30,7 +30,7 @@ export const checkReservation = async (name, phoneLast4) => {
 
 /**
  * 예약 체크인 후 임무 생성 요청
- * 로봇 선택은 wego_dispatcher가 디스패치 시점에 수행한다 — 배정 결과는
+ * 로봇 선택은 ulsan_dispatcher가 디스패치 시점에 수행한다 — 배정 결과는
  * getMission(missionId) 폴링으로 확인
  *
  * @param {number} reservationId - 예약 id

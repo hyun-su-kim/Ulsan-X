@@ -1,0 +1,18 @@
+# ArUco DICT_4X4_50 마커 설정
+# size        : 마커 한 변 길이 (m) — solvePnP 미터 스케일 기준
+# home_marker : home_key → marker_id 매핑 (로봇별 도킹 대상 마커)
+#
+# 마커 맵 좌표(map_x/y/z·map_q*·calibrated)는 제거됨 (DEC-041): 마커 역산 기반
+# AMCL 보정을 폐기하고 도킹 성공 후 home 좌표를 직접 발행하므로 운영에 불필요.
+# PBVS 도킹은 마커 상대 포즈만 사용 → 마커의 맵 위치를 알 필요 없음.
+# 마커 상대 포즈(거리·각도) 측정이 필요하면 `ros2 run ulsan_aruco aruco_measure`.
+markers:
+  0:                  # 로봇1 홈 마커
+    size: 0.20
+  1:                  # 로봇2 홈 마커
+    size: 0.20
+
+# home_key → marker_id 매핑
+home_marker:
+  home_robot1: 0
+  home_robot2: 1

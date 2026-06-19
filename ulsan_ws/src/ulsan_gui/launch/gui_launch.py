@@ -6,7 +6,7 @@ from launch_ros.actions import Node, LifecycleNode
 
 
 MAP_YAML = os.path.join(
-    get_package_share_directory('wego_2d_nav'),
+    get_package_share_directory('ulsan_2d_nav'),
     'maps', 'map.yaml',
 )
 

@@ -1,0 +1,53 @@
+
+<!--
+  navigate_to_pose 기반. 유리 구간 경유(glass_entry/glass_exit) 통과용.
+  RemovePassedGoals radius: 0.7 → 0.5 → 0.2 → 0.1 → 0.2 (현재).
+  [구조 변경] RemovePassedGoals를 RateController(0.333Hz) 밖으로 분리.
+    이유: RateController 안에 있으면 3초에 1번만 로봇 위치를 체크 → 주행 중
+          경유지를 휙 지나쳐 그 순간 경유지에서 멀어 제거 실패 → 플래너가 이미
+          통과한 경유지를 계속 경로에 포함. 밖으로 빼 매 틱 체크해 통과 즉시 제거.
+    ComputePathThroughPoses(무거운 경로 계산)만 RateController로 0.333Hz 유지.
+  [추가] FollowPath를 ReactiveSequence(MotionHoldCondition + FollowPath)로 래핑:
+    정지 게이트(/motion_hold=true) 시 MotionHoldCondition이 RUNNING 반환 →
+    ReactiveSequence가 FollowPath를 halt() → cmd_vel 정지. 게이트 해제 시 재개.
+    /motion_hold는 ulsan_behaviour가 사람 감지·관제 pause·로봇 접근(traffic)을 OR로
+    합쳐 WAITING 상태일 때 발행(통합 정지 게이트). 살아있는 목표는 cancel 없이 halt만.
+    경로 재계획(ComputePathThroughPoses)은 PipelineSequence에 의해 정지 중에도 계속 수행.
+  [복구] RecoveryFallback은 Nav2 표준(Clear→Spin→Wait→BackUp)으로 유지 (DEC-046).
+    유리 전용 BackUp 복구(Spin 제거 + BackUp 0.10m)는 폐기 — Keepout Filter +
+    경유지(glass_entry/exit) 통과 경로로 난반사 phantom 주행불가가 발생하지 않아
+    유리 전용 복구가 불필요. navigate_to_pose BT와 복구 블록 동일 → 일관성 확보.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
+        <RateController hz="0.333">
+          <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
+            <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+        <ReactiveSequence name="FollowPathWithPersonCheck">
+          <MotionHoldCondition topic="/motion_hold"/>
+          <RecoveryNode number_of_retries="1" name="FollowPath">
+            <FollowPath path="{path}" controller_id="FollowPath"/>
+            <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+          </RecoveryNode>
+        </ReactiveSequence>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <RoundRobin name="RecoveryActions">
+          <Sequence name="ClearingActions">
+            <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+          <Spin spin_dist="1.57"/>
+          <Wait wait_duration="5"/>
+          <BackUp backup_dist="0.30" backup_speed="0.05"/>
+        </RoundRobin>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

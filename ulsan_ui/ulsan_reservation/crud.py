@@ -217,7 +217,7 @@ def update_status(db: Session, reservation_id: int, status: schemas.ReservationS
 
     호출 시점:
     - 터치 UI 체크인 확인 버튼: PENDING → IN_PROGRESS
-    - wego_behaviour FSM RETURNING 완료: IN_PROGRESS → COMPLETED
+    - ulsan_behaviour FSM RETURNING 완료: IN_PROGRESS → COMPLETED
 
     reservation_id에 해당하는 예약이 없으면 None 반환 (라우터에서 404 처리)
     """
@@ -315,7 +315,7 @@ def create_mission(db: Session, data: schemas.MissionCreate):
 
 
 def get_pending_missions(db: Session):
-    """PENDING 상태 미션 전체 조회 — wego_dispatcher 폴링용."""
+    """PENDING 상태 미션 전체 조회 — ulsan_dispatcher 폴링용."""
     return (
         db.query(models.Mission)
         .filter(models.Mission.status == models.MissionStatus.PENDING)
@@ -325,7 +325,7 @@ def get_pending_missions(db: Session):
 
 
 def start_mission(db: Session, mission_id: int, robot: str):
-    """PENDING → ACTIVE. wego_dispatcher가 로봇에 goal 발행 완료 후 호출."""
+    """PENDING → ACTIVE. ulsan_dispatcher가 로봇에 goal 발행 완료 후 호출."""
     mission = db.query(models.Mission).filter(models.Mission.id == mission_id).first()
     if not mission:
         return None
@@ -337,7 +337,7 @@ def start_mission(db: Session, mission_id: int, robot: str):
 
 
 def complete_mission(db: Session, mission_id: int):
-    """ACTIVE → COMPLETED. 로봇 홈 복귀 감지 후 wego_dispatcher가 호출."""
+    """ACTIVE → COMPLETED. 로봇 홈 복귀 감지 후 ulsan_dispatcher가 호출."""
     mission = db.query(models.Mission).filter(models.Mission.id == mission_id).first()
     if not mission:
         return None

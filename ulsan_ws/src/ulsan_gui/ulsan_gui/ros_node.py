@@ -88,14 +88,14 @@ class RosNode(Node):
 
         # 노드별 최근 /diagnostics 수신 시각 — is_node_ok() 판정 기준
         # 로봇(limo1/limo2): bridge를 통해 /ROBOT_NAME/diagnostics로 수신
-        # domain 5 노드(wego_dispatcher/wego_traffic): /diagnostics에서 name 필드로 구분
+        # domain 5 노드(ulsan_dispatcher/ulsan_traffic): /diagnostics에서 name 필드로 구분
         self._diag_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
-        self._diag_recv.update({'wego_dispatcher': 0.0, 'wego_traffic': 0.0})
+        self._diag_recv.update({'ulsan_dispatcher': 0.0, 'ulsan_traffic': 0.0})
 
         # 연결/준비 판정 — 세 개념을 분리(DEC-047):
         #   ① 로봇 연결(physical liveness): /limo_status — 로봇 HW 드라이버(Orin) 발.
         #      behaviour/Nav2(데스크탑 발)와 무관하게 "물리 로봇이 살아있나"만 판정.
-        #   ② behaviour 생존: hardware_id 'wego_behaviour' 진단 수신 시각 — 명령(pause/
+        #   ② behaviour 생존: hardware_id 'ulsan_behaviour' 진단 수신 시각 — 명령(pause/
         #      resume/abort/recover) 수신 주체.
         #   ③ Nav2 준비(navigation/localization): hardware_id 'Nav2' 진단을 status.name별
         #      (lifecycle_manager_navigation / _localization)로 (수신시각, OK) 추적 →
@@ -104,7 +104,7 @@ class RosNode(Node):
         self._nav2_diag: dict[str, dict[str, tuple[float, bool]]] = {r: {} for r in ROBOTS}
         self._limo_status_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
         # 로봇 측 노드 liveness — person_detect: /person_detected(10Hz) 신선도,
-        #   voice: /diagnostics의 hardware_id 'wego_voice' 수신 시각
+        #   voice: /diagnostics의 hardware_id 'ulsan_voice' 수신 시각
         self._person_detect_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
         self._voice_recv: dict[str, float] = {r: 0.0 for r in ROBOTS}
 
@@ -228,9 +228,9 @@ class RosNode(Node):
         now = time.time()
         self._diag_recv[robot] = now
         for st in msg.status:
-            if st.hardware_id == 'wego_behaviour':
+            if st.hardware_id == 'ulsan_behaviour':
                 self._behaviour_recv[robot] = now
-            elif st.hardware_id == 'wego_voice':
+            elif st.hardware_id == 'ulsan_voice':
                 self._voice_recv[robot] = now
             elif st.hardware_id == 'Nav2':
                 # status.name = 'lifecycle_manager_navigation: Nav2 Health' 등 매니저별 구분
@@ -273,7 +273,7 @@ class RosNode(Node):
     # ── 유틸 ─────────────────────────────────────────────────────────
 
     def is_node_ok(self, key: str, timeout_sec: float = 5.0) -> bool:
-        # /diagnostics 수신 시각 기준 — key: domain5 노드명(wego_dispatcher/wego_traffic)
+        # /diagnostics 수신 시각 기준 — key: domain5 노드명(ulsan_dispatcher/ulsan_traffic)
         return (time.time() - self._diag_recv.get(key, 0.0)) < timeout_sec
 
     def is_robot_connected(self, robot: str, timeout_sec: float = 5.0) -> bool:
@@ -292,7 +292,7 @@ class RosNode(Node):
         return (time.time() - self._person_detect_recv.get(robot, 0.0)) < timeout_sec
 
     def is_voice_alive(self, robot: str, timeout_sec: float = 5.0) -> bool:
-        # 음성(TTS) 노드 생존 — wego_voice diagnostics 신선도. 죽으면 안내 발화 없음.
+        # 음성(TTS) 노드 생존 — ulsan_voice diagnostics 신선도. 죽으면 안내 발화 없음.
         return (time.time() - self._voice_recv.get(robot, 0.0)) < timeout_sec
 
     def _lifecycle_ready(self, robot: str, key: str, timeout_sec: float) -> bool:

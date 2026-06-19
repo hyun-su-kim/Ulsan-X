@@ -165,7 +165,7 @@ def update_status(
     db: Session = Depends(get_db),
 ):
     """
-    예약 상태 변경 (터치 UI / wego_behaviour FSM)
+    예약 상태 변경 (터치 UI / ulsan_behaviour FSM)
 
     터치 UI 체크인: PENDING → IN_PROGRESS
     FSM RETURNING 완료: IN_PROGRESS → COMPLETED

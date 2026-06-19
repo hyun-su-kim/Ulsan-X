@@ -1,18 +1,18 @@
 # 임무 배정 라우터
 #
-# 로봇 "선택"의 단일 주체는 wego_dispatcher다 (디스패치 시점 FSM 상태 기준).
+# 로봇 "선택"의 단일 주체는 ulsan_dispatcher다 (디스패치 시점 FSM 상태 기준).
 # 임무 생성 시 가용 로봇이 없어도 거절하지 않고 PENDING으로 큐잉한다 —
 # 응답의 queued 플래그로 태블릿이 "대기 안내"를 띄우고, 로봇이 복귀하면
-# wego_dispatcher가 FIFO로 꺼내 배정한다. robot_assigned는 PATCH /start 때 채워진다.
+# ulsan_dispatcher가 FIFO로 꺼내 배정한다. robot_assigned는 PATCH /start 때 채워진다.
 #
 # POST  /assign                — 예약 체크인 후 임무 생성 (중복 시 409, 가용 없으면 queued=True)
 # POST  /assign/classroom      — 강의실 안내 임무 생성 (DB 기록 없음)
-# GET   /assign/pending        — wego_dispatcher 폴링용 미결 미션 조회
+# GET   /assign/pending        — ulsan_dispatcher 폴링용 미결 미션 조회
 # GET   /assign/today/by-robot — 관제 GUI용 금일 로봇별 임무 카운트
 # GET   /assign/{id}           — 태블릿 GuidingPage 폴링 (상태 + 배정 로봇)
-# PATCH /assign/{id}/start     — wego_dispatcher: PENDING → ACTIVE + robot_assigned 기록
-# PATCH /assign/{id}/complete  — wego_dispatcher: ACTIVE → COMPLETED
-# PATCH /assign/{id}/fail      — wego_dispatcher: ACTIVE → COMPLETED (실패 로그)
+# PATCH /assign/{id}/start     — ulsan_dispatcher: PENDING → ACTIVE + robot_assigned 기록
+# PATCH /assign/{id}/complete  — ulsan_dispatcher: ACTIVE → COMPLETED
+# PATCH /assign/{id}/fail      — ulsan_dispatcher: ACTIVE → COMPLETED (실패 로그)
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -35,7 +35,7 @@ def assign_reservation(body: schemas.AssignReservationRequest, db: Session = Dep
     같은 예약에 PENDING/ACTIVE 미션이 이미 있으면 409 반환 (중복 안내 방지).
     가용(IDLE) 로봇이 없어도 거절하지 않고 PENDING으로 큐잉한다 — 응답
     queued=True로 태블릿이 대기 안내를 띄운다. 어느 로봇이 맡을지는
-    wego_dispatcher가 디스패치 시점에 단독 결정하고 PATCH /start로 채운다.
+    ulsan_dispatcher가 디스패치 시점에 단독 결정하고 PATCH /start로 채운다.
     """
     from routers.robots import robot_status
 
@@ -115,7 +115,7 @@ def count_today_by_robot(db: Session = Depends(get_db)):
 @router.get("/pending", response_model=list[schemas.MissionResponse])
 def get_pending(db: Session = Depends(get_db)):
     """
-    wego_dispatcher 폴링용 — PENDING 상태 미션 전체 조회.
+    ulsan_dispatcher 폴링용 — PENDING 상태 미션 전체 조회.
 
     0.5초 간격으로 호출된다. 미션이 없으면 빈 리스트 반환.
     """
@@ -125,7 +125,7 @@ def get_pending(db: Session = Depends(get_db)):
 @router.patch("/{mission_id}/start")
 def start_mission(mission_id: int, robot: str, db: Session = Depends(get_db)):
     """
-    wego_dispatcher가 로봇에 goal 발행 완료 후 PENDING → ACTIVE로 변경.
+    ulsan_dispatcher가 로봇에 goal 발행 완료 후 PENDING → ACTIVE로 변경.
 
     robot: "limo1" | "limo2"
     """
@@ -138,7 +138,7 @@ def start_mission(mission_id: int, robot: str, db: Session = Depends(get_db)):
 @router.patch("/{mission_id}/complete")
 def complete_mission(mission_id: int, db: Session = Depends(get_db)):
     """
-    로봇 홈 복귀 확인 후 wego_dispatcher가 ACTIVE → COMPLETED로 변경.
+    로봇 홈 복귀 확인 후 ulsan_dispatcher가 ACTIVE → COMPLETED로 변경.
     연결된 예약이 있으면 함께 COMPLETED 처리.
     """
     mission = crud.complete_mission(db, mission_id)
@@ -154,7 +154,7 @@ def complete_mission(mission_id: int, db: Session = Depends(get_db)):
 @router.patch("/{mission_id}/fail")
 def fail_mission(mission_id: int, db: Session = Depends(get_db)):
     """
-    임무 실패 후 홈 복귀 확인 시 wego_dispatcher가 호출.
+    임무 실패 후 홈 복귀 확인 시 ulsan_dispatcher가 호출.
 
     GUIDING 중 Nav2 실패 → FAILED → RETURNING → IDLE 시퀀스를
     dispatcher가 추적해 /complete 대신 /fail로 호출한다.
