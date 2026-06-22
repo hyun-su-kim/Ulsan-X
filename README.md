@@ -1,5 +1,5 @@
 <h1 align="center">Multi-Robot Academy Guide</h1>
-<h3 align="center">실시간 예약 멀티 로봇 안내 시스템</h3>
+<h3 align="center">실시간 상담 예약 및 멀티 로봇 안내 시스템</h3>
 
 <p align="center">
   <img src="assets/overview.png" alt="Multi-Robot Academy Guide" width="70%">
