@@ -27,6 +27,9 @@ docs_hub/
 # 로컬 네트워크 설정 (환경별 LAN IP — 저장소 제외, 로컬 보존)
 cyclonedds.xml
 
+# 환경변수/자격증명 (저장소 제외, .env.example만 커밋)
+**/.env
+
 # Node.js
 **/node_modules/
 **/build/
