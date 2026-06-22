@@ -24,6 +24,9 @@ ulsan_ws/Log/
 # 내부 문서 관리 폴더 (로컬 전용 — 저장소 제외)
 docs_hub/
 
+# 로컬 네트워크 설정 (환경별 LAN IP — 저장소 제외, 로컬 보존)
+cyclonedds.xml
+
 # Node.js
 **/node_modules/
 **/build/
