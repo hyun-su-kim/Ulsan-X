@@ -106,7 +106,7 @@ PyQt5 멀티로봇 대시보드. 지도·두 로봇 실시간 위치/상태·실
   </tr>
   <tr>
     <td align="center"><em>상담 예약 — 실시간 잔여 시간대 반영(마감 비활성)</em></td>
-    <td align="center"><em>예약 완료 — 배정 상담실 안내</em></td>
+    <td align="center"><em>예약 완료 — 예약 정보 표시</em></td>
   </tr>
 </table>
 
