@@ -64,8 +64,15 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PathJoinSubstitution([FindPackageShare('ydlidar_ros2_driver'), 'launch', 'ydlidar.launch.py'])
         ),
-        IncludeLaunchDescription(
-            PathJoinSubstitution([FindPackageShare('robot_localization'), 'launch', 'limo_ekf_launch.py'])
+        # EKF (robot_localization): apt 패키지 ekf_node 를 ulsan_bringup 소유 설정으로 실행.
+        # wego_ws 의 limo_ekf_launch.py include 를 대체 (설정 소유권을 ulsan_ws 로 이전).
+        # name='ekf_filter_node_odom' 은 limo_ekf.yaml 최상위 키와 일치해야 파라미터가 적용됨.
+        Node(
+            package='robot_localization',
+            executable='ekf_node',
+            name='ekf_filter_node_odom',
+            output='screen',
+            parameters=[os.path.join(ulsan_bringup_share_dir, 'config', 'limo_ekf.yaml')],
         ),
 
         Node(
