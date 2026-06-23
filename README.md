@@ -243,39 +243,82 @@ YOLOv8(COCO 사전학습) + Depth 게이팅으로 주행 경로 위 **근거리 
 
 ### 5.1 필수 설치 패키지
 
-**ROS 2 (apt · Humble)**
+> 자율주행·SLAM·센서퓨전 등 **알고리즘 본체는 검증된 표준 패키지를 사용**하고, 튜닝·통합·응용 로직만 직접 구현했다. 아래는 의존 패키지와 **설치 이유**.
+
+**ROS 2 Humble — 자율주행·미들웨어**
+
+| 패키지 | 왜 필요한가 |
+|--------|------------|
+| `navigation2` (nav2-*) | Nav2 자율주행 스택 — 경로계획·제어·**AMCL 위치추정**·BT 내비게이터 |
+| `cartographer-ros` | 2D LiDAR **SLAM** — 운영 맵 제작 |
+| `robot-localization` | **EKF 센서퓨전** — 휠 오도메트리 + IMU 융합으로 `odom→base_link` 생성 |
+| `domain-bridge` | 도메인(5/6/7) 분리된 **멀티로봇 간 토픽 브릿지** |
+| `yasmin` / `yasmin-ros` | 로봇 행동 **FSM**(IDLE/GUIDING/RETURNING/WAITING/FAILED) |
+| `cv-bridge` | ROS 이미지 ↔ OpenCV 변환 (ArUco·사람감지) |
+
+**Python — 인지·음성·GUI**
+
+| 패키지 | 왜 필요한가 |
+|--------|------------|
+| `ultralytics` (YOLOv8) | **사람 감지** |
+| `opencv-python` (cv2) | **ArUco 마커 검출 + solvePnP 포즈 복원**(PBVS 홈 도킹) |
+| `edge-tts` | 텍스트→음성(**TTS**) 생성 |
+| `PyQt5` | **관제 GUI** 대시보드 |
+
+**시스템 (apt, 비-ROS)**
+
+| 패키지 | 왜 필요한가 |
+|--------|------------|
+| `mpg123` + `pulseaudio` | TTS mp3 **재생** (로봇 내장 HDMI 스피커, pulse 싱크 고정) |
+| `mysql-server` | 예약 데이터 저장 DB |
+
+**예약 백엔드 (Python · FastAPI)**
+
+| 패키지 | 왜 필요한가 |
+|--------|------------|
+| `fastapi` + `uvicorn` | 예약 **REST API 서버** |
+| `sqlalchemy` + `pymysql` | MySQL **ORM / 드라이버** |
+| `apscheduler` | 예약 시간 **스케줄링** |
+
+**프론트엔드 (Node.js)**
+
+| 패키지 | 왜 필요한가 |
+|--------|------------|
+| `react` · `react-dom` · `react-scripts` | 방문자 UI / 웹 예약 UI |
+| `axios` | 백엔드 **HTTP 통신** |
+
+**하드웨어 드라이버**
+
+| 패키지 | 왜 필요한가 |
+|--------|------------|
+| `limo_base` + `limo_description` | 베이스 **구동 드라이버** + URDF |
+| `ydlidar_ros2_driver` | **2D LiDAR** |
+| `orbbec_camera` | **Depth 카메라** |
+
+<details>
+<summary>설치 명령 (참고)</summary>
 
 ```bash
+# ROS 2 (apt · Humble)
 sudo apt install \
   ros-humble-nav2-bringup ros-humble-nav2-common ros-humble-nav2-simple-commander \
   ros-humble-nav2-map-server ros-humble-nav2-lifecycle-manager ros-humble-nav2-rviz-plugins \
   ros-humble-cartographer ros-humble-cartographer-ros ros-humble-robot-localization \
   ros-humble-domain-bridge ros-humble-yasmin ros-humble-yasmin-ros \
   ros-humble-behaviortree-cpp-v3 ros-humble-cv-bridge ros-humble-diagnostic-updater
-```
 
-**Python · 시스템**
-
-```bash
-# 로봇: 사람 감지(YOLOv8) · 음성(TTS)
-pip install ultralytics edge-tts
-sudo apt install mpg123 pulseaudio            # TTS 재생(빌트인 HDMI 스피커)
+# 로봇: 인지(YOLOv8·ArUco) · 음성(TTS)
+pip install ultralytics opencv-python edge-tts requests
+sudo apt install mpg123 pulseaudio python3-pyqt5
 
 # 서버: 예약 백엔드
 pip install fastapi "uvicorn[standard]" sqlalchemy pydantic apscheduler python-dotenv pymysql
-sudo apt install mysql-server                 # 예약 DB
+sudo apt install mysql-server
 
-# 관제 GUI
-sudo apt install python3-pyqt5
-```
-
-**프론트엔드 (방문자 / 웹 UI — Node.js)**
-
-```bash
+# 프론트엔드 (방문자 / 웹 UI)
 cd ulsan_ui/ulsan-visitor-ui && npm install   # ulsan-web-ui 도 동일
 ```
-
-> LIMO 하드웨어 드라이버(`limo_base` · `ydlidar` · `orbbec_camera`)는 로봇 벤더 환경(Orin 기본 워크스페이스) 기준.
+</details>
 
 ### 5.2 빌드 & 실행
 
@@ -283,7 +326,7 @@ cd ulsan_ui/ulsan-visitor-ui && npm install   # ulsan-web-ui 도 동일
 
 ```bash
 # 로봇측 (domain 6/7) — 로봇 1대당 동일하게 실행
-ros2 launch ulsan_bringup teleop_launch.py                          # 하드웨어 드라이버 (LIMO/Orin)
+ros2 launch ulsan_bringup bringup_launch.py                          # 하드웨어 드라이버 (LIMO/Orin)
 ros2 launch ulsan_aruco aruco_corrector_launch.py                  # 홈 도킹 PBVS
 ros2 run  ulsan_person_detect person_detect_node                    # 사람 감지
 ros2 launch ulsan_voice voice_launch.py                             # TTS (스피커가 로봇에 내장)
