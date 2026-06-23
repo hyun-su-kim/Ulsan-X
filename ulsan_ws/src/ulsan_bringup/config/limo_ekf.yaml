@@ -1,0 +1,47 @@
+# robot_localization EKF 설정 (LIMO local odom EKF)
+# - 알고리즘: apt 패키지 ros-humble-robot-localization 의 ekf_node (표준 오픈소스)
+# - 이 yaml: 우리(ulsan_ws) 소유 설정. wego_ws 의 limo_ekf.yaml 을 시작점으로 가져옴.
+# - 입력: odom0=휠 오도메트리(/odom), imu0=IMU(/imu)  → 융합
+# - 출력: odom->base_link TF + /odometry/filtered (world_frame=odom 이므로 local EKF)
+# ※ 최상위 키 'ekf_filter_node_odom' 는 런치의 Node name= 과 반드시 일치해야 파라미터가 적용됨.
+ekf_filter_node_odom:
+  ros__parameters:
+    frequency: 30.0
+    sensor_timeout: 0.2
+    two_d_mode: true
+    transform_time_offset: 0.0
+    transform_timeout: 0.2
+    print_diagnostics: true
+    debug: false
+
+    # map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    odom0: odom
+    odom0_config: [true, true, false,
+                  false, false, true,
+                  true,  true,  false,
+                  false, false, true,
+                  false, false, false]
+    odom0_queue_size: 10
+    odom0_differential: true
+    odom0_relative: true
+
+    imu0: imu
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  true,  true,  true,
+                  true,  true, false]
+    imu0_differential: false
+    imu0_relative: true
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: true
+
+    use_control: false
+
+    process_noise_covariance: [1e-3, 1e-3, 1e-3, 0.3, 0.3, 1e-3, 0.5, 0.5, 0.1, 0.3, 0.3, 1e-3, 0.3, 0.3, 0.3]
+
+    initial_estimate_covariance: [1e-9, 1e-9, 1e-9, 1.0, 1.0, 1e-9, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
